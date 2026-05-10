@@ -1,0 +1,15 @@
+requests
+httpx
+beautifulsoup4
+lxml
+yfinance
+pandas
+schedule
+rich
+python-dotenv
+pytest
+fundamentus
+google-genai
+duckduckgo-search
+fastapi
+uvicorn

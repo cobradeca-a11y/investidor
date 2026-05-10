@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIIA — Radar Inteligente</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <span class="icon">🛰️</span>
+                <h1>FIIA Radar</h1>
+            </div>
+            <div class="actions">
+                <button id="btnRadar" class="btn-primary">Ligar Radar 🛰️</button>
+                <button id="btnClear" class="btn-secondary">Limpar Cache 🧼</button>
+            </div>
+        </header>
+
+        <main id="mainContent">
+            <div class="welcome-card">
+                <h2>Bem-vindo ao Futuro do Investimento</h2>
+                <p>Clique em "Ligar Radar" para varrer o mercado e encontrar as Top 15 oportunidades com análise de IA.</p>
+            </div>
+            
+            <div id="loading" class="hidden">
+                <div class="spinner"></div>
+                <p>Lançando a rede na internet...</p>
+                <span id="loadingStatus">Buscando oportunidades...</span>
+            </div>
+
+            <div id="results" class="results-grid">
+                <!-- Cards aparecerão aqui -->
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "FIIA Intelligence",
+  "short_name": "FIIA",
+  "description": "Radar de Investimentos em FIIs com IA",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#38bdf8",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2534/2534183.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
