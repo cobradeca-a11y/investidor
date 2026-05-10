@@ -100,7 +100,7 @@ def rodar_radar():
         return
         
     for i, op in enumerate(oportunidades):
-        print(f"\n🏆 {i+1}º LUGAR: {op['ticker']} (Margem: {op['margem']:.1f}%)")
+        print(f"\n🏆 {i+1}º LUGAR: {op['ticker']} (Margem: {op['margem']*100:.1f}%)")
         
         # Só exibe o relatório completo para os Top 3 para não inundar a tela
         if i < 3:
