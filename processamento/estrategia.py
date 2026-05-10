@@ -1,113 +1,116 @@
 """
 processamento/estrategia.py
-Módulo responsável pelas camadas de avaliação qualitativa e filtros de sobrevivência.
+Filtros de sobrevivência e radar de oportunidades.
+
+Correções aplicadas:
+  - vacancia_media None não causa mais TypeError no radar
+  - liquidez None tratada com fallback 0.0
 """
+import time
 from typing import Tuple, List
 from banco import db
 
+
 def aplicar_filtros_sobrevivencia(ticker: str) -> Tuple[bool, List[str]]:
     """
-    Camada 1: Filtros de Sobrevivência (Corte Rápido)
-    Retorna (Aprovado, [Lista de motivos de reprovação]).
+    Camada 1: Filtros de Sobrevivência.
+    Retorna (aprovado, [motivos_reprovacao]).
     """
-    ind_row = db.buscar_um(
+    ind_row     = db.buscar_um(
         "SELECT * FROM indicadores WHERE ticker = ? ORDER BY data DESC LIMIT 1",
         (ticker,)
     )
-    
     fii_info_row = db.buscar_um("SELECT * FROM fiis WHERE ticker = ?", (ticker,))
-    
+
     if not ind_row or not fii_info_row:
         return False, ["Dados insuficientes no banco para avaliação."]
-        
-    ind = dict(ind_row)
+
+    ind      = dict(ind_row)
     fii_info = dict(fii_info_row)
-        
-    motivos_reprovacao = []
-    
-    # 1. Filtro de Liquidez Diária (Mínimo R$ 1 Milhão)
-    liquidez = ind.get("liquidez_diaria")
-    if liquidez is None or liquidez < 1000000:
+    motivos  = []
+
+    # 1. Liquidez mínima R$ 1 milhão
+    liquidez = ind.get("liquidez_diaria") or 0.0
+    if liquidez < 1_000_000:
         val = f"R${liquidez:,.2f}" if liquidez else "Desconhecida"
-        motivos_reprovacao.append(f"Liquidez baixa ({val}). Risco de não conseguir vender as cotas.")
-        
-    # 2. Filtro de Vacância Física (Máximo 15%)
-    # Apenas para FIIs que não são de Papel
+        motivos.append(f"Liquidez baixa ({val}). Risco de não conseguir vender as cotas.")
+
+    # 2. Vacância máxima 15% — apenas fundos de tijolo
     segmento = fii_info.get("segmento", "").upper()
     if "PAPEL" not in segmento and "RECEBÍVEIS" not in segmento:
         vacancia = ind.get("vacancia_fisica")
         if vacancia is not None and vacancia > 15.0:
-            motivos_reprovacao.append(f"Vacância alta ({vacancia}%). Muitos imóveis vazios.")
-            
-    # 3. Filtro de Diversificação (Mínimo 5 imóveis)
-    # Apenas para tijolo
-    if "PAPEL" not in segmento and "RECEBÍVEIS" not in segmento:
+            motivos.append(f"Vacância alta ({vacancia}%). Muitos imóveis vazios.")
+
+        # 3. Diversificação mínima de 5 imóveis
         qtd_ativos = ind.get("qtd_ativos")
         if qtd_ativos is not None and qtd_ativos < 5:
-            motivos_reprovacao.append(f"Baixa diversificação ({int(qtd_ativos)} imóveis). Risco concentrado.")
-            
-    aprovado = len(motivos_reprovacao) == 0
-    return aprovado, motivos_reprovacao
+            motivos.append(f"Baixa diversificação ({int(qtd_ativos)} imóveis). Risco concentrado.")
 
-def radar_oportunidades():
+    aprovado = len(motivos) == 0
+    return aprovado, motivos
+
+
+def radar_oportunidades() -> list:
     """
-    Implementa o Funil de 2 Estágios:
-    1. Pré-filtro massivo por Liquidez, Vacância e Ativos.
-    2. Deep Scan dos sobreviventes para calcular Margem Real.
+    Funil de 2 estágios:
+      1. Pré-filtro massivo por liquidez, vacância e diversificação.
+      2. Deep Scan dos sobreviventes para calcular margem de segurança.
+      3. Análise qualitativa com IA no Top 1 (plano gratuito Gemini).
     """
-    from coleta.api_fundamentus import coletar_mercado_inteiro
+    from coleta.api_fundamentus import coletar_mercado_inteiro, coletar_fii
+    from coleta.api_yfinance import coletar_historico_dividendos
     from processamento.margem_seguranca import calcular_margem_seguranca
     from processamento.analise_qualitativa import analisar_fundo_ia
-    from coleta import api_fundamentus, api_yfinance
-    
-    # Estágio 1: Varredura de Mercado
+
+    # ── Estágio 1: varredura de mercado ──────────────────────────────────
     mercado = coletar_mercado_inteiro()
-    elite = []
-    
+    elite   = []
+
     print("[radar] Aplicando filtros de sobrevivência iniciais...")
     for fii in mercado:
-        ticker = fii["ticker"]
-        segmento = fii["segmento"]
-        
-        # Filtros rápidos (Camada 1 simplificada)
-        if fii["liquidez"] < 1000000: continue
-        
+        ticker   = fii["ticker"]
+        segmento = fii.get("segmento", "")
+
+        # Liquidez — None tratado como 0
+        liquidez = fii.get("liquidez") or 0.0
+        if liquidez < 1_000_000:
+            continue
+
+        # Vacância e diversificação — apenas tijolo
         if "PAPEL" not in segmento and "RECEBÍVEIS" not in segmento:
-            if fii["vacancia_media"] > 15.0: continue
-            if fii["qtd_ativos"] < 5: continue
-            
+            # FIX: vacancia_media pode ser None para fundos de papel listados como tijolo
+            vacancia = fii.get("vacancia_media")
+            if vacancia is not None and vacancia > 15.0:
+                continue
+
+            qtd = fii.get("qtd_ativos")
+            if qtd is not None and qtd < 5:
+                continue
+
         elite.append(ticker)
-        
+
     print(f"[radar] {len(elite)} FIIs passaram para o Raio-X profundo.")
-    
-    # Estágio 2: Deep Scan
+
+    # ── Estágio 2: deep scan (limitado a 50) ─────────────────────────────
     oportunidades = []
-    
-    # Processamos a elite para encontrar as melhores margens de segurança (limitado a 50)
+
     for ticker in elite[:50]:
         print(f"[radar] Analisando {ticker}...", end="\r")
-        api_fundamentus.coletar_fii(ticker)
-        api_yfinance.coletar_historico_dividendos(ticker)
-        
+        coletar_fii(ticker)
+        coletar_historico_dividendos(ticker)
+
         margem = calcular_margem_seguranca(ticker)
-        if margem and margem > 0:
-            oportunidades.append({
-                "ticker": ticker,
-                "margem": margem
-            })
-            
-    # Ordena pelas melhores oportunidades
+        if margem is not None and margem > 0:
+            oportunidades.append({"ticker": ticker, "margem": margem})
+
     oportunidades.sort(key=lambda x: x["margem"], reverse=True)
-    
-    # MODO TESTE: Apenas o #1 para ajuste fino da IA
-    vencedores = oportunidades[:1]
-    for fii in vencedores:
-        print(f"[radar] Investigando {fii['ticker']} na internet...")
+
+    # ── Estágio 3: análise qualitativa — Top 1 (plano gratuito) ──────────
+    top = oportunidades[:15]
+    for fii in top[:1]:
+        print(f"\n[radar] Investigando {fii['ticker']} com IA...")
         fii["qualitativo"] = analisar_fundo_ia(fii["ticker"])
-        # Pausa de 4 segundos para respeitar o limite grátis da API (15 RPM)
-        import time
         time.sleep(4)
-        
-    return vencedores
 
-
+    return top
