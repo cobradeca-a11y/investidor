@@ -106,22 +106,40 @@ def _salvar_cache(ticker: str, doc_id: str, data_doc: str, texto: str):
 def _buscar_doc_id(ticker: str) -> tuple[str, str] | tuple[None, None]:
     """
     Retorna (doc_id, data_referencia) do relatório gerencial mais recente.
+
+    Estratégia:
+      1. Tenta buscar por CNPJ (mais preciso, evita bloqueio por texto)
+      2. Fallback: busca por palavrasChave (ticker como texto)
     """
-    params = {
-        "d": "0",
-        "o": "1",
-        "f": "1",
-        "l": "5",
-        "c": "4",
-        "tipoFundo": "FII",
-        "idTipoDocumento": "41",
-        "idEspecieDocumento": "0",
-        "palavrasChave": ticker,
-        "search[value]": "",
-        "search[regex]": "false",
-        "ativo": "true",
-    }
-    
+    from coleta.cnpj_fundo import obter_cnpj
+
+    cnpj = obter_cnpj(ticker)
+
+    # Monta params — CNPJ tem prioridade sobre palavrasChave
+    if cnpj:
+        cnpj_limpo = cnpj.replace(".", "").replace("/", "").replace("-", "")
+        params = {
+            "d": "0", "o": "1", "f": "1", "l": "5", "c": "4",
+            "tipoFundo": "FII",
+            "idTipoDocumento": "41",
+            "idEspecieDocumento": "0",
+            "cnpjFundo": cnpj_limpo,
+            "search[value]": "",
+            "search[regex]": "false",
+            "ativo": "true",
+        }
+    else:
+        params = {
+            "d": "0", "o": "1", "f": "1", "l": "5", "c": "4",
+            "tipoFundo": "FII",
+            "idTipoDocumento": "41",
+            "idEspecieDocumento": "0",
+            "palavrasChave": ticker,
+            "search[value]": "",
+            "search[regex]": "false",
+            "ativo": "true",
+        }
+
     try:
         resp = requests.get(_FNET_BASE_URL, params=params, headers=_HEADERS, timeout=_TIMEOUT)
         resp.raise_for_status()
@@ -135,10 +153,9 @@ def _buscar_doc_id(ticker: str) -> tuple[str, str] | tuple[None, None]:
         print(f"[fnet] Nenhum relatório gerencial encontrado para {ticker}.")
         return None, None
 
-    # O primeiro resultado já é o mais recente (ordenado por data desc na API)
     doc = documentos[0]
-    doc_id    = str(doc.get("id", ""))
-    data_ref  = doc.get("dataReferencia") or doc.get("dataEntrega") or ""
+    doc_id   = str(doc.get("id", ""))
+    data_ref = doc.get("dataReferencia") or doc.get("dataEntrega") or ""
 
     if not doc_id:
         return None, None
