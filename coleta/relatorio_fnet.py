@@ -37,10 +37,15 @@ _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0 Safari/537.36"
+        "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/json, text/javascript, */*",
-    "Referer": "https://fnet.bmfbovespa.com.br/",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentos",
+    "X-Requested-With": "XMLHttpRequest",
+    "Origin": "https://fnet.bmfbovespa.com.br",
+    "Connection": "keep-alive",
 }
 
 _TIMEOUT        = 20
@@ -103,10 +108,18 @@ def _buscar_doc_id(ticker: str) -> tuple[str, str] | tuple[None, None]:
     Retorna (doc_id, data_referencia) do relatório gerencial mais recente.
     """
     params = {
+        "d": "0",
+        "o": "1",
+        "f": "1",
+        "l": "5",
+        "c": "4",
         "tipoFundo": "FII",
-        "idTipoDocumento": "41", # Relatório Gerencial
-        "search[value]": ticker,
-        "ativo": "true"
+        "idTipoDocumento": "41",
+        "idEspecieDocumento": "0",
+        "palavrasChave": ticker,
+        "search[value]": "",
+        "search[regex]": "false",
+        "ativo": "true",
     }
     
     try:
