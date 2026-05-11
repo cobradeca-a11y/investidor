@@ -13,6 +13,7 @@ Regra central:
 """
 
 import json
+import re
 import time
 
 from google import genai
@@ -257,7 +258,6 @@ Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
             data = json.loads(texto_limpo)
         except json.JSONDecodeError:
             # Se falhar, tenta capturar apenas o objeto entre chaves
-            import re
             # Busca do primeiro { ao último }
             match = re.search(r'(\{.*\})', texto_limpo, re.DOTALL)
             if match:

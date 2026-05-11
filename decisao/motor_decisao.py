@@ -594,9 +594,13 @@ def decidir(
     # ── Gate 7: Veredito final ───────────────────────────────────────────
     decisao, motivo = _gate7_veredito(gates, margem, confiabilidade, tom_gestor, ia_status)
 
-    if confiabilidade >= 90 and ia_status == "OK":
+    # IA indisponível por causa externa (erro de rede, quota, FNET) não penaliza confiança
+    ia_ok = ia_status == "OK"
+    ia_externa_falhou = ia_status in ("INDISPONIVEL", "ERRO", "BLOQUEADO_QUOTA", "ERRO_IA")
+    
+    if confiabilidade >= 90 and (ia_ok or ia_externa_falhou):
         confianca = "ALTA"
-    elif confiabilidade >= 75 or ia_status == "OK":
+    elif confiabilidade >= 75:
         confianca = "MEDIA"
     else:
         confianca = "BAIXA"
