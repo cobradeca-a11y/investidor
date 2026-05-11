@@ -1,6 +1,6 @@
 """
 processamento/analise_qualitativa.py
-Analista Sênior FIIA — integração com Gemini.
+Analista Sênior FIIA - integração com Gemini.
 
 Fontes de contexto (por ordem de precisão):
   1. Relatório Gerencial PDF via FNET/B3  ← fonte primária
@@ -107,7 +107,7 @@ def analisar_fundo_ia(ticker: str) -> dict:
     # ── 2. Validação mínima ───────────────────────────────────────────────
     campos_faltando = _validar_dados(dados_banco, fii_info)
     if campos_faltando:
-        print(f"[ia] ❌ {ticker} bloqueado — dados insuficientes: {campos_faltando}")
+        print(f"[ia] ERRO {ticker} bloqueado - dados insuficientes: {campos_faltando}")
         return _resposta_bloqueada(campos_faltando)
 
     # ── 3. Chave Gemini ───────────────────────────────────────────────────
@@ -131,7 +131,7 @@ def analisar_fundo_ia(ticker: str) -> dict:
     qtd_ativos = dados_banco.get("qtd_ativos")
 
     contexto_financeiro = f"""
-INDICADORES FUNDAMENTALISTAS CONFIRMADOS — {ticker}
+INDICADORES FUNDAMENTALISTAS CONFIRMADOS - {ticker}
 ────────────────────────────────────────────────────
 Segmento       : {segmento}
 Preço Atual    : R$ {preco}
@@ -150,20 +150,20 @@ Qtd. Imóveis   : {qtd_ativos or 'Não informado'}
 
     if texto_relatorio:
         contexto_qualitativo = f"""
-RELATÓRIO GERENCIAL (fonte: FNET/B3 — documento oficial do gestor)
+RELATÓRIO GERENCIAL (fonte: FNET/B3 - documento oficial do gestor)
 ────────────────────────────────────────────────────
 {texto_relatorio}
 ────────────────────────────────────────────────────
 """
         fonte_qualitativa = "relatorio_gerencial_fnet"
-        print(f"[ia] 📄 {ticker} — usando Relatório Gerencial como contexto qualitativo.")
+        print(f"[ia] DOC {ticker} - usando Relatorio Gerencial como contexto qualitativo.")
 
     else:
         # ── 5b. Fallback: notícias ─────────────────────────────────────────
         noticias = buscar_noticias(ticker)
         if noticias:
             contexto_qualitativo = f"""
-NOTÍCIAS RECENTES (fonte: Google News / DuckDuckGo — fallback)
+NOTÍCIAS RECENTES (fonte: Google News / DuckDuckGo - fallback)
 ────────────────────────────────────────────────────
 {noticias}
 ────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ de portal, menos precisas que o documento oficial. Seja conservador nos riscos.
 ────────────────────────────────────────────────────
 """
             fonte_qualitativa = "noticias_portal"
-            print(f"[ia] 📰 {ticker} — FNET indisponível, usando notícias como fallback.")
+            print(f"[ia] INFO {ticker} - FNET indisponivel, usando noticias como fallback.")
         else:
             contexto_qualitativo = """
 CONTEXTO QUALITATIVO: Nenhuma fonte disponível.
@@ -180,7 +180,7 @@ Analise exclusivamente pelos indicadores fundamentalistas acima.
 Não faça suposições sobre gestão, portfólio ou mercado sem dados concretos.
 """
             fonte_qualitativa = "apenas_indicadores"
-            print(f"[ia] ⚠️  {ticker} — sem contexto qualitativo. Análise pelos indicadores apenas.")
+            print(f"[ia] AVISO {ticker} - sem contexto qualitativo. Analise pelos indicadores apenas.")
 
     # ── 6. Prompt ─────────────────────────────────────────────────────────
     prompt = f"""
@@ -200,10 +200,10 @@ INSTRUÇÕES DE ANÁLISE:
    - Eventos relevantes citados (vencimento de contratos, obras, novos inquilinos, inadimplência)
    - Alertas de risco mencionados pelo próprio gestor
 4. Atribua Score de 0 a 10 baseado EXCLUSIVAMENTE nos dados acima:
-   - 8-10: oportunidade clara — margem de segurança e fundamentos sólidos
+   - 8-10: oportunidade clara - margem de segurança e fundamentos sólidos
    - 5-7:  fundo razoável com riscos identificados e gerenciáveis
    - 3-4:  fundo com problemas que exigem cautela antes de aportar
-   - 0-2:  evitar — fundamentos comprometidos ou riscos críticos não resolvidos
+   - 0-2:  evitar - fundamentos comprometidos ou riscos críticos não resolvidos
 
 Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
 {{
@@ -220,7 +220,7 @@ Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
         client   = genai.Client(api_key=settings.GEMINI_API_KEY)
         model_id = "gemini-2.5-flash"
 
-        print(f"[ia] 🔍 Analista Sênior processando {ticker}...")
+        print(f"[ia] Analisando {ticker}...")
 
         response = None
         for tentativa in range(3):
@@ -229,7 +229,7 @@ Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
                 break
             except Exception as e:
                 if "429" in str(e) and tentativa < 2:
-                    print(f"[ia] Quota atingida (429). Aguardando 65s — tentativa {tentativa + 1}/3...")
+                    print(f"[ia] Quota atingida (429). Aguardando 65s - tentativa {tentativa + 1}/3...")
                     time.sleep(65)
                 else:
                     raise
@@ -237,30 +237,50 @@ Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
         if response is None:
             raise RuntimeError("Gemini não retornou resposta após 3 tentativas.")
 
-        # ── 8. Parse do JSON ───────────────────────────────────────────────
+        # ── 8. Parse do JSON Robusto ─────────────────────────────────────────
         texto = response.text
+        
+        # Extrai apenas o bloco JSON se houver markdown
         if "```json" in texto:
             texto = texto.split("```json")[1].split("```")[0]
         elif "```" in texto:
             texto = texto.split("```")[1].split("```")[0]
 
-        data = json.loads(texto.strip())
+        # Limpeza de caracteres que costumam quebrar o json.loads
+        texto_limpo = texto.strip()
+        # Remove possíveis quebras de linha dentro de strings ou caracteres de controle
+        texto_limpo = texto_limpo.replace('\n', ' ').replace('\r', '')
+        
+        try:
+            data = json.loads(texto_limpo)
+        except json.JSONDecodeError:
+            # Segunda tentativa: tenta apenas o que estiver entre chaves { }
+            import re
+            match = re.search(r'\{.*\}', texto, re.DOTALL)
+            if match:
+                data = json.loads(match.group())
+            else:
+                raise
 
-        if not isinstance(data.get("score"), (int, float)):
-            raise ValueError(f"Score inválido: {data.get('score')}")
+        if not isinstance(data.get("score"), (int, float, type(None))):
+            # Se vier nulo ou algo estranho, tenta converter
+            try:
+                data["score"] = int(data.get("score"))
+            except:
+                data["score"] = None
 
         data["status"]            = "OK"
         data["fonte_qualitativa"] = fonte_qualitativa
 
         print(
-            f"[ia] ✅ {ticker} — Score: {data['score']}/10 | "
+            f"[ia] OK {ticker} - Score: {data['score']}/10 | "
             f"Fonte: {fonte_qualitativa} | "
             f"Tom: {data.get('tom_gestor', 'N/A')}"
         )
         return data
 
     except Exception as e:
-        print(f"[ia] ❌ Erro ao acionar Gemini: {e}")
+        print(f"[ia] ERRO ao acionar Gemini: {e}")
         return {
             "score":  None,
             "status": "ERRO_IA",

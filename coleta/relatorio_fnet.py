@@ -29,6 +29,75 @@ import banco.db as db
 
 _FNET_BASE_URL = "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados"
 
+_FNET_DOWNLOAD = (
+    "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={doc_id}"
+)
+
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/javascript, */*",
+    "Referer": "https://fnet.bmfbovespa.com.br/",
+}
+
+_TIMEOUT        = 20
+_MAX_CHARS      = 12_000
+_CACHE_HORAS    = 24
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache SQLite — tabela relatorios_cache
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SQL_CREATE_CACHE = """
+CREATE TABLE IF NOT EXISTS relatorios_cache (
+    ticker      TEXT PRIMARY KEY,
+    doc_id      TEXT,
+    data_doc    TEXT,
+    texto       TEXT,
+    coletado_em TEXT
+);
+"""
+
+def _garantir_tabela():
+    db.executar(_SQL_CREATE_CACHE)
+
+
+def _ler_cache(ticker: str) -> str | None:
+    """Retorna texto do cache se ainda válido (< 24h). Caso contrário None."""
+    _garantir_tabela()
+    row = db.buscar_um(
+        "SELECT texto, coletado_em FROM relatorios_cache WHERE ticker = ?",
+        (ticker,)
+    )
+    if not row:
+        return None
+    from datetime import timezone, timedelta
+    coletado = datetime.fromisoformat(row["coletado_em"]).replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - coletado < timedelta(hours=_CACHE_HORAS):
+        return row["texto"]
+    return None
+
+
+def _salvar_cache(ticker: str, doc_id: str, data_doc: str, texto: str):
+    _garantir_tabela()
+    from datetime import timezone
+    db.executar(
+        """
+        INSERT OR REPLACE INTO relatorios_cache (ticker, doc_id, data_doc, texto, coletado_em)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (ticker, doc_id, data_doc, texto, datetime.now(timezone.utc).isoformat())
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Busca do documento mais recente na FNET
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _buscar_doc_id(ticker: str) -> tuple[str, str] | tuple[None, None]:
     """
     Retorna (doc_id, data_referencia) do relatório gerencial mais recente.
@@ -44,10 +113,10 @@ def _buscar_doc_id(ticker: str) -> tuple[str, str] | tuple[None, None]:
         "dataFinal": "",
         "idFundo": "",
         "referencia": "",
-        "search[value]": ticker, # Ticker no campo de busca global
+        "search[value]": ticker,
         "search[regex]": "false",
         "ativo": "true",
-        "palavrasChave": ticker  # Ticker também na palavra-chave
+        "palavrasChave": ticker
     }
     
     try:
@@ -149,7 +218,7 @@ def _truncar(texto: str, max_chars: int = _MAX_CHARS) -> str:
     """Mantém o início do relatório (onde ficam os destaques do gestor)."""
     if len(texto) <= max_chars:
         return texto
-    return texto[:max_chars] + f"\n\n[... texto truncado — {len(texto)} chars totais ...]"
+    return texto[:max_chars] + f"\n\n[... texto truncado - {len(texto)} chars totais ...]"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -171,16 +240,16 @@ def obter_relatorio(ticker: str) -> str:
     # 1. Cache
     texto_cache = _ler_cache(ticker)
     if texto_cache:
-        print(f"[fnet] {ticker} — relatório gerencial carregado do cache.")
+        print(f"[fnet] {ticker} - relatório gerencial carregado do cache.")
         return texto_cache
 
     # 2. Busca doc_id
-    print(f"[fnet] {ticker} — buscando último relatório gerencial na FNET...")
+    print(f"[fnet] {ticker} - buscando último relatório gerencial na FNET...")
     doc_id, data_ref = _buscar_doc_id(ticker)
     if not doc_id:
         return ""
 
-    print(f"[fnet] {ticker} — baixando PDF (doc_id={doc_id}, ref={data_ref})...")
+    print(f"[fnet] {ticker} - baixando PDF (doc_id={doc_id}, ref={data_ref})...")
     time.sleep(0.5)   # pausa gentil para não sobrecarregar a FNET
 
     texto_bruto = _baixar_e_extrair(doc_id)
@@ -191,5 +260,5 @@ def obter_relatorio(ticker: str) -> str:
 
     _salvar_cache(ticker, doc_id, data_ref, texto_final)
 
-    print(f"[fnet] {ticker} — relatório extraído: {len(texto_final)} chars.")
+    print(f"[fnet] {ticker} - relatório extraído: {len(texto_final)} chars.")
     return texto_final

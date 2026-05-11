@@ -37,7 +37,7 @@ def aplicar_filtros_sobrevivencia(ticker: str) -> Tuple[bool, List[str]]:
         val = f"R${liquidez:,.2f}" if liquidez else "Desconhecida"
         motivos.append(f"Liquidez baixa ({val}). Risco de não conseguir vender as cotas.")
 
-    # 2. Vacância máxima 15% — apenas fundos de tijolo
+    # 2. Vacância máxima 15% - apenas fundos de tijolo
     segmento = fii_info.get("segmento", "").upper()
     if "PAPEL" not in segmento and "RECEBÍVEIS" not in segmento:
         vacancia = ind.get("vacancia_fisica")
@@ -59,7 +59,7 @@ def radar_oportunidades() -> list:
       1. Pré-filtro massivo por liquidez, vacância e diversificação.
       2. Deep Scan dos sobreviventes para calcular margem de segurança.
       3. Análise qualitativa com IA no Top 3.
-      4. Motor de decisão em todos os finalistas — decisão gravada no banco.
+      4. Motor de decisão em todos os finalistas - decisão gravada no banco.
     """
     from coleta.api_fundamentus import coletar_mercado_inteiro, coletar_fii
     from coleta.api_yfinance import coletar_historico_dividendos
@@ -108,15 +108,14 @@ def radar_oportunidades() -> list:
 
     oportunidades.sort(key=lambda x: x["margem"], reverse=True)
 
-    # ── Estágio 3: análise qualitativa — Top 3 ───────────────────────────
-    top = oportunidades[:15]
-    print(f"\n[radar] Iniciando análise qualitativa no Top 3...")
-    for i, fii in enumerate(top[:3]):
+    # ── Estágio 3: análise qualitativa - Top 30 ──────────────────────────
+    top = oportunidades[:30]
+    print("\n[radar] Iniciando analise qualitativa no Top 30...")
+    for i, fii in enumerate(top):
         ticker = fii["ticker"]
-        print(f"[radar] 🧠 IA analisando {ticker} ({i+1}/3)...")
+        print(f"[radar] IA analisando {ticker} ({i+1}/{len(top)})...")
         fii["qualitativo"] = analisar_fundo_ia(ticker)
-        if i < 2:
-            time.sleep(4)
+        time.sleep(3)
 
     # ── Estágio 4: motor de decisão em todos os finalistas ───────────────
     print(f"\n[radar] Gerando vereditos para o Top {len(top)}...")
