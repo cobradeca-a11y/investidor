@@ -50,4 +50,8 @@ O sistema opera em três camadas de inteligência para filtrar e ranquear oportu
 - `app.py`: Servidor para a interface web.
 
 ---
+## 🗺️ Roadmap
+Acompanhe a evolução do projeto no [ROADMAP.md](file:///c:/HomeCloud/shared/Projetos/investidor/ROADMAP.md).
+
+---
 *Este projeto foi desenvolvido como um assistente de investimentos para fins educacionais.*

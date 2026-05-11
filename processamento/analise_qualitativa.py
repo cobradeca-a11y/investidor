@@ -54,11 +54,20 @@ def _resposta_bloqueada(campos_faltando: list[str]) -> dict:
 
 def _validar_dados(dados_banco: dict, fii_info: dict) -> list[str]:
     problemas = []
+    segmento = fii_info.get("segmento", "").upper()
+    
     for campo, descricao in _CAMPOS_OBRIGATORIOS.items():
         valor = dados_banco.get(campo)
+        
+        # Vacância é opcional para fundos de Papel/Recebíveis ou Agro/Terra
+        if campo == "vacancia_fisica":
+            if any(x in segmento for x in ["PAPEL", "RECEBÍVEIS", "AGRO", "TERRA", "OUTROS"]):
+                continue
+                
         if valor is None or valor == "" or valor == "N/A":
             problemas.append(descricao)
             continue
+            
         if campo == "liquidez_diaria":
             try:
                 if float(valor) < _LIQUIDEZ_MINIMA:
@@ -66,7 +75,7 @@ def _validar_dados(dados_banco: dict, fii_info: dict) -> list[str]:
             except (TypeError, ValueError):
                 problemas.append(f"{descricao} com valor inválido")
 
-    if not fii_info.get("segmento"):
+    if not segmento:
         problemas.append("Segmento do fundo")
 
     return problemas

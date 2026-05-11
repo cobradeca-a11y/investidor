@@ -94,6 +94,7 @@ def verificar_travas(
         "QUALIDADE_BAIXA",
         score_qualidade is not None and score_qualidade < 40,
         f"Score de qualidade de {score_qualidade:.0f}/100 está abaixo do mínimo aceitável."
+        if score_qualidade is not None else "Score de qualidade abaixo do mínimo aceitável."
     )
 
     _trava(

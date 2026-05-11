@@ -2,9 +2,11 @@
 processamento/estrategia.py
 Filtros de sobrevivência e radar de oportunidades.
 
-Correções aplicadas:
-  - vacancia_media None não causa mais TypeError no radar
-  - liquidez None tratada com fallback 0.0
+Mudanças v2:
+  - IA acionada no Top 3 (era Top 1)
+  - Motor de decisão integrado em todos os finalistas
+  - Decisão gravada no banco automaticamente
+  - Radar funciona mesmo sem IA disponível
 """
 import time
 from typing import Tuple, List
@@ -53,15 +55,18 @@ def aplicar_filtros_sobrevivencia(ticker: str) -> Tuple[bool, List[str]]:
 
 def radar_oportunidades() -> list:
     """
-    Funil de 2 estágios:
+    Funil de 4 estágios:
       1. Pré-filtro massivo por liquidez, vacância e diversificação.
       2. Deep Scan dos sobreviventes para calcular margem de segurança.
-      3. Análise qualitativa com IA no Top 1 (plano gratuito Gemini).
+      3. Análise qualitativa com IA no Top 3.
+      4. Motor de decisão em todos os finalistas — decisão gravada no banco.
     """
     from coleta.api_fundamentus import coletar_mercado_inteiro, coletar_fii
     from coleta.api_yfinance import coletar_historico_dividendos
     from processamento.margem_seguranca import calcular_margem_seguranca
     from processamento.analise_qualitativa import analisar_fundo_ia
+    from decisao.motor_decisao import decidir
+    from decisao.persistencia_decisao import gravar
 
     # ── Estágio 1: varredura de mercado ──────────────────────────────────
     mercado = coletar_mercado_inteiro()
@@ -72,14 +77,11 @@ def radar_oportunidades() -> list:
         ticker   = fii["ticker"]
         segmento = fii.get("segmento", "")
 
-        # Liquidez — None tratado como 0
         liquidez = fii.get("liquidez") or 0.0
         if liquidez < 1_000_000:
             continue
 
-        # Vacância e diversificação — apenas tijolo
         if "PAPEL" not in segmento and "RECEBÍVEIS" not in segmento:
-            # FIX: vacancia_media pode ser None para fundos de papel listados como tijolo
             vacancia = fii.get("vacancia_media")
             if vacancia is not None and vacancia > 15.0:
                 continue
@@ -106,11 +108,30 @@ def radar_oportunidades() -> list:
 
     oportunidades.sort(key=lambda x: x["margem"], reverse=True)
 
-    # ── Estágio 3: análise qualitativa — Top 1 (plano gratuito) ──────────
+    # ── Estágio 3: análise qualitativa — Top 3 ───────────────────────────
     top = oportunidades[:15]
-    for fii in top[:1]:
-        print(f"\n[radar] Investigando {fii['ticker']} com IA...")
-        fii["qualitativo"] = analisar_fundo_ia(fii["ticker"])
-        time.sleep(4)
+    print(f"\n[radar] Iniciando análise qualitativa no Top 3...")
+    for i, fii in enumerate(top[:3]):
+        ticker = fii["ticker"]
+        print(f"[radar] 🧠 IA analisando {ticker} ({i+1}/3)...")
+        fii["qualitativo"] = analisar_fundo_ia(ticker)
+        if i < 2:
+            time.sleep(4)
+
+    # ── Estágio 4: motor de decisão em todos os finalistas ───────────────
+    print(f"\n[radar] Gerando vereditos para o Top {len(top)}...")
+    for fii in top:
+        ticker = fii["ticker"]
+        qual   = fii.get("qualitativo") or {}
+
+        veredito = decidir(
+            ticker     = ticker,
+            score_ia   = qual.get("score"),
+            riscos_ia  = qual.get("riscos"),
+            tom_gestor = qual.get("tom_gestor"),
+            ia_status  = qual.get("status", "INDISPONIVEL"),
+        )
+        fii["veredito"] = veredito
+        gravar(veredito)
 
     return top

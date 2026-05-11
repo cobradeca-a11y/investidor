@@ -27,89 +27,31 @@ import banco.db as db
 # Constantes
 # ─────────────────────────────────────────────────────────────────────────────
 
-_FNET_BUSCA = (
-    "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados"
-    "?d=0&o=1&f=1&l=1&c=4&cnpjFundo=&tipoFundo=FII&idCategoriaDocumento=0"
-    "&idTipoDocumento=41"          # 41 = Relatório Gerencial
-    "&idEspecieDocumento=0&dataInicial=&dataFinal=&idFundo=&referencia=&search%5Bvalue%5D="
-    "&search%5Bregex%5D=false&ativo=true&palavrasChave={ticker}"
-)
-
-_FNET_DOWNLOAD = (
-    "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={doc_id}"
-)
-
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0 Safari/537.36"
-    ),
-    "Accept": "application/json, text/javascript, */*",
-    "Referer": "https://fnet.bmfbovespa.com.br/",
-}
-
-_TIMEOUT        = 20        # segundos por requisição
-_MAX_CHARS      = 12_000    # limite de caracteres para o prompt do Gemini
-_CACHE_HORAS    = 24        # horas de validade do cache no SQLite
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Cache SQLite — tabela relatorios_cache
-# ─────────────────────────────────────────────────────────────────────────────
-
-_SQL_CREATE_CACHE = """
-CREATE TABLE IF NOT EXISTS relatorios_cache (
-    ticker      TEXT PRIMARY KEY,
-    doc_id      TEXT,
-    data_doc    TEXT,
-    texto       TEXT,
-    coletado_em TEXT
-);
-"""
-
-def _garantir_tabela():
-    db.executar(_SQL_CREATE_CACHE)
-
-
-def _ler_cache(ticker: str) -> str | None:
-    """Retorna texto do cache se ainda válido (< 24h). Caso contrário None."""
-    _garantir_tabela()
-    row = db.buscar_um(
-        "SELECT texto, coletado_em FROM relatorios_cache WHERE ticker = ?",
-        (ticker,)
-    )
-    if not row:
-        return None
-    coletado = datetime.fromisoformat(row["coletado_em"]).replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) - coletado < timedelta(hours=_CACHE_HORAS):
-        return row["texto"]
-    return None
-
-
-def _salvar_cache(ticker: str, doc_id: str, data_doc: str, texto: str):
-    _garantir_tabela()
-    db.executar(
-        """
-        INSERT OR REPLACE INTO relatorios_cache (ticker, doc_id, data_doc, texto, coletado_em)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (ticker, doc_id, data_doc, texto, datetime.now(timezone.utc).isoformat())
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Busca do documento mais recente na FNET
-# ─────────────────────────────────────────────────────────────────────────────
+_FNET_BASE_URL = "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados"
 
 def _buscar_doc_id(ticker: str) -> tuple[str, str] | tuple[None, None]:
     """
     Retorna (doc_id, data_referencia) do relatório gerencial mais recente.
-    Retorna (None, None) em caso de falha.
     """
-    url = _FNET_BUSCA.format(ticker=ticker)
+    params = {
+        "d": "0", "o": "1", "f": "1", "l": "1", "c": "4",
+        "cnpjFundo": "",
+        "tipoFundo": "FII",
+        "idCategoriaDocumento": "0",
+        "idTipoDocumento": "41", # Relatório Gerencial
+        "idEspecieDocumento": "0",
+        "dataInicial": "",
+        "dataFinal": "",
+        "idFundo": "",
+        "referencia": "",
+        "search[value]": ticker, # Ticker no campo de busca global
+        "search[regex]": "false",
+        "ativo": "true",
+        "palavrasChave": ticker  # Ticker também na palavra-chave
+    }
+    
     try:
-        resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+        resp = requests.get(_FNET_BASE_URL, params=params, headers=_HEADERS, timeout=_TIMEOUT)
         resp.raise_for_status()
         dados = resp.json()
     except Exception as e:

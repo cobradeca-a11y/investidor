@@ -84,39 +84,45 @@ def rodar_top10():
 
 def rodar_radar():
     """Busca e exibe apenas as melhores oportunidades do mercado inteiro."""
+    from decisao.tradutor_decisao import formatar_veredito, formatar_card_resumido
+
     autoupdater.verificar_e_atualizar()
     print("\nColetando dados macroeconômicos...")
     api_bcb.coletar_macro()
-    
-    # Aciona o motor de busca (Top 15 com IA)
+
+    # Aciona o motor de busca (Top 15 com IA + motor de decisão)
     oportunidades = estrategia.radar_oportunidades()
-    
+
     print("\n" + "="*50)
     print("      O PODIUM DO RADAR FIIA (TOP 15)")
     print("="*50)
-    
+
     if not oportunidades:
         print("\n[radar] O mercado está caro! Nenhuma oportunidade com margem de segurança positiva encontrada.")
         return
-        
+
+    # ── Ranking resumido completo ─────────────────────────────────────────
+    print("\n  📊 RANKING:\n")
     for i, op in enumerate(oportunidades):
-        print(f"\n🏆 {i+1}º LUGAR: {op['ticker']} (Margem: {op['margem']*100:.1f}%)")
-        
-        # Só exibe o relatório completo para os Top 3 para não inundar a tela
-        if i < 3:
-            analisar_fii(op['ticker'])
-            # Exibe a análise qualitativa se disponível
-            qual = op.get("qualitativo")
-            if qual:
-                print(f"\n🔍 INVESTIGAÇÃO QUALITATIVA (Score: {qual.get('score', '?')}/10)")
-                print(f"Resumo: {qual.get('resumo', 'N/A')}")
-                print("Riscos Detectados:")
-                for r in qual.get("riscos", []):
-                    print(f"  • {r}")
+        veredito = op.get("veredito")
+        if veredito:
+            print(f"  {i+1:2}. {formatar_card_resumido(veredito)}")
         else:
-            print(f"   -> Análise técnica e qualitativa disponível no modo detalhado.")
-            
-        print("-" * 50)
+            margem_val = (op["margem"] * 100) if op.get("margem") else 0
+            print(f"  {i+1:2}.   {op['ticker']:<8} Margem: {margem_val:+.1f}%")
+
+    # ── Veredito detalhado — Top 3 ────────────────────────────────────────
+    print("\n" + "="*50)
+    print("      ANÁLISE DETALHADA — TOP 3")
+    print("="*50)
+
+    for i, op in enumerate(oportunidades[:3]):
+        veredito = op.get("veredito")
+        if veredito:
+            print(formatar_veredito(veredito))
+        else:
+            # Fallback: exibe análise individual se motor não retornou veredito
+            analisar_fii(op["ticker"])
 
 
 def rodar_backtest(ticker: str):

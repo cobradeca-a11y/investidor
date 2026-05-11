@@ -3,40 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIIA — Radar Inteligente</title>
+    <title>FIIA — Inteligência de Investimento</title>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div class="glass-bg"></div>
+    
     <div class="app-container">
         <header>
             <div class="logo">
-                <span class="icon">🛰️</span>
-                <h1>FIIA Radar</h1>
+                <div class="logo-icon">🛰️</div>
+                <div class="logo-text">
+                    <h1>FIIA</h1>
+                    <span>Analista Sênior Autônomo</span>
+                </div>
             </div>
-            <div class="actions">
-                <button id="btnRadar" class="btn-primary">Ligar Radar 🛰️</button>
-                <button id="btnClear" class="btn-secondary">Limpar Cache 🧼</button>
+            <div class="header-actions">
+                <button id="btnRadar" class="btn-radar">
+                    <span class="icon">🔍</span> Ligar Radar
+                </button>
+                <button id="btnClear" class="btn-icon" title="Recarregar">
+                    🔄
+                </button>
             </div>
         </header>
 
         <main id="mainContent">
-            <div class="welcome-card">
-                <h2>Bem-vindo ao Futuro do Investimento</h2>
-                <p>Clique em "Ligar Radar" para varrer o mercado e encontrar as Top 15 oportunidades com análise de IA.</p>
+            <!-- Welcome View -->
+            <div id="welcomeView" class="welcome-section">
+                <div class="hero-card">
+                    <h2>Encontre as melhores oportunidades</h2>
+                    <p>O FIIA utiliza inteligência quantitativa e análise de IA para filtrar 550+ ativos e entregar vereditos precisos.</p>
+                    <div class="features-mini">
+                        <span>🛡️ Filtros de Sobrevivência</span>
+                        <span>📊 Motor de Valuation</span>
+                        <span>🧠 Análise de IA (Gemini)</span>
+                    </div>
+                </div>
             </div>
             
-            <div id="loading" class="hidden">
-                <div class="spinner"></div>
-                <p>Lançando a rede na internet...</p>
-                <span id="loadingStatus">Buscando oportunidades...</span>
+            <!-- Loading View -->
+            <div id="loading" class="loading-container hidden">
+                <div class="scanner-container">
+                    <div class="scanner-line"></div>
+                    <div class="ticker-flow">HGLG11... XPML11... KNRI11... BTLG11... VISC11...</div>
+                </div>
+                <div class="loading-text">
+                    <h3>Varrendo o Mercado</h3>
+                    <p id="loadingStatus">Filtrando fundos com liquidez e segurança...</p>
+                </div>
             </div>
 
+            <!-- Results View -->
             <div id="results" class="results-grid">
-                <!-- Cards aparecerão aqui -->
+                <!-- Cards renderizados via JS -->
             </div>
         </main>
+
+        <footer>
+            <p>FIIA Intelligence System v2.0 • Desenvolvido para Fins Educacionais</p>
+        </footer>
     </div>
 
     <script src="app.js"></script>

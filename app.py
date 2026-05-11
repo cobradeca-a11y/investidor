@@ -26,7 +26,8 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"status": "online", "message": "FIIA Intelligence API"}
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/web/index.html")
 
 @app.get("/api/radar")
 def get_radar():
