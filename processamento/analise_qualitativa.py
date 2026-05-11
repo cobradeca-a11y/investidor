@@ -209,7 +209,7 @@ Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
     # ── 7. Chama Gemini com retry para 429 ────────────────────────────────
     try:
         client   = genai.Client(api_key=settings.GEMINI_API_KEY)
-        model_id = "gemini-2.0-flash"
+        model_id = "gemini-2.5-flash"
 
         print(f"[ia] 🔍 Analista Sênior processando {ticker}...")
 
