@@ -13,3 +13,4 @@ google-genai
 duckduckgo-search
 fastapi
 uvicorn
+pdfplumber
