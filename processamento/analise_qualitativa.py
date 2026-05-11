@@ -2,10 +2,14 @@
 processamento/analise_qualitativa.py
 Analista Sênior FIIA — integração com Gemini.
 
+Fontes de contexto (por ordem de precisão):
+  1. Relatório Gerencial PDF via FNET/B3  ← fonte primária
+  2. Notícias Google News RSS / DuckDuckGo ← fallback se PDF falhar
+  3. Sem contexto qualitativo             ← análise só pelos indicadores
+
 Regra central:
-    A IA nunca deve compensar ausência de dado fundamentalista.
-    Se os campos mínimos obrigatórios estiverem ausentes ou zerados,
-    a análise é bloqueada antes de acionar o Gemini.
+  A IA nunca deve compensar ausência de dado fundamentalista.
+  Se os campos mínimos obrigatórios estiverem ausentes, a análise é bloqueada.
 """
 
 import json
@@ -15,27 +19,27 @@ from google import genai
 
 from config import settings
 from coleta.web_search import buscar_noticias
+from coleta.relatorio_fnet import obter_relatorio
 import banco.db as db
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Campos mínimos exigidos para liberar análise qualitativa
+# Campos mínimos obrigatórios
 # ─────────────────────────────────────────────────────────────────────────────
 
 _CAMPOS_OBRIGATORIOS = {
-    # campo no banco        : descrição legível
-    "pvp":                   "P/VP",
-    "dy_12m":                "Dividend Yield 12M",
-    "vacancia_fisica":       "Vacância Física",
-    "liquidez_diaria":       "Liquidez Diária",
+    "pvp":             "P/VP",
+    "dy_12m":          "Dividend Yield 12M",
+    "vacancia_fisica": "Vacância Física",
+    "liquidez_diaria": "Liquidez Diária",
 }
 
-_LIQUIDEZ_MINIMA = 1_000.0      # R$ 1.000 — evita fundos com liquidez zero ou residual
+_LIQUIDEZ_MINIMA = 1_000.0
 
 
 def _resposta_bloqueada(campos_faltando: list[str]) -> dict:
     return {
-        "score": None,
+        "score":  None,
         "status": "BLOQUEADO_DADOS_INSUFICIENTES",
         "resumo": "Análise bloqueada: dados fundamentalistas insuficientes para acionar a IA.",
         "riscos": [
@@ -44,25 +48,17 @@ def _resposta_bloqueada(campos_faltando: list[str]) -> dict:
             "Coleta fundamentalista falhou ou retornou dados incompletos.",
             "IA não acionada para evitar conclusão enviesada.",
         ],
+        "fonte_qualitativa": None,
     }
 
 
 def _validar_dados(dados_banco: dict, fii_info: dict) -> list[str]:
-    """
-    Retorna lista de campos problemáticos.
-    Lista vazia = dados suficientes para análise.
-    """
     problemas = []
-
     for campo, descricao in _CAMPOS_OBRIGATORIOS.items():
         valor = dados_banco.get(campo)
-
-        # Ausente ou explicitamente nulo
         if valor is None or valor == "" or valor == "N/A":
             problemas.append(descricao)
             continue
-
-        # Liquidez zero ou abaixo do mínimo
         if campo == "liquidez_diaria":
             try:
                 if float(valor) < _LIQUIDEZ_MINIMA:
@@ -70,7 +66,6 @@ def _validar_dados(dados_banco: dict, fii_info: dict) -> list[str]:
             except (TypeError, ValueError):
                 problemas.append(f"{descricao} com valor inválido")
 
-    # Segmento do fundo também é obrigatório
     if not fii_info.get("segmento"):
         problemas.append("Segmento do fundo")
 
@@ -83,77 +78,133 @@ def _validar_dados(dados_banco: dict, fii_info: dict) -> list[str]:
 
 def analisar_fundo_ia(ticker: str) -> dict:
     """
-    Analista Sênior FIIA: interpreta notícias e indicadores fundamentais.
+    Analista Sênior FIIA.
 
     Fluxo:
-        1. Carrega dados do banco
-        2. Valida campos mínimos → bloqueia se insuficientes
-        3. Verifica chave Gemini
-        4. Busca notícias (Google News RSS / DuckDuckGo)
-        5. Aciona Gemini com contexto completo
-        6. Retorna JSON estruturado
+      1. Carrega dados do banco
+      2. Valida campos mínimos → bloqueia se insuficientes
+      3. Verifica chave Gemini
+      4. Tenta obter Relatório Gerencial (FNET/PDF)  ← primário
+      5. Se falhar, busca notícias (Google News / DDG) ← fallback
+      6. Monta prompt e aciona Gemini
+      7. Retorna JSON estruturado com campo fonte_qualitativa
     """
     ticker = ticker.upper().strip()
 
-    # ── 1. Carrega dados do banco ──────────────────────────────────────────
+    # ── 1. Dados do banco ─────────────────────────────────────────────────
     dados_banco = db.get_by_ticker("indicadores", ticker) or {}
     fii_info    = db.get_by_ticker("fiis",        ticker) or {}
 
-    # ── 2. Validação de dados mínimos ──────────────────────────────────────
+    # ── 2. Validação mínima ───────────────────────────────────────────────
     campos_faltando = _validar_dados(dados_banco, fii_info)
     if campos_faltando:
         print(f"[ia] ❌ {ticker} bloqueado — dados insuficientes: {campos_faltando}")
         return _resposta_bloqueada(campos_faltando)
 
-    # ── 3. Verifica chave Gemini ───────────────────────────────────────────
+    # ── 3. Chave Gemini ───────────────────────────────────────────────────
     if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY in ("", "SUA_CHAVE_AQUI", "sua_chave_aqui"):
         return {
-            "score": None,
+            "score":  None,
             "status": "BLOQUEADO_SEM_CHAVE_API",
             "resumo": "⚠️ Chave Gemini não configurada. Defina GEMINI_API_KEY no arquivo .env.",
             "riscos": ["Chave de API ausente ou inválida"],
+            "fonte_qualitativa": None,
         }
 
-    # ── 4. Contexto financeiro (dados confirmados) ─────────────────────────
+    # ── 4. Contexto financeiro (dados confirmados) ────────────────────────
+    segmento   = fii_info.get("segmento", "Não informado")
+    pvp        = dados_banco.get("pvp")
+    dy_12m     = dados_banco.get("dy_12m")
+    vacancia   = dados_banco.get("vacancia_fisica")
+    liquidez   = dados_banco.get("liquidez_diaria", 0)
+    vpa        = dados_banco.get("vpa")
+    preco      = dados_banco.get("preco")
+    qtd_ativos = dados_banco.get("qtd_ativos")
+
     contexto_financeiro = f"""
-    Indicadores Confirmados de {ticker}:
-    - Segmento: {fii_info.get('segmento')}
-    - P/VP: {dados_banco.get('pvp')}
-    - Dividend Yield (12M): {dados_banco.get('dy_12m')}%
-    - Vacância Física: {dados_banco.get('vacancia_fisica')}%
-    - Liquidez Diária: R$ {float(dados_banco.get('liquidez_diaria', 0)):,.2f}
-    """
+INDICADORES FUNDAMENTALISTAS CONFIRMADOS — {ticker}
+────────────────────────────────────────────────────
+Segmento       : {segmento}
+Preço Atual    : R$ {preco}
+VP/Cota (VPA)  : R$ {vpa}
+P/VP           : {pvp}  {'← abaixo do patrimonial (desconto)' if pvp and float(pvp) < 1 else '← acima do patrimonial (ágio)'}
+DY 12M         : {float(dy_12m)*100:.2f}% a.a.
+Vacância Física: {vacancia}%
+Liquidez Diária: R$ {float(liquidez):,.0f}
+Qtd. Imóveis   : {qtd_ativos or 'Não informado'}
+────────────────────────────────────────────────────
+"""
 
-    # ── 5. Notícias (falha tolerada — não bloqueia análise) ────────────────
-    noticias_brutas = buscar_noticias(ticker)
-    contexto_noticias = (
-        noticias_brutas
-        if noticias_brutas
-        else "Nenhuma notícia recente encontrada. Foque exclusivamente nos indicadores."
-    )
+    # ── 5a. Tenta relatório gerencial FNET (fonte primária) ───────────────
+    texto_relatorio   = obter_relatorio(ticker)
+    fonte_qualitativa = None
 
-    # ── 6. Prompt ──────────────────────────────────────────────────────────
+    if texto_relatorio:
+        contexto_qualitativo = f"""
+RELATÓRIO GERENCIAL (fonte: FNET/B3 — documento oficial do gestor)
+────────────────────────────────────────────────────
+{texto_relatorio}
+────────────────────────────────────────────────────
+"""
+        fonte_qualitativa = "relatorio_gerencial_fnet"
+        print(f"[ia] 📄 {ticker} — usando Relatório Gerencial como contexto qualitativo.")
+
+    else:
+        # ── 5b. Fallback: notícias ─────────────────────────────────────────
+        noticias = buscar_noticias(ticker)
+        if noticias:
+            contexto_qualitativo = f"""
+NOTÍCIAS RECENTES (fonte: Google News / DuckDuckGo — fallback)
+────────────────────────────────────────────────────
+{noticias}
+────────────────────────────────────────────────────
+ATENÇÃO: Relatório gerencial não obtido. Análise qualitativa baseada em notícias
+de portal, menos precisas que o documento oficial. Seja conservador nos riscos.
+────────────────────────────────────────────────────
+"""
+            fonte_qualitativa = "noticias_portal"
+            print(f"[ia] 📰 {ticker} — FNET indisponível, usando notícias como fallback.")
+        else:
+            contexto_qualitativo = """
+CONTEXTO QUALITATIVO: Nenhuma fonte disponível.
+Analise exclusivamente pelos indicadores fundamentalistas acima.
+Não faça suposições sobre gestão, portfólio ou mercado sem dados concretos.
+"""
+            fonte_qualitativa = "apenas_indicadores"
+            print(f"[ia] ⚠️  {ticker} — sem contexto qualitativo. Análise pelos indicadores apenas.")
+
+    # ── 6. Prompt ─────────────────────────────────────────────────────────
     prompt = f"""
-    Você é um Analista de Investimentos Sênior especializado em FIIs brasileiros.
-    Os dados abaixo foram validados e estão completos. Não invente informações ausentes.
+Você é um Analista de Investimentos Sênior especializado em Fundos Imobiliários brasileiros (FIIs).
+Sua análise deve ser objetiva, baseada EXCLUSIVAMENTE nos dados fornecidos abaixo.
+Não invente informações. Não use conhecimento genérico sobre o fundo além do que está no contexto.
 
-    {contexto_financeiro}
+{contexto_financeiro}
 
-    Notícias e Sentimento do Mercado:
-    {contexto_noticias}
+{contexto_qualitativo}
 
-    Analise:
-    1. A sustentabilidade dos dividendos frente ao segmento.
-    2. Se o P/VP indica oportunidade real ou armadilha de valor.
-    3. Atribua um Score de 0 a 10 baseado exclusivamente nos dados acima.
+INSTRUÇÕES DE ANÁLISE:
+1. Avalie a sustentabilidade dos dividendos considerando segmento, DY e vacância.
+2. Interprete o P/VP: desconto é oportunidade real ou sinal de problema estrutural?
+3. Se o relatório gerencial estiver disponível, extraia obrigatoriamente:
+   - Tom do gestor (otimista, neutro ou defensivo)
+   - Eventos relevantes citados (vencimento de contratos, obras, novos inquilinos, inadimplência)
+   - Alertas de risco mencionados pelo próprio gestor
+4. Atribua Score de 0 a 10 baseado EXCLUSIVAMENTE nos dados acima:
+   - 8-10: oportunidade clara — margem de segurança e fundamentos sólidos
+   - 5-7:  fundo razoável com riscos identificados e gerenciáveis
+   - 3-4:  fundo com problemas que exigem cautela antes de aportar
+   - 0-2:  evitar — fundamentos comprometidos ou riscos críticos não resolvidos
 
-    Responda APENAS em JSON puro, sem markdown, sem explicações fora do JSON:
-    {{
-      "score": int,
-      "resumo": "string (máximo 3 parágrafos)",
-      "riscos": ["string", "string"]
-    }}
-    """
+Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
+{{
+  "score": <inteiro 0-10>,
+  "resumo": "<análise objetiva em até 3 parágrafos>",
+  "riscos": ["<risco específico 1>", "<risco específico 2>", "<risco específico 3>"],
+  "tom_gestor": "<otimista|neutro|defensivo|nao_disponivel>",
+  "eventos_relevantes": ["<evento 1>", "<evento 2>"]
+}}
+"""
 
     # ── 7. Chama Gemini com retry para 429 ────────────────────────────────
     try:
@@ -186,19 +237,25 @@ def analisar_fundo_ia(ticker: str) -> dict:
 
         data = json.loads(texto.strip())
 
-        # Garante que score veio como número
         if not isinstance(data.get("score"), (int, float)):
-            raise ValueError(f"Score inválido retornado pela IA: {data.get('score')}")
+            raise ValueError(f"Score inválido: {data.get('score')}")
 
-        data["status"] = "OK"
-        print(f"[ia] ✅ Veredito para {ticker}: score {data['score']}/10")
+        data["status"]            = "OK"
+        data["fonte_qualitativa"] = fonte_qualitativa
+
+        print(
+            f"[ia] ✅ {ticker} — Score: {data['score']}/10 | "
+            f"Fonte: {fonte_qualitativa} | "
+            f"Tom: {data.get('tom_gestor', 'N/A')}"
+        )
         return data
 
     except Exception as e:
         print(f"[ia] ❌ Erro ao acionar Gemini: {e}")
         return {
-            "score": None,
+            "score":  None,
             "status": "ERRO_IA",
             "resumo": f"Erro técnico ao acionar o Gemini: {str(e)[:120]}",
             "riscos": ["Falha na comunicação com a IA — tente novamente em instantes"],
+            "fonte_qualitativa": fonte_qualitativa,
         }
