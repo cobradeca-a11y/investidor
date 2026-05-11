@@ -56,56 +56,83 @@ function renderResults(oportunidades) {
             'COMPRAR': '🟢', 'COMPRAR_PARCIAL': '🟡', 'AGUARDAR': '🔵', 
             'MANTER': '⚪', 'MONITORAR': '🟠', 'EVITAR': '🔴'
         }[v.decisao] || '⚪';
-
         const fmtReais = (val) => val ? `R$ ${parseFloat(val).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : 'N/A';
         const fmtPct = (val) => val ? `${val > 0 ? '+' : ''}${parseFloat(val).toFixed(1)}%` : 'N/A';
 
         card.innerHTML = `
             <div class="card-header">
-                <div class="ticker-info">
-                    <h3>${fii.ticker}</h3>
-                    <span class="segment-badge">${v.segmento || 'Fundo'}</span>
+                <div class="ticker-box">
+                    <span class="ticker-symbol">${fii.ticker}</span>
+                    <span class="segment-badge">${fii.segmento || 'FII'}</span>
                 </div>
-                <div class="veredito-badge ${statusClass}">
-                    ${emojiDecisao} ${v.decisao?.replace('_', ' ') || 'ANALISANDO'}
-                </div>
+                <div class="decision-badge ${fii.decisao.toLowerCase()}">${fii.decisao.replace('_', ' ')}</div>
             </div>
-            
-            <div class="prices-grid">
+
+            <div class="confidence-bar">
+                <span class="label">Confiança:</span>
+                <span class="confidence-value ${fii.confianca.toLowerCase()}">${fii.confianca}</span>
+            </div>
+
+            <div class="price-grid">
                 <div class="price-item">
-                    <span class="price-label">Preço Atual</span>
-                    <span class="price-value">${fmtReais(v.preco_atual)}</span>
+                    <span class="label">Preço Atual</span>
+                    <span class="value">R$ ${fii.preco_atual?.toFixed(2) || '---'}</span>
+                </div>
+                <div class="price-item highlight">
+                    <span class="label">Preço Justo</span>
+                    <span class="value">R$ ${fii.preco_justo?.toFixed(2) || '---'}</span>
                 </div>
                 <div class="price-item">
-                    <span class="price-label">Preço Justo</span>
-                    <span class="price-value">${fmtReais(v.preco_justo)}</span>
-                </div>
-                <div class="price-item">
-                    <span class="price-label">Entrada Ideal</span>
-                    <span class="price-value price-highlight">${fmtReais(v.preco_entrada)}</span>
+                    <span class="label">Entrada Ideal</span>
+                    <span class="value">R$ ${fii.preco_entrada?.toFixed(2) || '---'}</span>
                 </div>
             </div>
 
-            <div style="display: flex; gap: 20px; margin-bottom: 20px; font-size: 0.85rem; color: var(--text-dim);">
-                <div>Margem: <strong style="color: var(--text-main)">${fmtPct(v.margem)}</strong></div>
-                <div>P/VP: <strong style="color: var(--text-main)">${v.pvp || 'N/A'}</strong></div>
-                <div>DY 12M: <strong style="color: var(--text-main)">${fmtPct(v.dy_12m_pct)}</strong></div>
+            <div class="metrics-grid">
+                <div class="metric">
+                    <span class="label">Margem</span>
+                    <span class="value ${fii.margem > 0 ? 'pos' : 'neg'}">${fii.margem > 0 ? '+' : ''}${fii.margem}%</span>
+                </div>
+                <div class="metric">
+                    <span class="label">P/VP</span>
+                    <span class="value">${fii.pvp?.toFixed(2) || '---'}</span>
+                </div>
+                <div class="metric">
+                    <span class="label">DY 12M</span>
+                    <span class="value">+${fii.dy_12m_pct?.toFixed(1) || '---'}%</span>
+                </div>
+                <div class="metric">
+                    <span class="label">Recorrência</span>
+                    <span class="value">${fii.pct_recorrente || '---'}%</span>
+                </div>
             </div>
 
-            <div class="card-ia">
-                <div class="ia-header">
-                    <span class="ia-title">🧠 Inteligência FIIA</span>
-                    <span class="ia-score">Score: ${v.score_ia || '?'}/10</span>
-                </div>
-                <p class="ia-resumo">${qual.resumo || 'Análise qualitativa não realizada para este fundo (fora do Top 3 ou bloqueada).'}</p>
-                <div class="riscos-tags">
-                    ${(v.riscos_ia || []).slice(0, 3).map(r => `<span class="tag-risco">${r}</span>`).join('')}
-                    ${v.ia_status === 'BLOQUEADO_DADOS_INSUFICIENTES' ? '<span class="tag-risco">Dados insuficientes p/ IA</span>' : ''}
+            <div class="gate-trail">
+                <div class="gate-title">Esteira de Qualidade (8 Gates)</div>
+                <div class="gates-container">
+                    ${fii.trilha_gates.map(gate => `<span class="gate-tag">${gate}</span>`).join('')}
                 </div>
             </div>
-            
-            <div style="margin-top: 15px; font-size: 0.75rem; color: var(--text-dim);">
-                <p><strong>Motivo:</strong> ${v.motivo || 'N/A'}</p>
+
+            <div class="ai-analysis">
+                <div class="ai-header">
+                    <span class="ai-icon">🧠</span>
+                    <span class="ai-label">Inteligência FIIA</span>
+                    <span class="ai-score">Score: ${fii.score_ia || '?'}/10</span>
+                </div>
+                <div class="ai-content">
+                    ${fii.motivo || 'Aguardando processamento...'}
+                </div>
+            </div>
+
+            ${fii.alertas && fii.alertas.length > 0 ? `
+                <div class="alerts-box">
+                    ${fii.alertas.map(alert => `<div class="alert-item">⚠️ ${alert}</div>`).join('')}
+                </div>
+            ` : ''}
+
+            <div class="card-footer">
+                <span class="footer-info">Próxima Revisão: ${fii.revisao || 'Próximo Radar'}</span>
             </div>
         `;
         

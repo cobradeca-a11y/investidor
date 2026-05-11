@@ -103,20 +103,10 @@ def _buscar_doc_id(ticker: str) -> tuple[str, str] | tuple[None, None]:
     Retorna (doc_id, data_referencia) do relatório gerencial mais recente.
     """
     params = {
-        "d": "0", "o": "1", "f": "1", "l": "1", "c": "4",
-        "cnpjFundo": "",
         "tipoFundo": "FII",
-        "idCategoriaDocumento": "0",
         "idTipoDocumento": "41", # Relatório Gerencial
-        "idEspecieDocumento": "0",
-        "dataInicial": "",
-        "dataFinal": "",
-        "idFundo": "",
-        "referencia": "",
         "search[value]": ticker,
-        "search[regex]": "false",
-        "ativo": "true",
-        "palavrasChave": ticker
+        "ativo": "true"
     }
     
     try:

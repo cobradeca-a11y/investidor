@@ -248,17 +248,25 @@ Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
 
         # Limpeza de caracteres que costumam quebrar o json.loads
         texto_limpo = texto.strip()
-        # Remove possíveis quebras de linha dentro de strings ou caracteres de controle
-        texto_limpo = texto_limpo.replace('\n', ' ').replace('\r', '')
+        
+        # Remove comentários do JSON se houver (o Gemini às vezes faz isso)
+        texto_limpo = re.sub(r'//.*', '', texto_limpo)
         
         try:
+            # Tenta o parse direto
             data = json.loads(texto_limpo)
         except json.JSONDecodeError:
-            # Segunda tentativa: tenta apenas o que estiver entre chaves { }
+            # Se falhar, tenta capturar apenas o objeto entre chaves
             import re
-            match = re.search(r'\{.*\}', texto, re.DOTALL)
+            # Busca do primeiro { ao último }
+            match = re.search(r'(\{.*\})', texto_limpo, re.DOTALL)
             if match:
-                data = json.loads(match.group())
+                try:
+                    # Remove quebras de linha dentro do match para estabilizar o parse
+                    json_str = match.group(1).replace('\n', ' ').replace('\r', ' ')
+                    data = json.loads(json_str)
+                except:
+                    raise
             else:
                 raise
 

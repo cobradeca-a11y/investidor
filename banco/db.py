@@ -80,8 +80,12 @@ def buscar_todos(sql: str, params: tuple = ()) -> list[sqlite3.Row]:
 
 def executar(sql: str, params: tuple = ()) -> None:
     """Executa SQL sem retorno (UPDATE, DELETE)."""
-    with conectar() as conn:
+    conn = conectar()
+    try:
         conn.execute(sql, params)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_by_ticker(tabela: str, ticker: str) -> dict | None:

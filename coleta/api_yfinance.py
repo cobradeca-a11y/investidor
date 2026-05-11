@@ -8,6 +8,7 @@ import pandas as pd
 from datetime import date
 from typing import Optional
 from banco import db
+from processamento.dividendo_recorrente import classificar_dividendos
 
 def coletar_historico_dividendos(ticker: str) -> None:
     """
@@ -51,6 +52,9 @@ def coletar_historico_dividendos(ticker: str) -> None:
             db.upsert("dividendos", registro)
             
         print(f"[yfinance] Histórico de dividendos do {ticker} atualizado com {len(divs)} pagamentos.")
+        
+        # Reclassifica recorrentes vs extraordinários
+        classificar_dividendos(ticker)
         
     except Exception as e:
         print(f"[yfinance] Erro ao puxar dividendos de {ticker}: {e}")
