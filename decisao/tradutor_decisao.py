@@ -131,6 +131,36 @@ def formatar_veredito(v: dict) -> str:
             f"     {v['ajuste_ia']}",
         ]
 
+    # Dimensionamento
+    dim = v.get("dimensionamento")
+    if dim:
+        linhas += [
+            "",
+            "  📐 DIMENSIONAMENTO",
+            f"     Alocação sugerida: {dim.get('pct_carteira', '?')}% da carteira",
+            f"     Semáforo macro:    {dim.get('semaforo', '?')}",
+            f"     Score setorial:    {dim.get('score_setorial', '?')}/10",
+        ]
+        if dim.get("reducao_macro"):
+            linhas.append(f"     ⚠️  {dim['reducao_macro']}")
+        if dim.get("reducao_setorial"):
+            linhas.append(f"     ⚠️  {dim['reducao_setorial']}")
+        if dim.get("reducao_travas"):
+            linhas.append(f"     ⚠️  {dim['reducao_travas']}")
+
+    # Zonas de entrada
+    zonas = v.get("zonas_entrada")
+    if zonas and zonas.get("calculavel"):
+        linhas += [
+            "",
+            "  🎯 ZONAS DE ENTRADA",
+            f"     Zona atual:        {zonas.get('zona_atual', '?')}",
+            f"     Zona forte:        R$ {zonas.get('zona_forte', '?')}",
+            f"     Zona parcial:      R$ {zonas.get('zona_parcial', '?')}",
+            f"     Zona espera:       R$ {zonas.get('zona_espera', '?')}",
+            f"     👉 {zonas.get('acao', '')}",
+        ]
+
     # Quando revisar
     linhas += [
         "",

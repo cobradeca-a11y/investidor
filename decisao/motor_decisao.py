@@ -29,6 +29,10 @@ from processamento.confiabilidade import calcular_score as calcular_confiabilida
 from processamento.margem_seguranca import calcular_margem_seguranca
 from processamento.dividendo_recorrente import calcular_dy_recorrente, percentual_recorrente
 from mercado.comparador_cdi import calcular_premio
+from mercado.semaforo_macro import avaliar as avaliar_macro, teto_decisao as teto_macro
+from mercado.contexto_setorial import score_segmento
+from decisao.dimensionamento import calcular as calcular_dimensionamento
+from decisao.zonas_entrada import calcular as calcular_zonas
 from config.settings import (
     LIQUIDEZ_MINIMA_DIARIA,
     CONFIABILIDADE_MINIMA,
@@ -161,7 +165,16 @@ def _gate0_validacao(ticker: str, ind: dict, fii_info: dict) -> dict:
             f"Campos essenciais ausentes: {', '.join(ausentes)}."
         )
 
-    return _gate_result(0, "APROVADO_DADOS", "Dados mínimos presentes.")
+    # Semáforo macro — não elimina, mas registra teto
+    macro = avaliar_macro()
+    if macro["cor"] == "VERMELHO":
+        return _gate_result(
+            0, "APROVADO_DADOS_SEMAFORO_VERMELHO",
+            f"Dados OK. Semáforo MACRO: VERMELHO — {macro['motivo']} "
+            f"Teto de decisão: {macro['teto_decisao']}."
+        )
+
+    return _gate_result(0, "APROVADO_DADOS", f"Dados mínimos presentes. Semáforo macro: {macro['cor']}.")
 
 
 def _gate1_elegibilidade(ind: dict, fii_info: dict, meses_hist: int) -> dict:
@@ -426,8 +439,8 @@ def _gate6_qualitativo(score_ia: Optional[float], riscos_ia: Optional[list],
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _gate7_veredito(gates: dict, margem: Optional[float], confiabilidade: int,
-                     tom_gestor: Optional[str], ia_status: str) -> tuple:
-    """Traduz os resultados dos gates em (decisao, motivo)."""
+                     tom_gestor: Optional[str], ia_status: str, segmento: str = "") -> tuple:
+    """Traduz os resultados dos gates em (decisao, motivo) aplicando teto macro."""
     g4 = gates.get(4, {})
     g5 = gates.get(5, {})
     g6 = gates.get(6, {})
@@ -469,6 +482,14 @@ def _gate7_veredito(gates: dict, margem: Optional[float], confiabilidade: int,
     # IA indisponível: anota mas não bloqueia
     if ia_status != "OK" and decisao in ("COMPRAR", "COMPRAR_PARCIAL"):
         motivo = f"{motivo} (sem validação qualitativa - IA indisponível)."
+
+    # Aplica teto macro
+    teto = teto_macro()
+    ordem = ["COMPRAR", "COMPRAR_PARCIAL", "AGUARDAR", "MONITORAR", "EVITAR"]
+    if decisao in ordem and teto in ordem:
+        if ordem.index(decisao) < ordem.index(teto):
+            motivo = f"{motivo} [Teto macro: {teto}]"
+            decisao = teto
 
     return decisao, motivo
 
@@ -594,20 +615,16 @@ def decidir(
     # ── Gate 7: Veredito final ───────────────────────────────────────────
     decisao, motivo = _gate7_veredito(gates, margem, confiabilidade, tom_gestor, ia_status)
 
-    # IA indisponível por causa externa (erro de rede, quota, FNET) não penaliza confiança
-    ia_ok = ia_status == "OK"
-    ia_externa_falhou = ia_status in ("INDISPONIVEL", "ERRO", "BLOQUEADO_QUOTA", "ERRO_IA")
-    
-    if confiabilidade >= 90 and (ia_ok or ia_externa_falhou):
+    if confiabilidade >= 90 and ia_status == "OK":
         confianca = "ALTA"
-    elif confiabilidade >= 75:
+    elif confiabilidade >= 75 or ia_status == "OK":
         confianca = "MEDIA"
     else:
         confianca = "BAIXA"
 
     revisao = _quando_revisar(decisao, margem, vacancia, tom_gestor)
 
-    return _montar_retorno(
+    resultado = _montar_retorno(
         ticker, decisao, motivo,
         gate_parada=7, gates=gates,
         penalidades=penalidades_acumuladas, alertas=alertas,
@@ -620,6 +637,27 @@ def decidir(
         score_ia=score_ia, riscos_ia=riscos_ia, tom_gestor=tom_gestor,
         ia_status=ia_status, confianca=confianca, revisao=revisao
     )
+
+    # Dimensionamento e zonas — só para decisões de compra
+    if decisao in ("COMPRAR", "COMPRAR_PARCIAL", "AGUARDAR", "MONITORAR"):
+        try:
+            resultado["dimensionamento"] = calcular_dimensionamento(
+                ticker=ticker,
+                margem=margem,
+                meses_historico=meses_hist,
+                travas_ativas=[g["status"] for g in gates.values() if "ELIMINADO" in g["status"] or "BLOQUEADO" in g["status"]],
+                segmento=segmento,
+                score_ia=score_ia,
+            )
+        except Exception:
+            pass
+
+        try:
+            resultado["zonas_entrada"] = calcular_zonas(ticker)
+        except Exception:
+            pass
+
+    return resultado
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -691,6 +729,10 @@ def _montar_retorno(
             str(n): {"status": g["status"], "motivo": g["motivo"]}
             for n, g in sorted(gates.items())
         },
+
+        # Dimensionamento e zonas de entrada
+        "dimensionamento": None,  # calculado abaixo se aplicável
+        "zonas_entrada":   None,
 
         # Metadados
         "revisao":         revisao,
