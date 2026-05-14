@@ -2,13 +2,6 @@
 api/aprendizado.py
 
 API da camada de aprendizado operacional/tentativa e erro do FIIA.
-
-Objetivo:
-- registrar simulações;
-- registrar resultados observados;
-- consultar acertos, falsos positivos e falsos negativos;
-- detectar deterioração de regras;
-- registrar sugestões de ajuste de peso sem aplicar automaticamente.
 """
 from __future__ import annotations
 
@@ -27,6 +20,7 @@ class SimulacaoRequest(BaseModel):
     ticker: str
     acao_simulada: str
     decisao_origem: str | None = None
+    segmento: str | None = None
     score_final: float | None = None
     confianca: str | None = None
     risco: str | None = None
