@@ -178,6 +178,57 @@ def _salvar_registro(registro: dict[str, Any]) -> None:
     db.executar(sql, tuple(registro.values()))
 
 
+def _inferir_ano_do_nome(nome: str) -> int | None:
+    import re
+    match = re.search(r"(20\d{2})", nome)
+    return int(match.group(1)) if match else None
+
+
+def _processar_arquivos(ano: int | None, arquivos: list[tuple[str, pd.DataFrame]]) -> int:
+    total = 0
+    for nome_arquivo, df in arquivos:
+        registros = _extrair_registros(ano or 0, nome_arquivo, df)
+        for registro in registros:
+            _salvar_registro(registro)
+        total += len(registros)
+    return total
+
+
+def importar_zip_local(caminho_zip: str | Path, ano: int | None = None) -> dict[str, Any]:
+    """Importa um ZIP de informe mensal já baixado localmente."""
+    garantir_tabela()
+    caminho = Path(caminho_zip)
+    ano_final = ano or _inferir_ano_do_nome(caminho.name)
+
+    try:
+        conteudo = caminho.read_bytes()
+        arquivos = _ler_csv_do_zip(conteudo)
+        total = _processar_arquivos(ano_final, arquivos)
+        resumo = {
+            "origem": "local",
+            "arquivo_zip": str(caminho),
+            "ano": ano_final,
+            "arquivos": len(arquivos),
+            "registros": total,
+        }
+        observabilidade.registrar_evento(
+            "INFO",
+            "coleta.cvm_informe_mensal",
+            "Importação local concluída",
+            fonte="CVM",
+            contexto=resumo,
+        )
+        return resumo
+    except Exception as erro:
+        observabilidade.registrar_erro(
+            "coleta.cvm_informe_mensal",
+            erro,
+            fonte="CVM",
+            contexto={"arquivo_zip": str(caminho), "ano": ano_final},
+        )
+        return {"origem": "local", "arquivo_zip": str(caminho), "ano": ano_final, "erro": str(erro), "registros": 0}
+
+
 def coletar_ano(ano: int) -> dict[str, Any]:
     """Baixa e persiste informes mensais de FIIs de um ano."""
     garantir_tabela()
@@ -185,15 +236,9 @@ def coletar_ano(ano: int) -> dict[str, Any]:
     try:
         conteudo = _baixar_zip(ano)
         arquivos = _ler_csv_do_zip(conteudo)
+        total = _processar_arquivos(ano, arquivos)
 
-        total = 0
-        for nome_arquivo, df in arquivos:
-            registros = _extrair_registros(ano, nome_arquivo, df)
-            for registro in registros:
-                _salvar_registro(registro)
-            total += len(registros)
-
-        resumo = {"ano": ano, "arquivos": len(arquivos), "registros": total}
+        resumo = {"origem": "download", "ano": ano, "arquivos": len(arquivos), "registros": total}
         observabilidade.registrar_evento(
             "INFO",
             "coleta.cvm_informe_mensal",
@@ -210,7 +255,7 @@ def coletar_ano(ano: int) -> dict[str, Any]:
             fonte="CVM",
             contexto={"ano": ano},
         )
-        return {"ano": ano, "erro": str(erro), "registros": 0}
+        return {"origem": "download", "ano": ano, "erro": str(erro), "registros": 0}
 
 
 def coletar_anos(anos: list[int]) -> list[dict[str, Any]]:
