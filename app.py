@@ -9,6 +9,7 @@ from servicos import agendador
 from sistema import observabilidade
 from api.auditoria import router as auditoria_router
 from api.carteira import router as carteira_router
+from api.aprendizado import router as aprendizado_router
 
 app = FastAPI(title="FIIA API", version="1.0")
 
@@ -18,6 +19,7 @@ agendador.iniciar_agendador_background()
 # APIs
 app.include_router(auditoria_router)
 app.include_router(carteira_router)
+app.include_router(aprendizado_router)
 
 # Servir a interface web
 app.mount("/web", StaticFiles(directory="static"), name="static")
