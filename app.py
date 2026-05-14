@@ -8,14 +8,16 @@ import banco.db as db
 from servicos import agendador
 from sistema import observabilidade
 from api.auditoria import router as auditoria_router
+from api.carteira import router as carteira_router
 
 app = FastAPI(title="FIIA API", version="1.0")
 
 # Iniciar o Funcionário Digital (Rotinas em Segundo Plano)
 agendador.iniciar_agendador_background()
 
-# API de auditoria
+# APIs
 app.include_router(auditoria_router)
+app.include_router(carteira_router)
 
 # Servir a interface web
 app.mount("/web", StaticFiles(directory="static"), name="static")
@@ -63,7 +65,6 @@ def get_radar():
             }
         )
 
-        # Nunca derrubar o frontend com traceback cru
         return {
             "status": "erro",
             "oportunidades": [],
