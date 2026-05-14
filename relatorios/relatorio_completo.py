@@ -2,18 +2,6 @@
 relatorios/relatorio_completo.py
 
 Relatórios completos do FIIA.
-
-Objetivo:
-- resumo executivo;
-- ranking;
-- análise individual;
-- justificativas;
-- riscos;
-- cenário macro;
-- comparação entre ativos;
-- estratégia operacional;
-- alertas;
-- próximos passos.
 """
 from __future__ import annotations
 
@@ -24,6 +12,7 @@ from aprendizado.avaliador import taxa_acerto
 from aprendizado.tentativa_erro import resumo_aprendizado, detectar_deterioracao_regra
 from carteira.repositorio_carteira import resumo_carteira
 from decisao.decisao_com_confianca import decidir
+from mercado.cenario_macro import obter_cenario_macro
 from sistema import observabilidade
 
 
@@ -80,12 +69,16 @@ def gerar_relatorio_completo(tickers: list[str] | None = None) -> dict[str, Any]
     tickers = tickers or []
     analises = comparar_ativos(tickers) if tickers else []
     carteira = resumo_carteira()
+    cenario_macro = obter_cenario_macro()
     aprendizado_90 = taxa_acerto(90)
     aprendizado_365 = taxa_acerto(365)
     tentativa_erro = resumo_aprendizado()
     deterioracoes = detectar_deterioracao_regra(min_amostras=10)
 
     alertas = []
+    for alerta_macro in cenario_macro.get("impacto_fiis", {}).get("alertas", []):
+        alertas.append(f"Macro: {alerta_macro}")
+
     for item in analises:
         if item.get("fallback_patrimonial_usado"):
             alertas.append(f"{item['ticker']}: fundamento patrimonial em fallback.")
@@ -115,13 +108,13 @@ def gerar_relatorio_completo(tickers: list[str] | None = None) -> dict[str, Any]
             "alertas": len(alertas),
             "custo_total_carteira": carteira.get("custo_total"),
             "quantidade_ativos_carteira": carteira.get("quantidade_ativos"),
+            "regime_juros": cenario_macro.get("regime_juros"),
+            "regime_inflacao": cenario_macro.get("regime_inflacao"),
         },
         "ranking": ranking,
         "analise_individual": analises,
         "riscos_e_alertas": alertas,
-        "cenario_macro": {
-            "observacao": "Cenario macro deve ser enriquecido pelo modulo Banco Central/mercado.",
-        },
+        "cenario_macro": cenario_macro,
         "carteira": carteira,
         "aprendizado": {
             "taxa_acerto_90d": aprendizado_90,
@@ -130,14 +123,14 @@ def gerar_relatorio_completo(tickers: list[str] | None = None) -> dict[str, Any]
             "deterioracoes": deterioracoes,
         },
         "estrategia_operacional": {
-            "regra": "Priorizar ativos com decisao favoravel, CVM patrimonial disponivel, Gate 5.5 aprovado e margem positiva.",
-            "controle": "Aportes devem respeitar politica de carteira, caixa minimo e limite por ativo/segmento.",
+            "regra": "Priorizar ativos com decisão favorável, CVM patrimonial disponível, Gate 5.5 aprovado e margem positiva.",
+            "controle": "Aportes devem respeitar política de carteira, caixa mínimo, limite por ativo/segmento e cenário macro.",
         },
         "proximos_passos": [
-            "Validar dados oficiais CVM antes de decisao forte.",
-            "Registrar simulacoes para medir falsos positivos e negativos.",
-            "Conectar cenario macro detalhado ao relatorio.",
-            "Gerar versao exportavel em Markdown/PDF futuramente.",
+            "Validar dados oficiais CVM antes de decisão forte.",
+            "Registrar simulações para medir falsos positivos e negativos.",
+            "Usar cenário macro para ajustar agressividade dos aportes.",
+            "Gerar versão exportável em Markdown/PDF futuramente.",
         ],
     }
 
@@ -157,12 +150,23 @@ def gerar_markdown_relatorio(relatorio: dict[str, Any]) -> str:
     linhas.append(f"Gerado em: {relatorio.get('gerado_em')}")
     linhas.append("")
     resumo = relatorio.get("resumo_executivo", {})
+    macro = relatorio.get("cenario_macro", {})
     linhas.append("## Resumo executivo")
     linhas.append(f"- Ativos analisados: {resumo.get('ativos_analisados')}")
     linhas.append(f"- Ativos compraveis: {resumo.get('ativos_compraveis')}")
     linhas.append(f"- Ativos em monitoramento: {resumo.get('ativos_monitorar')}")
     linhas.append(f"- Alertas: {resumo.get('alertas')}")
     linhas.append(f"- Custo total da carteira: {resumo.get('custo_total_carteira')}")
+    linhas.append(f"- Regime de juros: {macro.get('regime_juros')}")
+    linhas.append(f"- Regime de inflação: {macro.get('regime_inflacao')}")
+    linhas.append("")
+
+    linhas.append("## Cenário macro")
+    linhas.append(f"- SELIC: {macro.get('selic')}")
+    linhas.append(f"- CDI: {macro.get('cdi')}")
+    linhas.append(f"- IPCA: {macro.get('ipca')}")
+    for alerta in macro.get("impacto_fiis", {}).get("alertas", []):
+        linhas.append(f"- {alerta}")
     linhas.append("")
 
     linhas.append("## Ranking")
