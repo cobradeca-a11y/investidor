@@ -2,16 +2,6 @@
 decisao/motor_decisao_cvm_first.py
 
 Adaptador CVM-first para o motor de decisão atual.
-
-Regra:
-- mantém o motor_decisao existente funcionando;
-- resolve dados patrimoniais via CVM primeiro;
-- executa Gate 5.5 de confiança estrutural dos dados;
-- anexa VP/cota, patrimônio e P/VP oficiais ao veredito;
-- expõe fallback quando a CVM não estiver disponível;
-- rebaixa decisões fortes se o fundamento patrimonial vier apenas de fallback frágil.
-
-Este arquivo é ponte segura para migrar depois a lógica nativa do motor.
 """
 from __future__ import annotations
 
@@ -33,16 +23,12 @@ def _normalizar_acao(acao: str | None) -> str:
 
 def _rebaixar_por_fallback_patrimonial(acao: str, patrimonio: dict[str, Any]) -> str:
     acao_norm = _normalizar_acao(acao)
-
     if patrimonio.get("usou_cvm"):
         return acao_norm
-
     if acao_norm == "COMPRAR":
         return "COMPRAR_PARCIAL"
-
     if acao_norm in {"COMPRAR_PARCIAL", "COMPRAR_PARCIALMENTE"}:
         return "MONITORAR"
-
     return acao_norm
 
 
@@ -52,17 +38,35 @@ def _aplicar_gate55_na_decisao(acao: str, gate55: dict[str, Any]) -> str:
 
     if status in {"BLOQUEADO_CONFIANCA_DADOS_INSUFICIENTE", "BLOQUEADO_ERRO_CONFIANCA_DADOS"}:
         return "MONITORAR"
-
     if status == "BLOQUEADO_COMPRA_FORTE_DADOS_FRAGEIS":
         if acao_norm == "COMPRAR":
             return "COMPRAR_PARCIAL"
         if acao_norm in {"COMPRAR_PARCIAL", "COMPRAR_PARCIALMENTE"}:
             return "MONITORAR"
-
     if status == "PENALIZADO_CONFIANCA_DADOS" and acao_norm == "COMPRAR":
         return "COMPRAR_PARCIAL"
-
     return acao_norm
+
+
+def _registrar_gate55(veredito: dict[str, Any], gate55: dict[str, Any]) -> None:
+    status = gate55.get("status", "NAO_REGISTRADO")
+    trilha = veredito.setdefault("trilha_gates", [])
+    marcador = f"G5.5:{status}"
+    if marcador not in trilha:
+        trilha.append(marcador)
+
+    detalhes = veredito.setdefault("gates_detalhes", {})
+    detalhes["55"] = {
+        "status": status,
+        "motivo": gate55.get("motivo"),
+        "score_confianca_dados": gate55.get("score_confianca_dados"),
+        "nivel_uso_dados": gate55.get("nivel_uso_dados"),
+        "fonte_patrimonial": gate55.get("fonte_patrimonial"),
+        "eliminado": gate55.get("eliminado", False),
+    }
+
+    if gate55.get("eliminado"):
+        veredito["gate_parada"] = 55
 
 
 def decidir(
@@ -72,7 +76,6 @@ def decidir(
     tom_gestor: str | None = None,
     ia_status: str = "INDISPONIVEL",
 ) -> dict:
-    """Executa decisão com prioridade patrimonial CVM e Gate 5.5."""
     ticker_norm = ticker.upper().replace(".SA", "").strip()
 
     try:
@@ -86,6 +89,7 @@ def decidir(
 
         patrimonio = resolver_patrimonio(ticker_norm)
         gate55 = gate55_confianca_dados(ticker_norm)
+        _registrar_gate55(veredito, gate55)
 
         decisao_original = _normalizar_acao(veredito.get("decisao") or veredito.get("status"))
         decisao_pos_fallback = _rebaixar_por_fallback_patrimonial(decisao_original, patrimonio)
@@ -105,18 +109,12 @@ def decidir(
         motivos_extra = []
         if decisao_pos_fallback != decisao_original:
             motivos_extra.append(
-                f"Decisão rebaixada por ausência de dado patrimonial CVM: "
-                f"{decisao_original} -> {decisao_pos_fallback}. "
-                "Fundamentus/banco atual usado apenas como fallback auxiliar."
+                f"Decisão rebaixada por ausência de dado patrimonial CVM: {decisao_original} -> {decisao_pos_fallback}."
             )
-
         if decisao_final != decisao_pos_fallback:
             motivos_extra.append(
-                f"Gate 5.5 ajustou a decisão por confiança estrutural dos dados: "
-                f"{decisao_pos_fallback} -> {decisao_final}. "
-                f"Status: {gate55.get('status')}."
+                f"Gate 5.5 ajustou a decisão: {decisao_pos_fallback} -> {decisao_final}. Status: {gate55.get('status')}."
             )
-
         if decisao_final != decisao_original:
             veredito["decisao_original"] = decisao_original
             veredito["decisao"] = decisao_final
@@ -125,36 +123,27 @@ def decidir(
         observabilidade.registrar_evento(
             "INFO",
             "decisao.motor_cvm_first",
-            "Decisão processada com resolvedor patrimonial CVM-first e Gate 5.5",
+            "Decisão processada com CVM-first e Gate 5.5",
             ticker=ticker_norm,
             contexto={
                 "decisao": veredito.get("decisao"),
-                "decisao_original": veredito.get("decisao_original"),
-                "usou_cvm_patrimonial": veredito.get("usou_cvm_patrimonial"),
                 "fonte_patrimonial": veredito.get("fonte_patrimonial"),
                 "gate55_status": gate55.get("status"),
-                "score_confianca_dados": gate55.get("score_confianca_dados"),
             },
         )
 
         return veredito
 
     except Exception as erro:
-        observabilidade.registrar_erro(
-            "decisao.motor_cvm_first",
-            erro,
-            ticker=ticker_norm,
-        )
+        observabilidade.registrar_erro("decisao.motor_cvm_first", erro, ticker=ticker_norm)
         return {
             "ticker": ticker_norm,
             "decisao": "MONITORAR",
             "status": "ERRO_MOTOR_CVM_FIRST",
             "motivo": f"Falha controlada no motor CVM-first: {erro}",
+            "gate_parada": 55,
+            "trilha_gates": ["G5.5:BLOQUEADO_ERRO_CONFIANCA_DADOS"],
+            "gates_detalhes": {"55": {"status": "BLOQUEADO_ERRO_CONFIANCA_DADOS", "motivo": str(erro), "eliminado": True}},
             "usou_cvm_patrimonial": False,
             "fallback_patrimonial_usado": False,
-            "gate55_confianca_dados": {
-                "status": "BLOQUEADO_ERRO_CONFIANCA_DADOS",
-                "score_confianca_dados": 0.0,
-                "nivel_uso_dados": "INSUFICIENTE",
-            },
         }
