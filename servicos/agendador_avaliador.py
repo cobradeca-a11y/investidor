@@ -74,3 +74,11 @@ def deve_executar_diariamente(ultima_execucao_iso: str | None) -> bool:
         return hoje > ultima
     except Exception:
         return True
+
+
+def main() -> None:
+    print(executar_avaliador_temporal())
+
+
+if __name__ == "__main__":
+    main()
