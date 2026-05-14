@@ -6,6 +6,7 @@ import main
 from processamento import estrategia
 import banco.db as db
 from servicos import agendador
+from sistema import observabilidade
 
 app = FastAPI(title="FIIA API", version="1.0")
 
@@ -32,26 +33,81 @@ def home():
 @app.get("/api/radar")
 def get_radar():
     try:
-        # Executa o radar de oportunidades
         vencedores = estrategia.radar_oportunidades()
-        return {"oportunidades": vencedores}
+
+        observabilidade.registrar_evento(
+            "INFO",
+            "api.radar",
+            "Radar executado com sucesso",
+            contexto={
+                "quantidade_oportunidades": len(vencedores)
+            }
+        )
+
+        return {
+            "status": "ok",
+            "oportunidades": vencedores,
+            "quantidade": len(vencedores),
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        observabilidade.registrar_erro(
+            "api.radar",
+            e,
+            contexto={
+                "endpoint": "/api/radar"
+            }
+        )
+
+        # Nunca derrubar o frontend com traceback cru
+        return {
+            "status": "erro",
+            "oportunidades": [],
+            "quantidade": 0,
+            "mensagem": "Falha controlada ao executar radar.",
+            "detalhe": str(e),
+        }
 
 @app.get("/api/analisar/{ticker}")
 def analisar_fundo(ticker: str):
     ticker = ticker.upper()
+
     try:
-        # Puxa dados do banco local (cache) ou coleta se não existir
-        # Aqui simplificamos retornando os indicadores do banco
         dados = db.get_by_ticker("indicadores", ticker)
+
         if not dados:
             from coleta import api_fundamentus
             dados = api_fundamentus.coletar_fii(ticker)
-            
-        return dados
+
+        observabilidade.registrar_evento(
+            "INFO",
+            "api.analisar",
+            "Análise executada",
+            ticker=ticker,
+        )
+
+        return {
+            "status": "ok",
+            "ticker": ticker,
+            "dados": dados,
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        observabilidade.registrar_erro(
+            "api.analisar",
+            e,
+            ticker=ticker,
+            contexto={
+                "endpoint": "/api/analisar/{ticker}"
+            }
+        )
+
+        return {
+            "status": "erro",
+            "ticker": ticker,
+            "mensagem": "Falha controlada ao analisar ativo.",
+            "detalhe": str(e),
+        }
 
 if __name__ == "__main__":
     import uvicorn
