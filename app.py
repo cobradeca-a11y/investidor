@@ -7,11 +7,15 @@ from processamento import estrategia
 import banco.db as db
 from servicos import agendador
 from sistema import observabilidade
+from api.auditoria import router as auditoria_router
 
 app = FastAPI(title="FIIA API", version="1.0")
 
 # Iniciar o Funcionário Digital (Rotinas em Segundo Plano)
 agendador.iniciar_agendador_background()
+
+# API de auditoria
+app.include_router(auditoria_router)
 
 # Servir a interface web
 app.mount("/web", StaticFiles(directory="static"), name="static")
