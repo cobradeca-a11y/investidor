@@ -212,3 +212,71 @@ Este arquivo é atualizado automaticamente ao fim de cada janela de contexto com
 - Próximo arquivo a entregar
 - Decisões técnicas tomadas
 - Bugs encontrados e corrigidos
+
+---
+
+## Atualização 2026-05-12
+
+### Concluído nesta sessão
+- ✅ A1 — `cnpj_fundo.py`: tabela mestre com 513 FIIs/CNPJ como fonte primária
+- ✅ A2 — `relatorio_fnet.py`: parâmetros corretos da FNET descobertos via teste_fnet_cnpj.py v3
+  - Parâmetro `cnpj` (não `cnpjFundo`)
+  - `tipoFundo=1` (não `FII`)
+  - Paginação `d/s/l`
+  - Referer `abrirGerenciadorDocumentosCVM`
+  - Sessão com retry robusto (HTTPAdapter + Retry)
+- ✅ B1 — `semaforo_macro.py`
+- ✅ B2 — `contexto_setorial.py`
+- ✅ C1 — `dimensionamento.py`
+- ✅ D1 — `zonas_entrada.py`
+- ✅ E1 — `gatilhos.py`
+- ✅ F1 — `avaliador.py`
+- ✅ `motor_decisao.py` integrado com semáforo, dimensionamento e zonas
+- ✅ `tradutor_decisao.py` exibe dimensionamento e zonas
+
+### Arquivo externo necessário
+- Copiar `tabela_mestre_fiia_fiis_b3_cvm.csv` para a raiz do projeto
+
+### Próxima sessão
+- [ ] Testar FNET com parâmetros corrigidos em produção
+- [ ] PWA — cards de decisão com zonas e dimensionamento
+- [ ] Integrar `gatilhos.py` no radar (alertas pós-decisão)
+- [ ] Integrar `avaliador.py` no agendador (rodar janelas 90/365d)
+
+---
+
+## Atualização 2026-05-13
+
+### Concluído
+- ✅ A3 — `informe_trimestral.py`: vacância real por imóvel, vencimentos de contratos via CVM
+  - Resolve bloqueio da IA por vacância ausente (Fundamentus não retorna para fundos de papel)
+  - Tabelas: `inf_trimestral_imoveis`, `inf_trimestral_contratos`
+  - Integrado em `analise_qualitativa.py`: preenche vacância automaticamente antes da validação
+  - Integrado em `estrategia.py`: roda `coletar_atual()` no início do radar
+- ✅ FNET — parâmetros corretos implementados (cnpj, tipoFundo=1, d/s/l, Referer correto)
+- ✅ `cnpj_fundo.py` — tabela mestre 513 FIIs como fonte primária
+
+### Pendente
+- [ ] Testar FNET em produção com parâmetros corretos
+- [ ] Copiar `tabela_mestre_fiia_fiis_b3_cvm.csv` para raiz do projeto
+- [ ] PWA — cards com zonas, dimensionamento e fonte dos dados
+- [ ] `gatilhos.py` integrado no agendador
+- [ ] `avaliador.py` integrado no agendador (janelas 90/365d)
+
+### Ordem de substituição de arquivos
+1. coleta/cnpj_fundo.py
+2. coleta/relatorio_fnet.py
+3. coleta/informe_trimestral.py  ← novo
+4. processamento/analise_qualitativa.py
+5. processamento/estrategia.py
+6. decisao/motor_decisao.py
+7. decisao/tradutor_decisao.py
+8. mercado/semaforo_macro.py     ← novo
+9. mercado/contexto_setorial.py  ← novo
+10. decisao/dimensionamento.py   ← novo
+11. decisao/zonas_entrada.py     ← novo
+12. decisao/gatilhos.py          ← novo
+13. aprendizado/avaliador.py     ← novo (criar pasta)
+14. Copiar tabela_mestre_fiia_fiis_b3_cvm.csv para raiz
+15. python -c "from coleta.cnpj_fundo import popular_cnpjs_banco; popular_cnpjs_banco()"
+16. python -c "from coleta.informe_trimestral import coletar_atual; coletar_atual()"

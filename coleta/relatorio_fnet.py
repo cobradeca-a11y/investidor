@@ -1,284 +1,227 @@
 """
 coleta/relatorio_fnet.py
-Coleta e extrai o último Relatório Gerencial de um FII direto da FNET (B3).
+Coleta o Relatorio Gerencial de FIIs via FNET.
 
-Fluxo:
-  1. Busca o ID do documento mais recente via API FNET
-  2. Baixa o PDF em memória
-  3. Extrai texto com pdfplumber (preserva layout e tabelas)
-  4. Limpa e trunca para caber no contexto do Gemini (~12.000 chars)
-  5. Cacheia resultado no SQLite por 24h para não baixar o mesmo PDF toda vez
+Correcoes aplicadas com base no teste_fnet_cnpj.py v3:
+  - Parametro correto: cnpj (nao cnpjFundo)
+  - tipoFundo: '1' (nao 'FII')
+  - Paginacao: d/s/l (nao draw/start/length)
+  - Referer: abrirGerenciadorDocumentosCVM
+  - Sessao com retry robusto
 
-Dependências novas (adicionar ao requirements.txt):
-  pdfplumber
+Estrategia:
+  1. Busca por CNPJ do fundo (tabela mestre ou CVM)
+  2. Filtra pelo documento mais recente (idTipoDocumento=40 = Informe Mensal)
+  3. Baixa PDF e extrai texto com pdfplumber
+  4. Cacheia no SQLite por 24h
 """
 
-import io
-import re
-import time
-from datetime import date, datetime, timedelta, timezone
+import io, re, time
+from datetime import datetime, timezone, timedelta
+from difflib import SequenceMatcher
 
 import pdfplumber
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 import banco.db as db
+from coleta.cnpj_fundo import obter_cnpj
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Constantes
-# ─────────────────────────────────────────────────────────────────────────────
-
-_FNET_BASE_URL = "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados"
-
-_FNET_DOWNLOAD = (
-    "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={doc_id}"
-)
+_FNET_GRID = "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados"
+_FNET_PDF  = "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={doc_id}"
 
 _HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
     "Accept": "application/json, text/javascript, */*; q=0.01",
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Referer": "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentos",
+    "Referer": "https://fnet.bmfbovespa.com.br/fnet/publico/abrirGerenciadorDocumentosCVM",
     "X-Requested-With": "XMLHttpRequest",
     "Origin": "https://fnet.bmfbovespa.com.br",
     "Connection": "keep-alive",
 }
 
-_TIMEOUT        = 20
-_MAX_CHARS      = 12_000
-_CACHE_HORAS    = 24
+_TIMEOUT      = (5, 20)
+_MAX_CHARS    = 12_000
+_CACHE_HORAS  = 24
+_SIMILARIDADE = 0.50
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Cache SQLite — tabela relatorios_cache
-# ─────────────────────────────────────────────────────────────────────────────
+def _criar_sessao() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=2, connect=2, read=2, status=2,
+        backoff_factor=1.2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset(["GET"]),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    session.mount("https://", adapter)
+    return session
 
-_SQL_CREATE_CACHE = """
-CREATE TABLE IF NOT EXISTS relatorios_cache (
-    ticker      TEXT PRIMARY KEY,
-    doc_id      TEXT,
-    data_doc    TEXT,
-    texto       TEXT,
-    coletado_em TEXT
-);
-"""
+_session = _criar_sessao()
+
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+
+_SQL_CACHE = """CREATE TABLE IF NOT EXISTS relatorios_cache (
+    ticker TEXT PRIMARY KEY, doc_id TEXT, data_doc TEXT,
+    texto TEXT, coletado_em TEXT
+);"""
 
 def _garantir_tabela():
-    db.executar(_SQL_CREATE_CACHE)
-
+    db.executar(_SQL_CACHE)
 
 def _ler_cache(ticker: str) -> str | None:
-    """Retorna texto do cache se ainda válido (< 24h). Caso contrário None."""
     _garantir_tabela()
-    row = db.buscar_um(
-        "SELECT texto, coletado_em FROM relatorios_cache WHERE ticker = ?",
-        (ticker,)
-    )
+    row = db.buscar_um("SELECT texto, coletado_em FROM relatorios_cache WHERE ticker = ?", (ticker,))
     if not row:
         return None
-    from datetime import timezone, timedelta
     coletado = datetime.fromisoformat(row["coletado_em"]).replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) - coletado < timedelta(hours=_CACHE_HORAS):
         return row["texto"]
     return None
 
-
-def _salvar_cache(ticker: str, doc_id: str, data_doc: str, texto: str):
+def _salvar_cache(ticker, doc_id, data_doc, texto):
     _garantir_tabela()
-    from datetime import timezone
     db.executar(
-        """
-        INSERT OR REPLACE INTO relatorios_cache (ticker, doc_id, data_doc, texto, coletado_em)
-        VALUES (?, ?, ?, ?, ?)
-        """,
+        "INSERT OR REPLACE INTO relatorios_cache (ticker,doc_id,data_doc,texto,coletado_em) VALUES (?,?,?,?,?)",
         (ticker, doc_id, data_doc, texto, datetime.now(timezone.utc).isoformat())
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Busca do documento mais recente na FNET
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Busca na FNET ─────────────────────────────────────────────────────────────
 
-def _buscar_doc_id(ticker: str) -> tuple[str, str] | tuple[None, None]:
-    """
-    Retorna (doc_id, data_referencia) do relatório gerencial mais recente.
+def _cnpj_limpo(cnpj: str) -> str:
+    return re.sub(r'\D', '', cnpj)
 
-    Estratégia:
-      1. Tenta buscar por CNPJ (mais preciso, evita bloqueio por texto)
-      2. Fallback: busca por palavrasChave (ticker como texto)
-    """
-    from coleta.cnpj_fundo import obter_cnpj
+def _similaridade(a: str, b: str) -> float:
+    return SequenceMatcher(None, a.upper(), b.upper()).ratio()
 
-    cnpj = obter_cnpj(ticker)
+def _buscar_doc_id(ticker: str, cnpj: str, nome_fundo: str) -> tuple[str, str] | tuple[None, None]:
+    """Busca por CNPJ primeiro; fallback por nome."""
+    cnpj_num = _cnpj_limpo(cnpj)
 
-    # Monta params — CNPJ tem prioridade sobre palavrasChave
-    if cnpj:
-        cnpj_limpo = cnpj.replace(".", "").replace("/", "").replace("-", "")
-        params = {
-            "d": "0", "o": "1", "f": "1", "l": "5", "c": "4",
-            "tipoFundo": "FII",
-            "idTipoDocumento": "41",
-            "idEspecieDocumento": "0",
-            "cnpjFundo": cnpj_limpo,
-            "search[value]": "",
-            "search[regex]": "false",
-            "ativo": "true",
-        }
-    else:
-        params = {
-            "d": "0", "o": "1", "f": "1", "l": "5", "c": "4",
-            "tipoFundo": "FII",
-            "idTipoDocumento": "41",
-            "idEspecieDocumento": "0",
-            "palavrasChave": ticker,
-            "search[value]": "",
-            "search[regex]": "false",
-            "ativo": "true",
-        }
+    # Tentativas: com CNPJ limpo, com CNPJ formatado, sem CNPJ (filtro local por nome)
+    variantes = [
+        {"d":1,"s":0,"l":20,"tipoFundo":"1","cnpj":cnpj_num,
+         "idCategoriaDocumento":"6","idTipoDocumento":"40","idEspecieDocumento":"0","paginaCertificados":"false"},
+        {"d":1,"s":0,"l":20,"tipoFundo":"1","cnpj":cnpj,
+         "idCategoriaDocumento":"6","idTipoDocumento":"40","idEspecieDocumento":"0","paginaCertificados":"false"},
+    ]
 
+    for params in variantes:
+        try:
+            r = _session.get(_FNET_GRID, params=params, headers=_HEADERS, timeout=_TIMEOUT)
+            if r.status_code != 200:
+                continue
+            data = r.json()
+            docs = data.get("data", [])
+            total = data.get("recordsTotal", 0)
+            if docs and total > 0:
+                # Filtra pelo mais recente com nome similar
+                for doc in docs:
+                    desc = doc.get("descricaoFundo", "") or ""
+                    if _similaridade(nome_fundo, desc) >= _SIMILARIDADE or cnpj_num in desc.replace('.','').replace('/','').replace('-',''):
+                        doc_id   = str(doc.get("id", ""))
+                        data_ref = doc.get("dataReferencia", "")
+                        print(f"[fnet] {ticker} — doc_id={doc_id} | '{desc[:50]}'")
+                        return doc_id, data_ref
+                # Sem match de nome — usa o primeiro mesmo assim
+                doc = docs[0]
+                return str(doc.get("id", "")), doc.get("dataReferencia", "")
+        except Exception as e:
+            print(f"[fnet] Erro na busca ({params.get('cnpj','')}): {e}")
+        time.sleep(0.5)
+
+    # Fallback: sem CNPJ, busca geral + filtro local por nome
     try:
-        resp = requests.get(_FNET_BASE_URL, params=params, headers=_HEADERS, timeout=_TIMEOUT)
-        resp.raise_for_status()
-        dados = resp.json()
+        params = {"d":1,"s":0,"l":100,"tipoFundo":"1","idCategoriaDocumento":"6",
+                  "idTipoDocumento":"40","idEspecieDocumento":"0","paginaCertificados":"false"}
+        r = _session.get(_FNET_GRID, params=params, headers=_HEADERS, timeout=_TIMEOUT)
+        if r.status_code == 200:
+            docs = r.json().get("data", [])
+            for doc in docs:
+                desc = doc.get("descricaoFundo", "") or ""
+                if _similaridade(nome_fundo, desc) >= _SIMILARIDADE:
+                    doc_id = str(doc.get("id", ""))
+                    print(f"[fnet] {ticker} — fallback nome | doc_id={doc_id}")
+                    return doc_id, doc.get("dataReferencia", "")
     except Exception as e:
-        print(f"[fnet] Erro ao buscar documentos de {ticker}: {e}")
-        return None, None
+        print(f"[fnet] Erro no fallback: {e}")
 
-    documentos = dados.get("data", [])
-    if not documentos:
-        print(f"[fnet] Nenhum relatório gerencial encontrado para {ticker}.")
-        return None, None
-
-    doc = documentos[0]
-    doc_id   = str(doc.get("id", ""))
-    data_ref = doc.get("dataReferencia") or doc.get("dataEntrega") or ""
-
-    if not doc_id:
-        return None, None
-
-    return doc_id, data_ref
+    return None, None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Download e extração do PDF
-# ─────────────────────────────────────────────────────────────────────────────
+# ── PDF ───────────────────────────────────────────────────────────────────────
 
-def _baixar_e_extrair(doc_id: str) -> str | None:
-    """Baixa o PDF em memória e extrai o texto com pdfplumber."""
-    url = _FNET_DOWNLOAD.format(doc_id=doc_id)
+def _extrair_pdf(doc_id: str) -> str | None:
+    url = _FNET_PDF.format(doc_id=doc_id)
     try:
-        resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT, stream=True)
-        resp.raise_for_status()
-
-        content_type = resp.headers.get("Content-Type", "")
-        if "pdf" not in content_type.lower() and "octet-stream" not in content_type.lower():
-            print(f"[fnet] Resposta inesperada (não é PDF): {content_type}")
-            return None
-
-        pdf_bytes = resp.content
-
+        r = _session.get(url, headers=_HEADERS, timeout=(5, 30), stream=True)
+        r.raise_for_status()
+        pdf_bytes = r.content
     except Exception as e:
-        print(f"[fnet] Erro ao baixar PDF (doc_id={doc_id}): {e}")
+        print(f"[fnet] Erro ao baixar PDF id={doc_id}: {e}")
         return None
-
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             paginas = []
-            for i, pagina in enumerate(pdf.pages):
-                texto_pag = pagina.extract_text(x_tolerance=2, y_tolerance=3) or ""
-
-                # Tabelas inline (vacância, carteira de imóveis, etc.)
-                tabelas = pagina.extract_tables()
-                for tabela in tabelas:
-                    for linha in tabela:
-                        linha_limpa = " | ".join(
-                            (c or "").strip() for c in linha if c
-                        )
-                        if linha_limpa.strip():
-                            texto_pag += "\n" + linha_limpa
-
-                paginas.append(texto_pag)
-
-                # Para PDFs grandes, limita a 20 páginas para não estourar o contexto
+            for i, pag in enumerate(pdf.pages):
+                texto = pag.extract_text(x_tolerance=2, y_tolerance=3) or ""
+                for tab in pag.extract_tables():
+                    for linha in tab:
+                        linha_str = " | ".join((c or "").strip() for c in linha if c)
+                        if linha_str.strip():
+                            texto += "\n" + linha_str
+                paginas.append(texto)
                 if i >= 19:
-                    paginas.append("[... relatório truncado após 20 páginas ...]")
+                    paginas.append("[... truncado ...]")
                     break
-
-        texto_bruto = "\n\n".join(paginas)
-        return texto_bruto
-
+        texto_final = "\n\n".join(paginas)
+        texto_final = re.sub(r'\n{3,}', '\n\n', re.sub(r'[ \t]{2,}', ' ', texto_final)).strip()
+        if len(texto_final) > _MAX_CHARS:
+            texto_final = texto_final[:_MAX_CHARS] + "\n\n[... truncado ...]"
+        return texto_final
     except Exception as e:
-        print(f"[fnet] Erro ao extrair PDF (doc_id={doc_id}): {e}")
+        print(f"[fnet] Erro ao extrair PDF: {e}")
         return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Limpeza e truncamento do texto
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _limpar_texto(texto: str) -> str:
-    """Remove lixo típico de PDF (cabeçalhos repetidos, rodapés, espaços duplos)."""
-    # Remove linhas que são só números (rodapé de página)
-    linhas = texto.splitlines()
-    linhas = [l for l in linhas if not re.fullmatch(r'\s*\d{1,3}\s*', l)]
-
-    # Remove espaços excessivos
-    texto = "\n".join(linhas)
-    texto = re.sub(r'\n{3,}', '\n\n', texto)
-    texto = re.sub(r'[ \t]{2,}', ' ', texto)
-
-    return texto.strip()
-
-
-def _truncar(texto: str, max_chars: int = _MAX_CHARS) -> str:
-    """Mantém o início do relatório (onde ficam os destaques do gestor)."""
-    if len(texto) <= max_chars:
-        return texto
-    return texto[:max_chars] + f"\n\n[... texto truncado - {len(texto)} chars totais ...]"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Interface pública
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Interface pública ─────────────────────────────────────────────────────────
 
 def obter_relatorio(ticker: str) -> str:
-    """
-    Retorna o texto do último Relatório Gerencial do ticker.
-
-    Ordem de prioridade:
-      1. Cache SQLite válido (< 24h)
-      2. Download novo da FNET
-
-    Retorna string vazia se não conseguir obter o relatório.
-    """
     ticker = ticker.upper().strip()
 
-    # 1. Cache
-    texto_cache = _ler_cache(ticker)
-    if texto_cache:
-        print(f"[fnet] {ticker} - relatório gerencial carregado do cache.")
-        return texto_cache
+    cached = _ler_cache(ticker)
+    if cached:
+        print(f"[fnet] {ticker} — do cache.")
+        return cached
 
-    # 2. Busca doc_id
-    print(f"[fnet] {ticker} - buscando último relatório gerencial na FNET...")
-    doc_id, data_ref = _buscar_doc_id(ticker)
+    cnpj = obter_cnpj(ticker)
+    if not cnpj:
+        print(f"[fnet] {ticker} — CNPJ nao encontrado.")
+        return ""
+
+    # Nome do fundo para filtro de similaridade
+    row = db.buscar_um("SELECT nome FROM fiis WHERE ticker = ?", (ticker,))
+    nome = (row.get("nome","") or ticker) if row else ticker
+    if nome == ticker:
+        # Tenta pegar da tabela mestre via razao_social
+        from coleta.cnpj_fundo import _carregar_cache as _mapa
+        pass  # nome do Fundamentus ja deve estar no banco
+
+    print(f"[fnet] {ticker} — buscando relatorio (CNPJ={cnpj})...")
+    doc_id, data_ref = _buscar_doc_id(ticker, cnpj, nome.upper())
     if not doc_id:
+        print(f"[fnet] {ticker} — nenhum documento encontrado.")
         return ""
 
-    print(f"[fnet] {ticker} - baixando PDF (doc_id={doc_id}, ref={data_ref})...")
-    time.sleep(0.5)   # pausa gentil para não sobrecarregar a FNET
-
-    texto_bruto = _baixar_e_extrair(doc_id)
-    if not texto_bruto:
+    texto = _extrair_pdf(doc_id)
+    if not texto:
         return ""
 
-    texto_final = _truncar(_limpar_texto(texto_bruto))
-
-    _salvar_cache(ticker, doc_id, data_ref, texto_final)
-
-    print(f"[fnet] {ticker} - relatório extraído: {len(texto_final)} chars.")
-    return texto_final
+    _salvar_cache(ticker, doc_id, data_ref, texto)
+    print(f"[fnet] {ticker} — {len(texto)} chars extraidos.")
+    return texto

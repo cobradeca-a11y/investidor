@@ -21,6 +21,7 @@ from google import genai
 from config import settings
 from coleta.web_search import buscar_noticias
 from coleta.relatorio_fnet import obter_relatorio
+from coleta.informe_trimestral import contexto_trimestral, vacancia_media as vacancia_trimestral
 import banco.db as db
 
 
@@ -145,7 +146,10 @@ Qtd. Imóveis   : {qtd_ativos or 'Não informado'}
 ────────────────────────────────────────────────────
 """
 
-    # ── 5a. Tenta relatório gerencial FNET (fonte primária) ───────────────
+    # ── 5a. Contexto trimestral CVM (vacância e contratos oficiais) ────────
+    ctx_trimestral = contexto_trimestral(ticker)
+
+    # ── 5b. Tenta relatório gerencial FNET (fonte primária) ───────────────
     texto_relatorio   = obter_relatorio(ticker)
     fonte_qualitativa = None
 
@@ -157,6 +161,8 @@ RELATÓRIO GERENCIAL (fonte: FNET/B3 - documento oficial do gestor)
 ────────────────────────────────────────────────────
 """
         fonte_qualitativa = "relatorio_gerencial_fnet"
+        if ctx_trimestral:
+            fonte_qualitativa += "+trimestral_cvm"
         print(f"[ia] DOC {ticker} - usando Relatorio Gerencial como contexto qualitativo.")
 
     else:
@@ -182,6 +188,10 @@ Não faça suposições sobre gestão, portfólio ou mercado sem dados concretos
 """
             fonte_qualitativa = "apenas_indicadores"
             print(f"[ia] AVISO {ticker} - sem contexto qualitativo. Analise pelos indicadores apenas.")
+
+    # Complementa contexto financeiro com dados trimestrais se disponível
+    if ctx_trimestral:
+        contexto_financeiro += ctx_trimestral
 
     # ── 6. Prompt ─────────────────────────────────────────────────────────
     prompt = f"""

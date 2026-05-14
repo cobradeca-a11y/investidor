@@ -1,94 +1,92 @@
 """
 coleta/cnpj_fundo.py
-Coleta e persiste o CNPJ de FIIs a partir do Informe Mensal da CVM.
+Mapa definitivo ticker->CNPJ usando tabela_mestre_fiia_fiis_b3_cvm.csv
+com fallback para informe mensal CVM.
 
-Fonte: https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS/
-Arquivo: inf_mensal_fii_{ANO}.zip
-Arquivo interno: inf_mensal_fii_geral_{ANO}.csv
-
-O ticker e extraido do codigo ISIN:
-  BRHGLGCTF004 -> HGLG -> HGLG11
+513 FIIs cobertos com confianca Alta.
 """
-
-import io
-import csv
-import re
-import zipfile
-import requests
+import io, csv, re, zipfile, requests
 from datetime import date
 import banco.db as db
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-_TIMEOUT  = 45
-_BASE_URL = "https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS"
+_TIMEOUT  = 30
+
+# CSV da tabela mestre (gerado pelo usuario a partir do cruzamento B3/CVM)
+_TABELA_MESTRE_PATH = "tabela_mestre_fiia_fiis_b3_cvm.csv"
+
+# Fallback: informe mensal CVM
+_BASE_CVM = "https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS"
 
 _cache: dict[str, str] = {}
 
 
+def _carregar_tabela_mestre() -> dict[str, str]:
+    """Carrega CNPJ da tabela mestre local se existir."""
+    import os
+    for path in [_TABELA_MESTRE_PATH, f"../{_TABELA_MESTRE_PATH}"]:
+        if not os.path.exists(path):
+            continue
+        mapa = {}
+        try:
+            with open(path, encoding='utf-8-sig') as f:
+                for row in csv.DictReader(f, delimiter=';'):
+                    ticker = row.get('ticker_b3_11', '').strip().upper()
+                    cnpj   = row.get('cnpj_fundo', '').strip()
+                    if ticker and cnpj:
+                        mapa[ticker] = cnpj
+            print(f"[cnpj] Tabela mestre carregada: {len(mapa)} tickers.")
+            return mapa
+        except Exception as e:
+            print(f"[cnpj] Erro ao carregar tabela mestre: {e}")
+    return {}
+
+
 def _ticker_do_isin(isin: str) -> str | None:
     match = re.match(r'BR([A-Z0-9]{4,6})CTF', isin.upper())
-    if not match:
-        return None
-    return match.group(1) + "11"
+    return (match.group(1) + "11") if match else None
 
 
-def _parsear_csv(conteudo: str) -> dict[str, str]:
-    mapa = {}
-    seen = set()
-    for row in csv.DictReader(io.StringIO(conteudo), delimiter=';'):
-        isin = row.get('Codigo_ISIN', '').strip()
-        cnpj = row.get('CNPJ_Fundo_Classe', '').strip()
-        if not isin or not cnpj:
-            continue
-        ticker = _ticker_do_isin(isin)
-        if ticker and ticker not in seen:
-            mapa[ticker] = cnpj
-            seen.add(ticker)
-    return mapa
-
-
-def _carregar_informe(ano: int) -> dict[str, str]:
-    """Baixa inf_mensal_fii_{ANO}.zip e extrai o CSV geral."""
-    url = f"{_BASE_URL}/inf_mensal_fii_{ano}.zip"
-    try:
-        print(f"[cnpj] Baixando {url}...")
-        r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
-        if r.status_code != 200:
-            print(f"[cnpj] HTTP {r.status_code} para {ano}")
-            return {}
-
-        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-            # Lista arquivos disponíveis
-            arquivos = z.namelist()
-            # Busca o arquivo geral
-            geral = next(
-                (n for n in arquivos if 'geral' in n.lower() and n.endswith('.csv')),
-                None
-            )
-            if not geral:
-                print(f"[cnpj] Arquivo geral não encontrado no ZIP. Disponíveis: {arquivos}")
-                return {}
-
-            with z.open(geral) as f:
-                conteudo = f.read().decode('latin-1')
-
-        mapa = _parsear_csv(conteudo)
-        print(f"[cnpj] Informe {ano} carregado: {len(mapa)} tickers mapeados.")
-        return mapa
-
-    except Exception as e:
-        print(f"[cnpj] Erro ao processar informe {ano}: {e}")
-        return {}
+def _carregar_cvm(ano: int) -> dict[str, str]:
+    for ext in ('csv', 'zip'):
+        url = f"{_BASE_CVM}/inf_mensal_fii_geral_{ano}.{ext}"
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+            if r.status_code != 200:
+                continue
+            conteudo = ""
+            if ext == 'zip':
+                with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                    csvs = [n for n in z.namelist() if n.endswith('.csv')]
+                    if not csvs:
+                        continue
+                    conteudo = z.open(csvs[0]).read().decode('latin-1')
+            else:
+                r.encoding = 'latin-1'
+                conteudo = r.text
+            mapa = {}
+            for row in csv.DictReader(io.StringIO(conteudo), delimiter=';'):
+                isin = row.get('Codigo_ISIN', '').strip()
+                cnpj = row.get('CNPJ_Fundo_Classe', '').strip()
+                ticker = _ticker_do_isin(isin)
+                if ticker and cnpj and ticker not in mapa:
+                    mapa[ticker] = cnpj
+            if mapa:
+                print(f"[cnpj] CVM {ano} ({ext}): {len(mapa)} tickers.")
+                return mapa
+        except Exception as e:
+            print(f"[cnpj] Erro CVM {ano}.{ext}: {e}")
+    return {}
 
 
 def _carregar_cache() -> dict[str, str]:
     global _cache
     if _cache:
         return _cache
-    ano = date.today().year
-    mapa = _carregar_informe(ano)
+    mapa = _carregar_tabela_mestre()
     if not mapa:
-        mapa = _carregar_informe(ano - 1)
+        ano = date.today().year
+        mapa = _carregar_cvm(ano) or _carregar_cvm(ano - 1)
     _cache = mapa
     return mapa
 
@@ -101,8 +99,7 @@ def obter_cnpj(ticker: str) -> str | None:
             return row["cnpj"]
     except Exception:
         pass
-    mapa = _carregar_cache()
-    cnpj = mapa.get(ticker)
+    cnpj = _carregar_cache().get(ticker)
     if cnpj:
         try:
             db.executar("UPDATE fiis SET cnpj = ? WHERE ticker = ?", (cnpj, ticker))
@@ -116,14 +113,11 @@ def popular_cnpjs_banco() -> int:
         db.executar("ALTER TABLE fiis ADD COLUMN cnpj TEXT")
     except Exception:
         pass
-
     rows = db.buscar_todos("SELECT ticker FROM fiis WHERE cnpj IS NULL OR cnpj = ''")
     tickers = [r["ticker"] for r in rows]
-
     if not tickers:
         print("[cnpj] Todos os tickers ja tem CNPJ.")
         return 0
-
     mapa = _carregar_cache()
     atualizados = 0
     for ticker in tickers:
@@ -134,6 +128,5 @@ def popular_cnpjs_banco() -> int:
                 atualizados += 1
             except Exception:
                 pass
-
     print(f"[cnpj] {atualizados}/{len(tickers)} tickers atualizados.")
     return atualizados
