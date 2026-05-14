@@ -1,6 +1,11 @@
 """
 processamento/estrategia.py
-Filtros de sobrevivência e radar de oportunidades - v2.1.
+Filtros de sobrevivência e radar de oportunidades - v2.2.
+
+Mudanças v2.2:
+  - Radar passa a usar motor_decisao_cvm_first como camada de decisão.
+  - Patrimônio, VP/cota e P/VP passam a priorizar CVM quando disponível.
+  - Fundamentus/banco atual ficam como fallback auxiliar patrimonial.
 
 Mudanças v2.1:
   - Pipeline eliminatório real: cada fundo mostra em qual gate parou.
@@ -18,9 +23,9 @@ def aplicar_filtros_sobrevivencia(ticker: str) -> Tuple[bool, List[str]]:
     """
     Atalho de verificação rápida para uso externo (ex: UI, validações pontuais).
     Retorna (aprovado, [motivos_reprovacao]).
-    Para análise completa, use radar_oportunidades() ou motor_decisao.decidir().
+    Para análise completa, use radar_oportunidades() ou motor_decisao_cvm_first.decidir().
     """
-    from decisao.motor_decisao import decidir
+    from decisao.motor_decisao_cvm_first import decidir
 
     veredito = decidir(ticker)
     gate     = veredito.get("gate_parada", 7)
@@ -49,14 +54,14 @@ def radar_oportunidades() -> list:
     from coleta.api_fundamentus import coletar_mercado_inteiro, coletar_fii
     from coleta.api_yfinance import coletar_historico_dividendos
     from processamento.analise_qualitativa import analisar_fundo_ia
-    from decisao.motor_decisao import decidir
+    from decisao.motor_decisao_cvm_first import decidir
     from decisao.persistencia_decisao import gravar
 
     # ── Estágio A: varredura de mercado ──────────────────────────────────
     mercado = coletar_mercado_inteiro()
 
     print("\n" + "="*60)
-    print("  FIIA RADAR v2.1 - Esteira de Qualidade 8 Gates")
+    print("  FIIA RADAR v2.2 - Esteira de Qualidade 8 Gates + CVM-first")
     print("="*60)
     print(f"\n[A] Mercado: {len(mercado)} FIIs encontrados.")
     print("[A] Aplicando pré-filtros iniciais (liquidez + vacância)...\n")
@@ -87,13 +92,10 @@ def radar_oportunidades() -> list:
     print(f"[A] Passaram para deep scan  : {len(sobreviventes_a)}\n")
 
     # ── Estágio B: deep scan + gates 0–3 ─────────────────────────────────
-    # Coleta dados completos e roda os gates de qualidade obrigatórios.
-    # Fundo que cair em qualquer gate 0–3 é descartado antes do preço.
-
     print("[B] Deep scan + Gates 0–3 (validação, elegibilidade, estrutura, renda)...")
     print("    Limite: primeiros 50 fundos do Estágio A.\n")
 
-    candidatos_preco = []   # fundos que passaram nos gates 0–3
+    candidatos_preco = []
     log_gates = {0: 0, 1: 0, 2: 0, 3: 0}
 
     for ticker in sobreviventes_a[:50]:
@@ -101,24 +103,20 @@ def radar_oportunidades() -> list:
         coletar_fii(ticker)
         coletar_historico_dividendos(ticker)
 
-        # Roda apenas os gates 0–3 via decidir() com IA desligada
-        # O decidir() com ia_status=INDISPONIVEL para no gate mais alto possível
-        # sem IA - mas os gates 0–3 não dependem de IA.
         veredito = decidir(ticker, ia_status="INDISPONIVEL")
         gate_parada = veredito.get("gate_parada", 0)
         decisao     = veredito.get("decisao", "")
         trilha      = " -> ".join(veredito.get("trilha_gates", []))
 
-        # Fundo bloqueado ou eliminado antes do gate 4
         if gate_parada < 4:
             log_gates[gate_parada] = log_gates.get(gate_parada, 0) + 1
             status_gate = veredito["gates_detalhes"].get(str(gate_parada), {}).get("status", "?")
             print(f"    [{ticker}] X Gate {gate_parada} ({status_gate}): {veredito['motivo'][:80]}")
             continue
 
-        # Passou pelos gates de qualidade - agora avaliamos o preço
         margem = veredito.get("margem")
-        print(f"    [{ticker}] OK Gates 0–3 OK | margem={margem}%")
+        fonte_patrimonial = veredito.get("fonte_patrimonial", "N/D")
+        print(f"    [{ticker}] OK Gates 0–3 OK | margem={margem}% | patrimonial={fonte_patrimonial}")
         candidatos_preco.append({"ticker": ticker, "veredito_parcial": veredito})
 
     print(f"\n[B] Eliminados no Gate 0 (dados)    : {log_gates.get(0, 0)}")
@@ -128,9 +126,6 @@ def radar_oportunidades() -> list:
     print(f"[B] Sobreviventes para Gate 4       : {len(candidatos_preco)}\n")
 
     # ── Estágio C: gate 4 (preço) ─────────────────────────────────────────
-    # Só chegam aqui fundos com estrutura e renda aprovadas.
-    # Ordena por margem de segurança.
-
     print("[C] Gate 4 - Classificação por preço e margem de segurança...")
 
     com_margem = []
@@ -158,9 +153,6 @@ def radar_oportunidades() -> list:
     print(f"[C] Top selecionados    : {len(top)}\n")
 
     # ── Estágio D: IA + veredito final ───────────────────────────────────
-    # A IA só roda nos finalistas com margem positiva.
-    # A IA não aprova - apenas veta ou complementa.
-
     print(f"[D] Gate 6 - Análise qualitativa / IA no Top {len(top)}...")
     finalistas = []
 
@@ -181,7 +173,8 @@ def radar_oportunidades() -> list:
 
         trilha  = " -> ".join(veredito.get("trilha_gates", []))
         decisao = veredito.get("decisao", "?")
-        print(f"    [{ticker}] {decisao} | {trilha}")
+        fonte_patrimonial = veredito.get("fonte_patrimonial", "N/D")
+        print(f"    [{ticker}] {decisao} | {trilha} | patrimonial={fonte_patrimonial}")
 
         item["veredito"] = veredito
         gravar(veredito)
@@ -194,7 +187,8 @@ def radar_oportunidades() -> list:
     for item in finalistas:
         v = item["veredito"]
         print(f"  {v['ticker']:8s} | {v['decisao']:15s} | margem {v.get('margem')}% | "
-              f"gate_parada={v['gate_parada']} | confiança={v['confianca']}")
+              f"gate_parada={v['gate_parada']} | confiança={v['confianca']} | "
+              f"patrimonial={v.get('fonte_patrimonial', 'N/D')}")
     print()
 
     return finalistas
