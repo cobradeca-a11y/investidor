@@ -21,15 +21,10 @@ def _agora_iso() -> str:
 
 
 def _coleta_segura(nome: str, fn: Callable, fallback: Any, *args, **kwargs) -> tuple[Any, dict[str, Any] | None]:
-    """Executa uma seção do relatório sem derrubar o relatório inteiro."""
     try:
         return fn(*args, **kwargs), None
     except Exception as erro:
-        observabilidade.registrar_erro(
-            "relatorios.completo",
-            erro,
-            contexto={"secao": nome},
-        )
+        observabilidade.registrar_erro("relatorios.completo", erro, contexto={"secao": nome})
         return fallback, {"secao": nome, "erro": str(erro)}
 
 
@@ -38,6 +33,7 @@ def gerar_analise_individual(ticker: str) -> dict[str, Any]:
     veredito = decidir(ticker_norm)
     gate55 = veredito.get("gate55_confianca_dados", {}) or {}
     patrimonio = veredito.get("patrimonio_resolvido", {}) or {}
+    eventos_fnet = veredito.get("eventos_fnet", {}) or {}
 
     return {
         "ticker": ticker_norm,
@@ -47,6 +43,7 @@ def gerar_analise_individual(ticker: str) -> dict[str, Any]:
         "risco": veredito.get("risco"),
         "confianca": veredito.get("confianca"),
         "score_final": veredito.get("score_final"),
+        "score_final_original": veredito.get("score_final_original"),
         "margem": veredito.get("margem"),
         "fonte_patrimonial": veredito.get("fonte_patrimonial"),
         "usou_cvm_patrimonial": veredito.get("usou_cvm_patrimonial"),
@@ -55,6 +52,11 @@ def gerar_analise_individual(ticker: str) -> dict[str, Any]:
         "gate55_motivo": gate55.get("motivo"),
         "score_confianca_dados": veredito.get("score_confianca_dados_consolidado") or veredito.get("score_confianca_dados"),
         "nivel_uso_dados": veredito.get("nivel_uso_dados_consolidado") or veredito.get("nivel_uso_dados"),
+        "risco_documental_fnet": veredito.get("risco_documental_fnet"),
+        "score_documental_fnet": veredito.get("score_documental_fnet"),
+        "ajuste_score_fnet": veredito.get("ajuste_score_fnet"),
+        "motivo_score_documental": eventos_fnet.get("motivo_score_documental"),
+        "eventos_relevantes_fnet": eventos_fnet.get("eventos_relevantes", []),
         "patrimonio": {
             "pvp_cvm": veredito.get("pvp_cvm"),
             "valor_patrimonial_cota_cvm": veredito.get("valor_patrimonial_cota_cvm"),
@@ -67,29 +69,14 @@ def gerar_analise_individual(ticker: str) -> dict[str, Any]:
 
 
 def comparar_ativos(tickers: list[str]) -> list[dict[str, Any]]:
-    """Compara ativos mantendo registro de erro por ticker quando uma análise falhar."""
     analises: list[dict[str, Any]] = []
-
     for ticker in tickers:
         try:
             analises.append(gerar_analise_individual(ticker))
         except Exception as erro:
             ticker_norm = ticker.upper().replace(".SA", "").strip()
-            observabilidade.registrar_erro(
-                "relatorios.comparar_ativos",
-                erro,
-                ticker=ticker_norm,
-            )
-            analises.append(
-                {
-                    "ticker": ticker_norm,
-                    "decisao": "ERRO_ANALISE",
-                    "erro": str(erro),
-                    "margem": None,
-                    "score_final": None,
-                    "score_confianca_dados": 0,
-                }
-            )
+            observabilidade.registrar_erro("relatorios.comparar_ativos", erro, ticker=ticker_norm)
+            analises.append({"ticker": ticker_norm, "decisao": "ERRO_ANALISE", "erro": str(erro), "margem": None, "score_final": None, "score_confianca_dados": 0})
 
     return sorted(
         analises,
@@ -114,11 +101,7 @@ def gerar_relatorio_completo(tickers: list[str] | None = None) -> dict[str, Any]
     if falha:
         falhas.append(falha)
 
-    cenario_macro, falha = _coleta_segura(
-        "cenario_macro",
-        obter_cenario_macro,
-        {"regime_juros": "INDISPONIVEL", "regime_inflacao": "INDISPONIVEL", "impacto_fiis": {"alertas": []}},
-    )
+    cenario_macro, falha = _coleta_segura("cenario_macro", obter_cenario_macro, {"regime_juros": "INDISPONIVEL", "regime_inflacao": "INDISPONIVEL", "impacto_fiis": {"alertas": []}})
     if falha:
         falhas.append(falha)
 
@@ -149,6 +132,8 @@ def gerar_relatorio_completo(tickers: list[str] | None = None) -> dict[str, Any]
             alertas.append(f"{item['ticker']}: fundamento patrimonial em fallback.")
         if item.get("gate55_status") not in {None, "APROVADO_CONFIANCA_DADOS"} and not item.get("erro"):
             alertas.append(f"{item['ticker']}: Gate 5.5 exige atenção ({item.get('gate55_status')}).")
+        if item.get("risco_documental_fnet") in {"ALTO", "MEDIO", "SEM_FNET", "ERRO"}:
+            alertas.append(f"{item['ticker']}: FNET {item.get('risco_documental_fnet')} | score documental={item.get('score_documental_fnet')} | ajuste={item.get('ajuste_score_fnet')}.")
 
     ranking = [
         {
@@ -157,8 +142,12 @@ def gerar_relatorio_completo(tickers: list[str] | None = None) -> dict[str, Any]
             "decisao": item.get("decisao"),
             "margem": item.get("margem"),
             "score_final": item.get("score_final"),
+            "score_final_original": item.get("score_final_original"),
             "fonte_patrimonial": item.get("fonte_patrimonial"),
             "score_confianca_dados": item.get("score_confianca_dados"),
+            "risco_documental_fnet": item.get("risco_documental_fnet"),
+            "score_documental_fnet": item.get("score_documental_fnet"),
+            "ajuste_score_fnet": item.get("ajuste_score_fnet"),
             "erro": item.get("erro"),
         }
         for idx, item in enumerate(analises)
@@ -174,6 +163,8 @@ def gerar_relatorio_completo(tickers: list[str] | None = None) -> dict[str, Any]
             "ativos_compraveis": sum(1 for a in analises if str(a.get("decisao", "")).startswith("COMPRAR")),
             "ativos_monitorar": sum(1 for a in analises if a.get("decisao") == "MONITORAR"),
             "ativos_com_erro": sum(1 for a in analises if a.get("erro")),
+            "ativos_fnet_alto": sum(1 for a in analises if a.get("risco_documental_fnet") == "ALTO"),
+            "ativos_sem_fnet": sum(1 for a in analises if a.get("risco_documental_fnet") == "SEM_FNET"),
             "alertas": len(alertas),
             "custo_total_carteira": carteira.get("custo_total"),
             "quantidade_ativos_carteira": carteira.get("quantidade_ativos"),
@@ -185,30 +176,15 @@ def gerar_relatorio_completo(tickers: list[str] | None = None) -> dict[str, Any]
         "riscos_e_alertas": alertas,
         "cenario_macro": cenario_macro,
         "carteira": carteira,
-        "aprendizado": {
-            "taxa_acerto_90d": aprendizado_90,
-            "taxa_acerto_365d": aprendizado_365,
-            "tentativa_erro": tentativa_erro,
-            "deterioracoes": deterioracoes,
-        },
+        "aprendizado": {"taxa_acerto_90d": aprendizado_90, "taxa_acerto_365d": aprendizado_365, "tentativa_erro": tentativa_erro, "deterioracoes": deterioracoes},
         "estrategia_operacional": {
-            "regra": "Priorizar ativos com decisão favorável, CVM patrimonial disponível, Gate 5.5 aprovado e margem positiva.",
-            "controle": "Aportes devem respeitar política de carteira, caixa mínimo, limite por ativo/segmento e cenário macro.",
+            "regra": "Priorizar ativos com decisão favorável, CVM patrimonial disponível, Gate 5.5 aprovado, margem positiva e FNET sem risco documental relevante.",
+            "controle": "Aportes devem respeitar política de carteira, caixa mínimo, limite por ativo/segmento, cenário macro e risco documental FNET.",
         },
-        "proximos_passos": [
-            "Validar dados oficiais CVM antes de decisão forte.",
-            "Registrar simulações para medir falsos positivos e negativos.",
-            "Usar cenário macro para ajustar agressividade dos aportes.",
-            "Gerar versão exportável em Markdown/PDF futuramente.",
-        ],
+        "proximos_passos": ["Validar dados oficiais CVM antes de decisão forte.", "Registrar simulações para medir falsos positivos e negativos.", "Usar FNET no aprendizado operacional por evento documental.", "Gerar versão exportável em Markdown/PDF futuramente."],
     }
 
-    observabilidade.registrar_evento(
-        "INFO",
-        "relatorios.completo",
-        "Relatorio completo gerado",
-        contexto={"ativos_analisados": len(analises), "alertas": len(alertas), "status": status_relatorio},
-    )
+    observabilidade.registrar_evento("INFO", "relatorios.completo", "Relatorio completo gerado", contexto={"ativos_analisados": len(analises), "alertas": len(alertas), "status": status_relatorio})
     return relatorio
 
 
@@ -233,7 +209,8 @@ def gerar_markdown_relatorio(relatorio: dict[str, Any]) -> str:
     linhas.append(f"- Ativos analisados: {resumo.get('ativos_analisados')}")
     linhas.append(f"- Ativos compraveis: {resumo.get('ativos_compraveis')}")
     linhas.append(f"- Ativos em monitoramento: {resumo.get('ativos_monitorar')}")
-    linhas.append(f"- Ativos com erro: {resumo.get('ativos_com_erro')}")
+    linhas.append(f"- Ativos com FNET alto: {resumo.get('ativos_fnet_alto')}")
+    linhas.append(f"- Ativos sem FNET: {resumo.get('ativos_sem_fnet')}")
     linhas.append(f"- Alertas: {resumo.get('alertas')}")
     linhas.append(f"- Custo total da carteira: {resumo.get('custo_total_carteira')}")
     linhas.append(f"- Regime de juros: {macro.get('regime_juros')}")
@@ -251,9 +228,7 @@ def gerar_markdown_relatorio(relatorio: dict[str, Any]) -> str:
     linhas.append("## Ranking")
     for item in relatorio.get("ranking", []):
         erro = f" | erro={item.get('erro')}" if item.get("erro") else ""
-        linhas.append(
-            f"{item.get('posicao')}. {item.get('ticker')} - {item.get('decisao')} | margem={item.get('margem')} | confianca={item.get('score_confianca_dados')}{erro}"
-        )
+        linhas.append(f"{item.get('posicao')}. {item.get('ticker')} - {item.get('decisao')} | score={item.get('score_final')} | FNET={item.get('risco_documental_fnet')} ({item.get('score_documental_fnet')}) | ajuste={item.get('ajuste_score_fnet')}{erro}")
     linhas.append("")
 
     linhas.append("## Análise individual")
@@ -269,6 +244,10 @@ def gerar_markdown_relatorio(relatorio: dict[str, Any]) -> str:
             linhas.append(f"- Motivo: {item.get('motivo')}")
             linhas.append(f"- Risco: {item.get('risco')}")
             linhas.append(f"- Margem: {item.get('margem')}")
+            linhas.append(f"- Score final: {item.get('score_final')}")
+            linhas.append(f"- Score original: {item.get('score_final_original')}")
+            linhas.append(f"- FNET: {item.get('risco_documental_fnet')} | score={item.get('score_documental_fnet')} | ajuste={item.get('ajuste_score_fnet')}")
+            linhas.append(f"- Motivo FNET: {item.get('motivo_score_documental')}")
             linhas.append(f"- Fonte patrimonial: {item.get('fonte_patrimonial')}")
             linhas.append(f"- Gate 5.5: {item.get('gate55_status')}")
             linhas.append(f"- Confiança dos dados: {item.get('score_confianca_dados')}")
