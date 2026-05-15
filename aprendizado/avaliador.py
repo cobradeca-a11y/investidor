@@ -65,7 +65,6 @@ def _garantir_tabela() -> None:
 
 
 def _benchmark_periodo(dias: int) -> tuple[float, str]:
-    """Retorna benchmark equivalente ao CDI para o período, com fonte rastreável."""
     try:
         cdi_anual = obter_cdi_atual()
         if cdi_anual is not None:
@@ -147,9 +146,13 @@ def _resultado_existe(decisao_id: int, janela_dias: int) -> bool:
     return bool(row)
 
 
-def _marcar_avaliada_se_completa(decisao_id: int) -> None:
-    if _resultado_existe(decisao_id, 90) and _resultado_existe(decisao_id, 365):
-        db.executar("UPDATE decisoes SET avaliada = 1 WHERE id = ?", (decisao_id,))
+def _avaliacao_completa(conn, decisao_id: int) -> bool:
+    rows = conn.execute(
+        "SELECT janela_dias FROM decisoes_resultado WHERE decisao_id = ?",
+        (decisao_id,),
+    ).fetchall()
+    janelas = {row[0] for row in rows}
+    return {90, 365}.issubset(janelas)
 
 
 def avaliar_decisao(decisao_id: int, janela_dias: int) -> dict | None:
@@ -207,33 +210,35 @@ def avaliar_decisao(decisao_id: int, janela_dias: int) -> dict | None:
         else f"Avaliação de tese com benchmark {fonte_benchmark}."
     )
 
-    db.executar(
-        """
-        INSERT OR REPLACE INTO decisoes_resultado
-            (decisao_id, ticker, janela_dias, data_avaliacao, preco_entrada,
-             preco_avaliacao, retorno_preco, retorno_dividendos, retorno_total,
-             retorno_cdi_periodo, fonte_benchmark, acerto, tipo_resultado, observacao)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            decisao_id,
-            ticker,
-            janela_dias,
-            data_avaliacao.isoformat(),
-            float(preco_entrada),
-            float(preco_aval),
-            round(retorno_preco, 2),
-            round(retorno_div, 2),
-            round(retorno_total, 2),
-            round(cdi_periodo, 2),
-            fonte_benchmark,
-            acerto,
-            tipo,
-            obs,
-        ),
-    )
+    with db.transacao() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO decisoes_resultado
+                (decisao_id, ticker, janela_dias, data_avaliacao, preco_entrada,
+                 preco_avaliacao, retorno_preco, retorno_dividendos, retorno_total,
+                 retorno_cdi_periodo, fonte_benchmark, acerto, tipo_resultado, observacao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                decisao_id,
+                ticker,
+                janela_dias,
+                data_avaliacao.isoformat(),
+                float(preco_entrada),
+                float(preco_aval),
+                round(retorno_preco, 2),
+                round(retorno_div, 2),
+                round(retorno_total, 2),
+                round(cdi_periodo, 2),
+                fonte_benchmark,
+                acerto,
+                tipo,
+                obs,
+            ),
+        )
 
-    _marcar_avaliada_se_completa(decisao_id)
+        if _avaliacao_completa(conn, decisao_id):
+            conn.execute("UPDATE decisoes SET avaliada = 1 WHERE id = ?", (decisao_id,))
 
     resultado = {
         "decisao_id": decisao_id,
