@@ -5,9 +5,11 @@ Leitura operacional de documentos FNET/CVM.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, date, timedelta
 from typing import Any
 
+from aprendizado.tentativa_erro import registrar_simulacao
 from coleta import cvm_fnet_documentos, tabela_mestre_fiis
 from sistema import observabilidade
 
@@ -99,7 +101,6 @@ def classificar_documento(doc: dict[str, Any], dias_recencia: int = 90) -> dict[
 
 
 def calcular_score_documental(classificados: list[dict[str, Any]], possui_fnet: bool) -> dict[str, Any]:
-    """Gera score documental rastreável entre 0 e 100."""
     if not possui_fnet:
         return {
             "score_documental_fnet": 40,
@@ -208,8 +209,46 @@ def analisar_eventos_ticker(ticker: str, limite: int = 20, dias_recencia: int = 
         }
 
 
+def registrar_evidencia_fnet_aprendizado(veredito: dict[str, Any], eventos: dict[str, Any]) -> dict[str, Any] | None:
+    """Registra a decisão ajustada por FNET como simulação rastreável."""
+    ticker = veredito.get("ticker") or eventos.get("ticker")
+    if not ticker:
+        return None
+
+    try:
+        payload = {
+            "origem": "FNET",
+            "risco_documental_fnet": eventos.get("nivel_risco_documental"),
+            "score_documental_fnet": eventos.get("score_documental_fnet"),
+            "ajuste_score_fnet": veredito.get("ajuste_score_fnet"),
+            "score_final_original": veredito.get("score_final_original"),
+            "score_final": veredito.get("score_final"),
+            "eventos_relevantes": eventos.get("eventos_relevantes", []),
+            "motivo_score_documental": eventos.get("motivo_score_documental"),
+        }
+
+        simulacao = registrar_simulacao(
+            ticker=ticker,
+            acao_simulada=veredito.get("decisao", "MONITORAR"),
+            decisao_origem="DECISAO_COM_FNET",
+            segmento=veredito.get("segmento"),
+            score_final=veredito.get("score_final"),
+            confianca=veredito.get("confianca"),
+            risco=veredito.get("risco_documental_fnet") or veredito.get("risco"),
+            fonte_patrimonial=veredito.get("fonte_patrimonial"),
+            gate55_status=(veredito.get("gate55_confianca_dados") or {}).get("status"),
+            peso_versao="fnet_score_v1",
+            payload_json=json.dumps(payload, ensure_ascii=False, default=str),
+        )
+        veredito["aprendizado_fnet_simulacao_id"] = simulacao.get("id")
+        return simulacao
+    except Exception as erro:
+        observabilidade.registrar_erro("processamento.eventos_fnet.aprendizado", erro, ticker=ticker)
+        veredito["aprendizado_fnet_erro"] = str(erro)
+        return None
+
+
 def aplicar_eventos_na_decisao(veredito: dict[str, Any], eventos: dict[str, Any]) -> dict[str, Any]:
-    """Rebaixa decisão e ajusta score quando houver risco documental sensível."""
     decisao = str(veredito.get("decisao") or "MONITORAR").upper()
     nivel = eventos.get("nivel_risco_documental")
     penalizacao = float(eventos.get("penalizacao_score") or 0)
@@ -248,4 +287,5 @@ def aplicar_eventos_na_decisao(veredito: dict[str, Any], eventos: dict[str, Any]
             f"Ajuste score FNET: {veredito.get('ajuste_score_fnet')}."
         ).strip()
 
+    registrar_evidencia_fnet_aprendizado(veredito, eventos)
     return veredito
