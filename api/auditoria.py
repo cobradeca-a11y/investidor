@@ -2,14 +2,6 @@
 api/auditoria.py
 
 Endpoints de auditoria operacional do FIIA.
-
-Objetivo:
-- expor decisões recentes;
-- expor taxa de acerto 90/365d;
-- expor uso de CVM vs fallback patrimonial;
-- expor Gate 5.5;
-- expor confiança dos dados;
-- detectar instabilidade de decisão por ticker.
 """
 from __future__ import annotations
 
@@ -22,6 +14,7 @@ from fastapi import APIRouter
 from banco import db
 from aprendizado.avaliador import taxa_acerto
 from sistema import observabilidade
+from coleta import tabela_mestre_fiis, cvm_informe_mensal, cvm_fnet_documentos
 
 router = APIRouter(prefix="/api/auditoria", tags=["auditoria"])
 
@@ -51,7 +44,6 @@ def _listar_decisoes(limite: int = 50) -> list[dict[str, Any]]:
 
 @router.get("/decisoes")
 def listar_decisoes(limite: int = 50) -> dict[str, Any]:
-    """Lista decisões recentes com campos auditáveis principais."""
     try:
         decisoes = []
         for row in _listar_decisoes(limite):
@@ -86,7 +78,6 @@ def listar_decisoes(limite: int = 50) -> dict[str, Any]:
 
 @router.get("/taxa-acerto")
 def obter_taxa_acerto() -> dict[str, Any]:
-    """Retorna taxa de acerto nas janelas 90d e 365d."""
     try:
         return {
             "status": "ok",
@@ -100,7 +91,6 @@ def obter_taxa_acerto() -> dict[str, Any]:
 
 @router.get("/fallbacks")
 def listar_fallbacks(limite: int = 100) -> dict[str, Any]:
-    """Lista decisões em que o dado patrimonial veio de fallback auxiliar."""
     try:
         resultados = []
         for row in _listar_decisoes(limite):
@@ -127,7 +117,6 @@ def listar_fallbacks(limite: int = 100) -> dict[str, Any]:
 
 @router.get("/gate55")
 def listar_gate55(limite: int = 100) -> dict[str, Any]:
-    """Lista status do Gate 5.5 nas decisões recentes."""
     try:
         resultados = []
         resumo = defaultdict(int)
@@ -162,16 +151,104 @@ def listar_gate55(limite: int = 100) -> dict[str, Any]:
         return {"status": "erro", "mensagem": str(erro), "gate55": []}
 
 
+@router.get("/cobertura-institucional")
+def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
+    """Mede cobertura ticker -> CNPJ -> CVM patrimonial -> FNET documental."""
+    try:
+        tabela_mestre_fiis.garantir_tabela()
+        cvm_informe_mensal.garantir_tabela()
+        cvm_fnet_documentos.garantir_tabela()
+
+        rows = db.buscar_todos(
+            """
+            SELECT ticker, cnpj_fundo, cnpj_classe, razao_social, nome_fundo
+            FROM fiia_tabela_mestre_fiis
+            ORDER BY ticker
+            LIMIT ?
+            """,
+            (limite,),
+        )
+
+        ativos = []
+        total = len(rows)
+        com_cnpj = 0
+        com_cvm = 0
+        com_fnet = 0
+
+        for row in rows:
+            item = dict(row)
+            ticker = item.get("ticker")
+            cnpj = item.get("cnpj_fundo")
+            informe = cvm_informe_mensal.ultimo_por_cnpj(cnpj) if cnpj else None
+            documento = cvm_fnet_documentos.ultimo_documento_por_cnpj(cnpj) if cnpj else None
+
+            if cnpj:
+                com_cnpj += 1
+            if informe:
+                com_cvm += 1
+            if documento:
+                com_fnet += 1
+
+            ativos.append(
+                {
+                    "ticker": ticker,
+                    "cnpj_fundo": cnpj,
+                    "cnpj_classe": item.get("cnpj_classe"),
+                    "tem_cnpj": bool(cnpj),
+                    "tem_cvm_patrimonial": bool(informe),
+                    "competencia_cvm": informe.get("competencia") if informe else None,
+                    "tem_fnet_documental": bool(documento),
+                    "ultimo_documento_fnet": documento.get("data_entrega") if documento else None,
+                    "tipo_ultimo_documento": documento.get("tipo_documento") if documento else None,
+                }
+            )
+
+        def pct(valor: int) -> float:
+            return round(valor / total * 100, 2) if total else 0.0
+
+        return {
+            "status": "ok",
+            "resumo": {
+                "total_tabela_mestre": total,
+                "com_cnpj": com_cnpj,
+                "com_cnpj_pct": pct(com_cnpj),
+                "com_cvm_patrimonial": com_cvm,
+                "com_cvm_patrimonial_pct": pct(com_cvm),
+                "com_fnet_documental": com_fnet,
+                "com_fnet_documental_pct": pct(com_fnet),
+            },
+            "ativos": ativos,
+        }
+    except Exception as erro:
+        observabilidade.registrar_erro("api.auditoria.cobertura_institucional", erro)
+        return {"status": "erro", "mensagem": str(erro), "resumo": {}, "ativos": []}
+
+
+@router.get("/ativos-sem-cobertura")
+def ativos_sem_cobertura(limite: int = 500) -> dict[str, Any]:
+    """Lista ativos da tabela mestre sem CNPJ, sem CVM patrimonial ou sem documento FNET."""
+    try:
+        cobertura = cobertura_institucional(limite=limite)
+        problemas = []
+        for item in cobertura.get("ativos", []):
+            faltas = []
+            if not item.get("tem_cnpj"):
+                faltas.append("SEM_CNPJ")
+            if not item.get("tem_cvm_patrimonial"):
+                faltas.append("SEM_CVM_PATRIMONIAL")
+            if not item.get("tem_fnet_documental"):
+                faltas.append("SEM_FNET_DOCUMENTAL")
+            if faltas:
+                problemas.append({**item, "faltas": faltas})
+
+        return {"status": "ok", "quantidade": len(problemas), "ativos": problemas}
+    except Exception as erro:
+        observabilidade.registrar_erro("api.auditoria.ativos_sem_cobertura", erro)
+        return {"status": "erro", "mensagem": str(erro), "ativos": []}
+
+
 @router.get("/instabilidade")
 def detectar_instabilidade(limite: int = 300) -> dict[str, Any]:
-    """
-    Detecta tickers com decisões divergentes em janelas próximas.
-
-    Critério simples inicial:
-    - mesmo ticker;
-    - decisões recentes diferentes;
-    - mudança entre ação ofensiva e defensiva.
-    """
     ofensivas = {"COMPRAR", "COMPRAR_PARCIAL", "COMPRAR_PARCIALMENTE", "MANTER"}
     defensivas = {"EVITAR", "EVITAR_ENTRADA", "VENDER", "REDUZIR", "MONITORAR", "AGUARDAR"}
 
