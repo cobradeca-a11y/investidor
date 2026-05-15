@@ -3,8 +3,9 @@ banco/db.py
 Conexão com o banco SQLite e helpers de acesso.
 """
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 # Caminho do banco — sempre na raiz do projeto
 _RAIZ = Path(__file__).parent.parent
@@ -21,6 +22,25 @@ def conectar() -> sqlite3.Connection:
     return conn
 
 
+@contextmanager
+def transacao() -> Iterator[sqlite3.Connection]:
+    """
+    Abre uma transação explícita para operações compostas.
+
+    Use quando duas ou mais escritas precisam ser atômicas.
+    Em caso de erro, executa rollback e relança a exceção.
+    """
+    conn = conectar()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def inicializar() -> None:
     """Cria as tabelas se ainda não existirem."""
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
@@ -34,7 +54,12 @@ def inicializar() -> None:
 
 
 def inserir(tabela: str, dados: dict[str, Any]) -> int:
-    """Insere um registro e retorna o id gerado."""
+    """
+    Insere um registro e retorna o id gerado.
+
+    Atenção: usa INSERT OR IGNORE. Em caso de duplicidade ignorada,
+    o SQLite pode retornar lastrowid sem criar novo registro.
+    """
     colunas = ", ".join(dados.keys())
     placeholders = ", ".join("?" * len(dados))
     sql = f"INSERT OR IGNORE INTO {tabela} ({colunas}) VALUES ({placeholders})"
