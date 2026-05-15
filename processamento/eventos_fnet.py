@@ -2,12 +2,6 @@
 processamento/eventos_fnet.py
 
 Leitura operacional de documentos FNET/CVM.
-
-Objetivo:
-- transformar metadados FNET em sinais de risco;
-- identificar documentos potencialmente estruturais;
-- rebaixar compras fortes quando houver evento sensível recente;
-- preservar rastreabilidade sem depender de IA externa.
 """
 from __future__ import annotations
 
@@ -69,11 +63,7 @@ def _parse_data(valor: str | None) -> date | None:
 
 
 def _texto_documento(doc: dict[str, Any]) -> str:
-    partes = [
-        doc.get("categoria"),
-        doc.get("tipo_documento"),
-        doc.get("assunto"),
-    ]
+    partes = [doc.get("categoria"), doc.get("tipo_documento"), doc.get("assunto")]
     return " ".join(str(p or "") for p in partes).lower()
 
 
@@ -108,6 +98,51 @@ def classificar_documento(doc: dict[str, Any], dias_recencia: int = 90) -> dict[
     }
 
 
+def calcular_score_documental(classificados: list[dict[str, Any]], possui_fnet: bool) -> dict[str, Any]:
+    """Gera score documental rastreável entre 0 e 100."""
+    if not possui_fnet:
+        return {
+            "score_documental_fnet": 40,
+            "penalizacao_score": 5,
+            "bonificacao_score": 0,
+            "motivo_score_documental": "Sem documentos FNET disponíveis para o ativo.",
+        }
+
+    altos = [d for d in classificados if d.get("nivel_risco_documental") == "ALTO"]
+    medios = [d for d in classificados if d.get("nivel_risco_documental") == "MEDIO"]
+    recentes = [d for d in classificados if d.get("recente")]
+
+    score = 100
+    penalizacao = 0
+    bonificacao = 0
+    motivos = []
+
+    if altos:
+        perda = min(60, 30 * len(altos))
+        score -= perda
+        penalizacao += perda
+        motivos.append(f"{len(altos)} documento(s) de risco alto.")
+
+    if medios:
+        perda = min(30, 10 * len(medios))
+        score -= perda
+        penalizacao += perda
+        motivos.append(f"{len(medios)} documento(s) de risco médio.")
+
+    if recentes and not altos:
+        bonificacao += 3
+        motivos.append("Há documentação recente sem risco alto identificado.")
+
+    score = max(0, min(100, score + bonificacao))
+
+    return {
+        "score_documental_fnet": score,
+        "penalizacao_score": penalizacao,
+        "bonificacao_score": bonificacao,
+        "motivo_score_documental": " ".join(motivos) if motivos else "Documentação FNET sem alerta relevante.",
+    }
+
+
 def analisar_eventos_ticker(ticker: str, limite: int = 20, dias_recencia: int = 90) -> dict[str, Any]:
     ticker_norm = ticker.upper().replace(".SA", "").strip()
 
@@ -122,6 +157,7 @@ def analisar_eventos_ticker(ticker: str, limite: int = 20, dias_recencia: int = 
         classificados = [classificar_documento(doc, dias_recencia=dias_recencia) for doc in docs]
         risco_alto = [item for item in classificados if item["nivel_risco_documental"] == "ALTO"]
         risco_medio = [item for item in classificados if item["nivel_risco_documental"] == "MEDIO"]
+        score_doc = calcular_score_documental(classificados, possui_fnet=bool(docs))
 
         if risco_alto:
             nivel = "ALTO"
@@ -139,6 +175,7 @@ def analisar_eventos_ticker(ticker: str, limite: int = 20, dias_recencia: int = 
             "documentos_risco_alto": len(risco_alto),
             "documentos_risco_medio": len(risco_medio),
             "eventos_relevantes": risco_alto + risco_medio,
+            **score_doc,
         }
 
         observabilidade.registrar_evento(
@@ -146,7 +183,11 @@ def analisar_eventos_ticker(ticker: str, limite: int = 20, dias_recencia: int = 
             "processamento.eventos_fnet",
             "Eventos FNET analisados",
             ticker=ticker_norm,
-            contexto={"nivel_risco_documental": nivel, "documentos_analisados": len(docs)},
+            contexto={
+                "nivel_risco_documental": nivel,
+                "documentos_analisados": len(docs),
+                "score_documental_fnet": score_doc.get("score_documental_fnet"),
+            },
         )
         return resumo
 
@@ -159,20 +200,36 @@ def analisar_eventos_ticker(ticker: str, limite: int = 20, dias_recencia: int = 
             "documentos_risco_alto": 0,
             "documentos_risco_medio": 0,
             "eventos_relevantes": [],
+            "score_documental_fnet": 0,
+            "penalizacao_score": 100,
+            "bonificacao_score": 0,
+            "motivo_score_documental": str(erro),
             "erro": str(erro),
         }
 
 
 def aplicar_eventos_na_decisao(veredito: dict[str, Any], eventos: dict[str, Any]) -> dict[str, Any]:
-    """Rebaixa decisão quando houver risco documental sensível."""
+    """Rebaixa decisão e ajusta score quando houver risco documental sensível."""
     decisao = str(veredito.get("decisao") or "MONITORAR").upper()
     nivel = eventos.get("nivel_risco_documental")
+    penalizacao = float(eventos.get("penalizacao_score") or 0)
+    bonificacao = float(eventos.get("bonificacao_score") or 0)
 
     veredito["eventos_fnet"] = eventos
     veredito["risco_documental_fnet"] = nivel
+    veredito["score_documental_fnet"] = eventos.get("score_documental_fnet")
+    veredito["ajuste_score_fnet"] = round(bonificacao - penalizacao, 2)
+
+    score_original = veredito.get("score_final")
+    if score_original is not None:
+        try:
+            veredito["score_final_original"] = score_original
+            veredito["score_final"] = max(0, round(float(score_original) + bonificacao - penalizacao, 2))
+        except Exception:
+            pass
 
     trilha = veredito.setdefault("trilha_gates", [])
-    marcador = f"FNET:{nivel}"
+    marcador = f"FNET:{nivel}:score={eventos.get('score_documental_fnet')}"
     if marcador not in trilha:
         trilha.append(marcador)
 
@@ -180,13 +237,15 @@ def aplicar_eventos_na_decisao(veredito: dict[str, Any], eventos: dict[str, Any]
         veredito.setdefault("decisao_original", decisao)
         veredito["decisao"] = "MONITORAR"
         veredito["motivo"] = (
-            f"{veredito.get('motivo', '')} Compra forte bloqueada por evento FNET recente de risco alto."
+            f"{veredito.get('motivo', '')} Compra forte bloqueada por evento FNET recente de risco alto. "
+            f"Ajuste score FNET: {veredito.get('ajuste_score_fnet')}."
         ).strip()
     elif nivel == "MEDIO" and decisao == "COMPRAR":
         veredito.setdefault("decisao_original", decisao)
         veredito["decisao"] = "COMPRAR_PARCIAL"
         veredito["motivo"] = (
-            f"{veredito.get('motivo', '')} Compra rebaixada por evento FNET de risco médio."
+            f"{veredito.get('motivo', '')} Compra rebaixada por evento FNET de risco médio. "
+            f"Ajuste score FNET: {veredito.get('ajuste_score_fnet')}."
         ).strip()
 
     return veredito
