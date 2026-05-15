@@ -9,7 +9,11 @@ from typing import Any
 
 from banco import db
 from decisao import motor_decisao_cvm_first
-from processamento.eventos_fnet import analisar_eventos_ticker, aplicar_eventos_na_decisao
+from processamento.eventos_fnet import (
+    analisar_eventos_ticker,
+    aplicar_eventos_na_decisao,
+    registrar_evidencia_fnet_aprendizado,
+)
 from sistema import observabilidade
 from validacao.confianca_fonte import avaliar_campo
 from validacao.relatorio_confianca import gerar_relatorio_confianca, aplicar_confianca_na_acao
@@ -31,17 +35,15 @@ def _buscar_base_confianca(ticker: str) -> tuple[dict[str, Any], dict[str, Any]]
         (ticker,),
     )
     fii_row = db.buscar_um("SELECT * FROM fiis WHERE ticker = ?", (ticker,))
-
     return (dict(ind_row) if ind_row else {}, dict(fii_row) if fii_row else {})
 
 
 def _montar_campos_confianca(ticker: str, veredito: dict[str, Any]) -> list:
     ind, fii = _buscar_base_confianca(ticker)
     patrimonio = veredito.get("patrimonio_resolvido", {}) or {}
-
     fonte_patrimonial = veredito.get("fonte_patrimonial") or patrimonio.get("fonte_patrimonial") or "Fundamentus"
 
-    campos = [
+    return [
         avaliar_campo("preco", "Fundamentus", ind.get("preco")),
         avaliar_campo("pvp", fonte_patrimonial, patrimonio.get("pvp") or ind.get("pvp")),
         avaliar_campo("liquidez_diaria", "Fundamentus", ind.get("liquidez_diaria")),
@@ -51,8 +53,6 @@ def _montar_campos_confianca(ticker: str, veredito: dict[str, Any]) -> list:
         avaliar_campo("patrimonio_liquido", fonte_patrimonial, patrimonio.get("patrimonio_liquido") or ind.get("patrimonio_liquido")),
         avaliar_campo("segmento", "base_local", fii.get("segmento")),
     ]
-
-    return campos
 
 
 def decidir(
@@ -65,7 +65,8 @@ def decidir(
     """
     Executa o motor CVM-first e adiciona:
     - relatório consolidado de confiança;
-    - eventos documentais FNET.
+    - eventos documentais FNET;
+    - registro explícito de evidência FNET para aprendizado.
     """
     ticker = ticker.upper().replace(".SA", "").strip()
 
@@ -101,6 +102,9 @@ def decidir(
         eventos_fnet = analisar_eventos_ticker(ticker)
         veredito = aplicar_eventos_na_decisao(veredito, eventos_fnet)
 
+        if veredito.get("status") != "ERRO_DECISAO_COM_CONFIANCA":
+            registrar_evidencia_fnet_aprendizado(veredito, eventos_fnet)
+
         veredito["confianca_dados"] = relatorio.to_dict()
         veredito["score_confianca_dados_consolidado"] = relatorio.score_global
         veredito["nivel_uso_dados_consolidado"] = relatorio.nivel_uso.value
@@ -117,6 +121,7 @@ def decidir(
                 "fonte_patrimonial": veredito.get("fonte_patrimonial"),
                 "usou_cvm_patrimonial": veredito.get("usou_cvm_patrimonial"),
                 "risco_documental_fnet": eventos_fnet.get("nivel_risco_documental"),
+                "aprendizado_fnet_simulacao_id": veredito.get("aprendizado_fnet_simulacao_id"),
             },
         )
 
