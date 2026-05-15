@@ -2,12 +2,6 @@
 decisao/decisao_com_confianca.py
 
 Adaptador consolidado de decisão com confiança.
-
-Agora esta camada usa o motor CVM-first como base, preservando:
-- prioridade patrimonial CVM;
-- fallback auxiliar quando necessário;
-- Gate 5.5 de confiança estrutural dos dados;
-- RelatorioConfianca para visão consolidada da análise.
 """
 from __future__ import annotations
 
@@ -15,6 +9,7 @@ from typing import Any
 
 from banco import db
 from decisao import motor_decisao_cvm_first
+from processamento.eventos_fnet import analisar_eventos_ticker, aplicar_eventos_na_decisao
 from sistema import observabilidade
 from validacao.confianca_fonte import avaliar_campo
 from validacao.relatorio_confianca import gerar_relatorio_confianca, aplicar_confianca_na_acao
@@ -68,7 +63,9 @@ def decidir(
     ia_status: str = "INDISPONIVEL",
 ) -> dict:
     """
-    Executa o motor CVM-first e adiciona relatório consolidado de confiança.
+    Executa o motor CVM-first e adiciona:
+    - relatório consolidado de confiança;
+    - eventos documentais FNET.
     """
     ticker = ticker.upper().replace(".SA", "").strip()
 
@@ -101,6 +98,9 @@ def decidir(
             veredito.setdefault("decisao_original", decisao_original)
             veredito["decisao"] = decisao_ajustada
 
+        eventos_fnet = analisar_eventos_ticker(ticker)
+        veredito = aplicar_eventos_na_decisao(veredito, eventos_fnet)
+
         veredito["confianca_dados"] = relatorio.to_dict()
         veredito["score_confianca_dados_consolidado"] = relatorio.score_global
         veredito["nivel_uso_dados_consolidado"] = relatorio.nivel_uso.value
@@ -108,7 +108,7 @@ def decidir(
         observabilidade.registrar_evento(
             "INFO",
             "decisao.com_confianca",
-            "Decisão consolidada com motor CVM-first e confiança dos dados",
+            "Decisão consolidada com motor CVM-first, confiança e FNET",
             ticker=ticker,
             contexto={
                 "decisao": veredito.get("decisao"),
@@ -116,6 +116,7 @@ def decidir(
                 "nivel_uso_dados": relatorio.nivel_uso.value,
                 "fonte_patrimonial": veredito.get("fonte_patrimonial"),
                 "usou_cvm_patrimonial": veredito.get("usou_cvm_patrimonial"),
+                "risco_documental_fnet": eventos_fnet.get("nivel_risco_documental"),
             },
         )
 
@@ -135,4 +136,5 @@ def decidir(
             "score_confianca_dados": 0.0,
             "nivel_uso_dados": "INSUFICIENTE",
             "usou_cvm_patrimonial": False,
+            "risco_documental_fnet": "ERRO",
         }
