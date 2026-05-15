@@ -14,36 +14,15 @@ from coleta import cvm_fnet_documentos, tabela_mestre_fiis
 from sistema import observabilidade
 
 TERMOS_RISCO_ALTO = [
-    "fato relevante",
-    "inadimpl",
-    "vacância",
-    "vacancia",
-    "renúncia",
-    "renuncia",
-    "destituição",
-    "destituicao",
-    "liquidação",
-    "liquidacao",
-    "assembleia",
-    "amortização extraordinária",
-    "amortizacao extraordinaria",
-    "reavaliação",
-    "reavaliacao",
-    "risco",
-    "default",
+    "fato relevante", "inadimpl", "vacância", "vacancia", "renúncia", "renuncia",
+    "destituição", "destituicao", "liquidação", "liquidacao", "assembleia",
+    "amortização extraordinária", "amortizacao extraordinaria", "reavaliação",
+    "reavaliacao", "risco", "default",
 ]
 
 TERMOS_RISCO_MEDIO = [
-    "comunicado",
-    "emissão",
-    "emissao",
-    "oferta",
-    "subscrição",
-    "subscricao",
-    "rendimento",
-    "relatório gerencial",
-    "relatorio gerencial",
-    "informe",
+    "comunicado", "emissão", "emissao", "oferta", "subscrição", "subscricao",
+    "rendimento", "relatório gerencial", "relatorio gerencial", "informe",
 ]
 
 ACOES_FORTES = {"COMPRAR", "COMPRAR_PARCIAL", "COMPRAR_PARCIALMENTE"}
@@ -178,20 +157,12 @@ def analisar_eventos_ticker(ticker: str, limite: int = 20, dias_recencia: int = 
             "eventos_relevantes": risco_alto + risco_medio,
             **score_doc,
         }
-
         observabilidade.registrar_evento(
-            "INFO",
-            "processamento.eventos_fnet",
-            "Eventos FNET analisados",
+            "INFO", "processamento.eventos_fnet", "Eventos FNET analisados",
             ticker=ticker_norm,
-            contexto={
-                "nivel_risco_documental": nivel,
-                "documentos_analisados": len(docs),
-                "score_documental_fnet": score_doc.get("score_documental_fnet"),
-            },
+            contexto={"nivel_risco_documental": nivel, "documentos_analisados": len(docs), "score_documental_fnet": score_doc.get("score_documental_fnet")},
         )
         return resumo
-
     except Exception as erro:
         observabilidade.registrar_erro("processamento.eventos_fnet", erro, ticker=ticker_norm)
         return {
@@ -210,7 +181,7 @@ def analisar_eventos_ticker(ticker: str, limite: int = 20, dias_recencia: int = 
 
 
 def registrar_evidencia_fnet_aprendizado(veredito: dict[str, Any], eventos: dict[str, Any]) -> dict[str, Any] | None:
-    """Registra a decisão ajustada por FNET como simulação rastreável."""
+    """Registra explicitamente a decisão ajustada por FNET como simulação rastreável."""
     ticker = veredito.get("ticker") or eventos.get("ticker")
     if not ticker:
         return None
@@ -226,7 +197,6 @@ def registrar_evidencia_fnet_aprendizado(veredito: dict[str, Any], eventos: dict
             "eventos_relevantes": eventos.get("eventos_relevantes", []),
             "motivo_score_documental": eventos.get("motivo_score_documental"),
         }
-
         simulacao = registrar_simulacao(
             ticker=ticker,
             acao_simulada=veredito.get("decisao", "MONITORAR"),
@@ -249,6 +219,7 @@ def registrar_evidencia_fnet_aprendizado(veredito: dict[str, Any], eventos: dict
 
 
 def aplicar_eventos_na_decisao(veredito: dict[str, Any], eventos: dict[str, Any]) -> dict[str, Any]:
+    """Transforma o veredito com base no FNET. Não persiste nada no banco."""
     decisao = str(veredito.get("decisao") or "MONITORAR").upper()
     nivel = eventos.get("nivel_risco_documental")
     penalizacao = float(eventos.get("penalizacao_score") or 0)
@@ -279,13 +250,12 @@ def aplicar_eventos_na_decisao(veredito: dict[str, Any], eventos: dict[str, Any]
             f"{veredito.get('motivo', '')} Compra forte bloqueada por evento FNET recente de risco alto. "
             f"Ajuste score FNET: {veredito.get('ajuste_score_fnet')}."
         ).strip()
-    elif nivel == "MEDIO" and decisao == "COMPRAR":
+    elif nivel == "MEDIO" and decisao in ACOES_FORTES:
         veredito.setdefault("decisao_original", decisao)
-        veredito["decisao"] = "COMPRAR_PARCIAL"
+        veredito["decisao"] = "MONITORAR"
         veredito["motivo"] = (
-            f"{veredito.get('motivo', '')} Compra rebaixada por evento FNET de risco médio. "
+            f"{veredito.get('motivo', '')} Ação ofensiva rebaixada para MONITORAR por risco documental FNET médio combinado. "
             f"Ajuste score FNET: {veredito.get('ajuste_score_fnet')}."
         ).strip()
 
-    registrar_evidencia_fnet_aprendizado(veredito, eventos)
     return veredito
