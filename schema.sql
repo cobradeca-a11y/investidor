@@ -1,5 +1,6 @@
--- FIIA — Schema v1.0
+-- FIIA — Schema v1.1
 -- Criar com: python main.py --setup
+-- Sincronizado com implementações P2/P3 e ciclo operacional de aprendizado.
 
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -10,8 +11,8 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS fiis (
     ticker              TEXT PRIMARY KEY,
     nome                TEXT,
-    tipo                TEXT,       -- PAPEL, TIJOLO, HIBRIDO, FOF, DESENVOLVIMENTO, OUTRO
-    segmento            TEXT,       -- LOGISTICA, LAJES, SHOPPING, PAPEL, FOF, BANCO, etc
+    tipo                TEXT,
+    segmento            TEXT,
     ativo               INTEGER DEFAULT 1,
     criado_em           TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -24,6 +25,9 @@ CREATE TABLE IF NOT EXISTS indicadores (
     ticker              TEXT NOT NULL,
     data                TEXT NOT NULL,
     preco               REAL,
+    preco_timestamp     TEXT,
+    preco_fonte         TEXT,
+    preco_moeda         TEXT,
     pvp                 REAL,
     liquidez_diaria     REAL,
     ultimo_dividendo    REAL,
@@ -37,7 +41,7 @@ CREATE TABLE IF NOT EXISTS indicadores (
     vpa                 REAL,
     qtd_ativos          INTEGER,
     fonte               TEXT,
-    confiabilidade      INTEGER,    -- 0 a 100
+    confiabilidade      INTEGER,
     coletado_em         TEXT DEFAULT (datetime('now','localtime')),
     UNIQUE(ticker, data),
     FOREIGN KEY (ticker) REFERENCES fiis(ticker)
@@ -50,11 +54,106 @@ CREATE TABLE IF NOT EXISTS dividendos (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker              TEXT NOT NULL,
     data_pagamento      TEXT NOT NULL,
+    data_base           TEXT,
+    data_com            TEXT,
     valor               REAL NOT NULL,
-    tipo                TEXT DEFAULT 'INDEFINIDO', -- RECORRENTE, EXTRAORDINARIO, AMORTIZACAO, INDEFINIDO
+    tipo                TEXT DEFAULT 'INDEFINIDO',
     fonte               TEXT,
+    protocolo           TEXT,
+    url_documento       TEXT,
     UNIQUE(ticker, data_pagamento),
     FOREIGN KEY (ticker) REFERENCES fiis(ticker)
+);
+
+-- ─────────────────────────────────────────
+-- CVM — Informes mensais FII versionados
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS cvm_informes_mensais_fii (
+    id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+    cnpj_fundo                 TEXT NOT NULL,
+    competencia                TEXT NOT NULL,
+    versao                     INTEGER NOT NULL DEFAULT 1,
+    reapresentacao             INTEGER NOT NULL DEFAULT 0,
+    patrimonio_liquido         REAL,
+    valor_patrimonial_cota     REAL,
+    num_cotistas               INTEGER,
+    num_cotas                  REAL,
+    fonte                      TEXT NOT NULL DEFAULT 'CVM_INF_MENSAL',
+    ano                        INTEGER,
+    arquivo_origem             TEXT,
+    coletado_em                TEXT NOT NULL,
+    payload_json               TEXT,
+    UNIQUE(cnpj_fundo, competencia, versao)
+);
+
+-- ─────────────────────────────────────────
+-- FNET — Dividendos oficiais de avisos aos cotistas
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS fnet_dividendos_fii (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker              TEXT NOT NULL,
+    cnpj_fundo          TEXT,
+    data_base           TEXT,
+    data_com            TEXT,
+    data_pagamento      TEXT NOT NULL,
+    valor               REAL NOT NULL,
+    tipo                TEXT DEFAULT 'INDEFINIDO',
+    fonte               TEXT NOT NULL DEFAULT 'FNET_AVISO_COTISTAS',
+    protocolo           TEXT,
+    url_documento       TEXT,
+    assunto             TEXT,
+    arquivo_origem      TEXT,
+    coletado_em         TEXT NOT NULL,
+    payload_json        TEXT,
+    dedupe_key          TEXT UNIQUE
+);
+
+-- ─────────────────────────────────────────
+-- FNET — Classificações NLP/Gemini
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS fnet_nlp_classificacoes (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    documento_hash      TEXT NOT NULL UNIQUE,
+    documento_id        TEXT,
+    ticker              TEXT,
+    nivel               TEXT NOT NULL,
+    motivo              TEXT,
+    termos_detectados   TEXT,
+    modelo              TEXT,
+    criado_em           TEXT NOT NULL,
+    payload_json        TEXT
+);
+
+-- ─────────────────────────────────────────
+-- CVM — Informes trimestrais operacionais
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS inf_trimestral_imoveis (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker              TEXT NOT NULL,
+    cnpj                TEXT NOT NULL,
+    data_referencia     TEXT NOT NULL,
+    nome_imovel         TEXT,
+    classe              TEXT,
+    area                REAL,
+    vacancia_pct        REAL,
+    inadimplencia_pct   REAL,
+    receita_pct         REAL,
+    locado_pct          REAL,
+    UNIQUE(cnpj, data_referencia, nome_imovel)
+);
+
+CREATE TABLE IF NOT EXISTS inf_trimestral_contratos (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker              TEXT NOT NULL,
+    cnpj                TEXT NOT NULL,
+    data_referencia     TEXT NOT NULL,
+    venc_ate_3m         REAL,
+    venc_3a6m           REAL,
+    venc_6a12m          REAL,
+    venc_acima_36m      REAL,
+    indexador_igpm      REAL,
+    indexador_ipca      REAL,
+    UNIQUE(cnpj, data_referencia)
 );
 
 -- ─────────────────────────────────────────
@@ -87,14 +186,14 @@ CREATE TABLE IF NOT EXISTS carteira (
 );
 
 -- ─────────────────────────────────────────
--- Decisões do sistema (paper trading)
+-- Decisões do sistema
 -- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS decisoes (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker              TEXT NOT NULL,
     data                TEXT NOT NULL,
     preco_na_decisao    REAL,
-    status              TEXT NOT NULL,  -- ENTRADA_SEGURA, ENTRADA_PARCIAL, AGUARDAR, etc
+    status              TEXT NOT NULL,
     score_qualidade     REAL,
     score_preco         REAL,
     score_risco         REAL,
@@ -103,33 +202,90 @@ CREATE TABLE IF NOT EXISTS decisoes (
     score_confianca     REAL,
     margem_seguranca    REAL,
     premio_cdi          REAL,
-    alertas             TEXT,           -- JSON array
+    alertas             TEXT,
     justificativa       TEXT,
-    explicacao_simples  TEXT,           -- módulo educação
+    explicacao_simples  TEXT,
+    score_ia            REAL,
     versao_modelo       TEXT DEFAULT '1.0',
     criado_em           TEXT DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (ticker) REFERENCES fiis(ticker)
 );
 
--- ─────────────────────────────────────────
--- Resultado das decisões (avaliação futura)
--- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS decisoes_resultado (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    decisao_id          INTEGER NOT NULL,
-    data_avaliacao      TEXT NOT NULL,
-    janela_dias         INTEGER,        -- 90, 180, 365
-    preco_avaliacao     REAL,
-    retorno_preco       REAL,
-    retorno_dividendos  REAL,
-    retorno_total       REAL,
-    retorno_cdi_periodo REAL,
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    decisao_id           INTEGER NOT NULL,
+    data_avaliacao       TEXT NOT NULL,
+    janela_dias          INTEGER,
+    preco_avaliacao      REAL,
+    retorno_preco        REAL,
+    retorno_dividendos   REAL,
+    retorno_total        REAL,
+    retorno_cdi_periodo  REAL,
     retorno_ifix_periodo REAL,
-    acerto              INTEGER,        -- 1 ou 0
-    tipo_erro           TEXT,           -- MODELO, DADOS, MERCADO, NULL
-    observacao          TEXT,
-    avaliado_em         TEXT DEFAULT (datetime('now','localtime')),
+    acerto               INTEGER,
+    tipo_erro            TEXT,
+    observacao           TEXT,
+    avaliado_em          TEXT DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (decisao_id) REFERENCES decisoes(id)
+);
+
+-- ─────────────────────────────────────────
+-- Aprendizado operacional / paper trading
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS aprendizado_simulacoes (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker              TEXT NOT NULL,
+    acao_simulada       TEXT NOT NULL,
+    decisao_origem      TEXT,
+    segmento            TEXT,
+    score_final         REAL,
+    confianca           TEXT,
+    risco               TEXT,
+    fonte_patrimonial   TEXT,
+    gate55_status       TEXT,
+    peso_versao         TEXT DEFAULT 'base',
+    payload_json        TEXT,
+    criada_em           TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS aprendizado_resultados (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    simulacao_id        INTEGER NOT NULL,
+    ticker              TEXT NOT NULL,
+    janela_dias         INTEGER NOT NULL,
+    retorno_pct         REAL,
+    superou_benchmark   INTEGER,
+    resultado           TEXT NOT NULL,
+    falso_positivo      INTEGER DEFAULT 0,
+    falso_negativo      INTEGER DEFAULT 0,
+    observado_em        TEXT NOT NULL,
+    observacao          TEXT,
+    FOREIGN KEY(simulacao_id) REFERENCES aprendizado_simulacoes(id)
+);
+
+CREATE TABLE IF NOT EXISTS aprendizado_ajustes_pesos (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    regra               TEXT NOT NULL,
+    peso_anterior       REAL,
+    peso_sugerido       REAL,
+    motivo              TEXT NOT NULL,
+    evidencia           TEXT,
+    aplicado            INTEGER DEFAULT 0,
+    criado_em           TEXT NOT NULL
+);
+
+-- ─────────────────────────────────────────
+-- Snapshots históricos para replay futuro
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS snapshots_indicadores (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker              TEXT NOT NULL,
+    data_snapshot       TEXT NOT NULL,
+    origem_snapshot     TEXT NOT NULL DEFAULT 'rotina_diaria',
+    payload_json        TEXT NOT NULL,
+    hash_snapshot       TEXT NOT NULL,
+    criado_em           TEXT NOT NULL,
+    UNIQUE(ticker, data_snapshot, hash_snapshot)
 );
 
 -- ─────────────────────────────────────────
@@ -139,14 +295,11 @@ CREATE TABLE IF NOT EXISTS versoes_modelo (
     versao              TEXT PRIMARY KEY,
     data                TEXT NOT NULL,
     descricao           TEXT,
-    pesos_json          TEXT NOT NULL,  -- JSON com todos os pesos
+    pesos_json          TEXT NOT NULL,
     motivo_mudanca      TEXT,
     aprovado_em         TEXT
 );
 
--- ─────────────────────────────────────────
--- Sugestões de ajuste (aprendizado adaptativo)
--- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sugestoes_ajuste (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     data                TEXT NOT NULL,
@@ -158,7 +311,7 @@ CREATE TABLE IF NOT EXISTS sugestoes_ajuste (
     diferenca_vs_cdi    REAL NOT NULL,
     consistencia_segmentos REAL NOT NULL,
     explicacao          TEXT,
-    aprovado            INTEGER DEFAULT NULL,  -- NULL=pendente, 1=sim, 0=não
+    aprovado            INTEGER DEFAULT NULL,
     aprovado_em         TEXT,
     criado_em           TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -168,8 +321,18 @@ CREATE TABLE IF NOT EXISTS sugestoes_ajuste (
 -- ─────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_indicadores_ticker_data ON indicadores(ticker, data);
 CREATE INDEX IF NOT EXISTS idx_dividendos_ticker ON dividendos(ticker);
+CREATE INDEX IF NOT EXISTS idx_dividendos_ticker_data ON dividendos(ticker, data_pagamento);
+CREATE INDEX IF NOT EXISTS idx_cvm_mensal_cnpj_competencia ON cvm_informes_mensais_fii(cnpj_fundo, competencia, versao);
+CREATE INDEX IF NOT EXISTS idx_fnet_dividendos_ticker_data ON fnet_dividendos_fii(ticker, data_pagamento);
+CREATE INDEX IF NOT EXISTS idx_fnet_nlp_ticker ON fnet_nlp_classificacoes(ticker);
+CREATE INDEX IF NOT EXISTS idx_trimestral_imoveis_ticker_data ON inf_trimestral_imoveis(ticker, data_referencia);
+CREATE INDEX IF NOT EXISTS idx_trimestral_contratos_ticker_data ON inf_trimestral_contratos(ticker, data_referencia);
 CREATE INDEX IF NOT EXISTS idx_decisoes_ticker ON decisoes(ticker);
+CREATE INDEX IF NOT EXISTS idx_decisoes_resultado_decisao ON decisoes_resultado(decisao_id);
 CREATE INDEX IF NOT EXISTS idx_macro_data ON macro(data);
+CREATE INDEX IF NOT EXISTS idx_aprendizado_sim_ticker ON aprendizado_simulacoes(ticker);
+CREATE INDEX IF NOT EXISTS idx_aprendizado_resultados_sim ON aprendizado_resultados(simulacao_id);
+CREATE INDEX IF NOT EXISTS idx_snapshots_ticker_data ON snapshots_indicadores(ticker, data_snapshot);
 
 -- ─────────────────────────────────────────
 -- Dados iniciais — versão 1.0 do modelo
