@@ -15,6 +15,7 @@ A automação de download direto deve ser adicionada quando o formato/fonte fina
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +46,20 @@ def _agora_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _row_get(row: Any, chave: str, padrao: Any = None) -> Any:
+    try:
+        return row[chave]
+    except Exception:
+        return padrao
+
+
+def _garantir_coluna(nome_tabela: str, nome_coluna: str, definicao: str) -> None:
+    colunas = db.buscar_todos(f"PRAGMA table_info({nome_tabela})")
+    existentes = {_row_get(col, "name") for col in colunas}
+    if nome_coluna not in existentes:
+        db.executar(f"ALTER TABLE {nome_tabela} ADD COLUMN {nome_coluna} {definicao}")
+
+
 def garantir_tabela() -> None:
     db.executar(
         f"""
@@ -64,10 +79,12 @@ def garantir_tabela() -> None:
             arquivo_origem TEXT,
             coletado_em TEXT NOT NULL,
             payload_json TEXT,
-            UNIQUE(cnpj_fundo, protocolo, data_entrega, tipo_documento)
+            dedupe_key TEXT
         );
         """
     )
+    _garantir_coluna(TABELA, "dedupe_key", "TEXT")
+    db.executar(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{TABELA}_dedupe_key ON {TABELA}(dedupe_key)")
 
 
 def _norm_coluna(nome: str) -> str:
@@ -93,6 +110,27 @@ def _limpar(valor: Any) -> str | None:
 def _limpar_ticker(valor: Any) -> str | None:
     texto = _limpar(valor)
     return texto.upper().replace(".SA", "") if texto else None
+
+
+def _dedupe_key(dados: dict[str, Any]) -> str:
+    """
+    Gera chave determinística para deduplicar documentos FNET.
+
+    O protocolo pode vir nulo. Por isso a chave usa COALESCE lógico
+    com string vazia e acrescenta outros campos estáveis do documento.
+    """
+    partes = [
+        dados.get("cnpj_fundo") or "",
+        dados.get("protocolo") or "",
+        dados.get("data_entrega") or "",
+        dados.get("data_referencia") or "",
+        dados.get("tipo_documento") or "",
+        dados.get("categoria") or "",
+        dados.get("assunto") or "",
+        dados.get("url_documento") or "",
+    ]
+    base = "|".join(str(parte).strip().lower() for parte in partes)
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
 def _ler_arquivo(caminho: Path) -> pd.DataFrame:
@@ -146,18 +184,19 @@ def importar_arquivo(caminho_arquivo: str | Path) -> dict[str, Any]:
                 "coletado_em": coletado_em,
                 "payload_json": row.to_json(force_ascii=False),
             }
+            dados["dedupe_key"] = _dedupe_key(dados)
 
             colunas_sql = ", ".join(dados.keys())
             placeholders = ", ".join("?" for _ in dados)
             updates = ", ".join(
                 f"{col}=excluded.{col}"
                 for col in dados
-                if col not in {"cnpj_fundo", "protocolo", "data_entrega", "tipo_documento"}
+                if col not in {"dedupe_key"}
             )
             sql = f"""
             INSERT INTO {TABELA} ({colunas_sql})
             VALUES ({placeholders})
-            ON CONFLICT(cnpj_fundo, protocolo, data_entrega, tipo_documento)
+            ON CONFLICT(dedupe_key)
             DO UPDATE SET {updates}
             """
             db.executar(sql, tuple(dados.values()))
