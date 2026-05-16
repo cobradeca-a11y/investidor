@@ -12,11 +12,42 @@ O dimensionamento e reduzido pelo semaforo macro:
   VERMELHO → divide por 2
   AMARELO  → divide por 1.5
   VERDE    → sem reducao
+
+Quando valor da carteira e preco da cota sao informados, calcula valor alvo,
+quantidade de cotas e lotes de 100. Sem esses dados, nao inventa lotes.
 """
 
 from typing import Optional
 from mercado.semaforo_macro import avaliar as avaliar_macro
 from mercado.contexto_setorial import score_segmento
+
+
+def _calcular_quantidade(
+    pct_final: float,
+    valor_carteira_total: Optional[float],
+    preco_cota: Optional[float],
+) -> dict:
+    if not valor_carteira_total or not preco_cota or valor_carteira_total <= 0 or preco_cota <= 0 or pct_final <= 0:
+        return {
+            "valor_alvo": None,
+            "qtd_cotas": None,
+            "lotes_de_100": None,
+            "dimensionamento_calculavel": False,
+            "motivo_dimensionamento": "Informe valor_carteira_total e preco_cota para calcular quantidade/lotes.",
+        }
+
+    valor_alvo = valor_carteira_total * (pct_final / 100)
+    qtd_cotas = int(valor_alvo // preco_cota)
+    lotes_de_100 = qtd_cotas // 100
+
+    return {
+        "valor_alvo": round(valor_alvo, 2),
+        "qtd_cotas": qtd_cotas,
+        "lotes_de_100": lotes_de_100,
+        "valor_estimado_posicao": round(qtd_cotas * preco_cota, 2),
+        "dimensionamento_calculavel": True,
+        "motivo_dimensionamento": "Quantidade calculada com base no valor real da carteira e preço da cota.",
+    }
 
 
 def calcular(
@@ -26,17 +57,20 @@ def calcular(
     travas_ativas: list,
     segmento: str,
     score_ia: Optional[float] = None,
+    valor_carteira_total: Optional[float] = None,
+    preco_cota: Optional[float] = None,
 ) -> dict:
     """
     Retorna o dimensionamento recomendado para o ativo.
 
-    Output:
+    Output principal:
     {
-        "pct_carteira":   5.0,    # % da carteira total
-        "lotes_de_100":   5,      # quantos lotes de 100 cotas
-        "justificativa":  str,
-        "reducao_macro":  str,
-        "reducao_setorial": str,
+        "pct_carteira": 5.0,
+        "valor_alvo": 5000.00,
+        "qtd_cotas": 47,
+        "lotes_de_100": 0 | 1 | ... | None,
+        "dimensionamento_calculavel": bool,
+        "justificativa": str,
     }
     """
     # Base pelo binomio margem + historico
@@ -86,18 +120,21 @@ def calcular(
         reducao_macro = f"Semaforo VERMELHO ({macro['motivo'][:60]}): -50%"
     elif macro["cor"] == "AMARELO":
         pct_base *= 0.67
-        reducao_macro = f"Semaforo AMARELO: -33%"
+        reducao_macro = "Semaforo AMARELO: -33%"
 
     pct_final = round(max(0, min(10, pct_base)), 1)
-    lotes = max(1, int(pct_final))  # 1 lote por % como referencia inicial
+    quantidade = _calcular_quantidade(pct_final, valor_carteira_total, preco_cota)
 
     return {
-        "pct_carteira":      pct_final,
-        "lotes_de_100":      lotes,
-        "motivo_base":       motivo_base,
-        "reducao_travas":    reducao_travas,
-        "reducao_setorial":  reducao_setorial,
-        "reducao_macro":     reducao_macro,
-        "semaforo":          macro["cor"],
-        "score_setorial":    score_set,
+        "ticker":             ticker.upper().replace(".SA", ""),
+        "pct_carteira":       pct_final,
+        **quantidade,
+        "preco_cota_usado":   preco_cota,
+        "valor_carteira_total": valor_carteira_total,
+        "motivo_base":        motivo_base,
+        "reducao_travas":     reducao_travas,
+        "reducao_setorial":   reducao_setorial,
+        "reducao_macro":      reducao_macro,
+        "semaforo":           macro["cor"],
+        "score_setorial":     score_set,
     }
