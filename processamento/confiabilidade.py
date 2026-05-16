@@ -65,10 +65,6 @@ def _aplicar_teto_preco(score: int, ind) -> tuple[int, list[str]]:
 
 
 def calcular_score(ticker: str) -> int:
-    """
-    Calcula score de confiabilidade com base nos dados mais recentes.
-    Leva em conta: completude, atualização, histórico e idade rastreável do preço.
-    """
     ticker_norm = ticker.upper().replace(".SA", "")
     ind = db.buscar_um(
         """
@@ -85,17 +81,18 @@ def calcular_score(ticker: str) -> int:
     pontos = 0
 
     campos_peso = {
-        "preco":               20,
-        "pvp":                 15,
-        "dy_12m":              15,
-        "liquidez_diaria":     10,
-        "ultimo_dividendo":    10,
-        "patrimonio_liquido":  10,
-        "vacancia_fisica":      5,
-        "vacancia_financeira":  5,
-        "vpa":                  5,
-        "dy_3m":                5,
+        "preco": 20,
+        "pvp": 15,
+        "dy_12m": 15,
+        "liquidez_diaria": 10,
+        "ultimo_dividendo": 10,
+        "patrimonio_liquido": 10,
+        "vacancia_fisica": 5,
+        "vacancia_financeira": 5,
+        "vpa": 5,
+        "dy_3m": 5,
     }
+
     for campo, peso in campos_peso.items():
         if _row_get(ind, campo) is not None:
             pontos += peso
@@ -103,6 +100,7 @@ def calcular_score(ticker: str) -> int:
     try:
         data_dado = datetime.strptime(ind["data"], "%Y-%m-%d").date()
         dias_atraso = (date.today() - data_dado).days
+
         if dias_atraso == 0:
             pontos += 20
         elif dias_atraso <= 1:
@@ -118,7 +116,9 @@ def calcular_score(ticker: str) -> int:
         "SELECT COUNT(*) as qtd FROM dividendos WHERE ticker = ?",
         (ticker_norm,),
     )
+
     qtd = qtd_div["qtd"] if qtd_div else 0
+
     if qtd >= 24:
         pontos += 20
     elif qtd >= 12:
@@ -134,13 +134,13 @@ def calcular_score(ticker: str) -> int:
 
 
 def dados_suficientes(ticker: str) -> bool:
-    """Retorna True se a confiabilidade está acima do mínimo exigido."""
     return calcular_score(ticker) >= CONFIABILIDADE_MINIMA
 
 
 def relatorio_confiabilidade(ticker: str) -> dict:
-    """Retorna dict com score e diagnóstico legível."""
+    """Retorna dict com score efetivo e diagnóstico legível."""
     ticker_norm = ticker.upper().replace(".SA", "")
+
     ind = db.buscar_um(
         "SELECT * FROM indicadores WHERE ticker = ? ORDER BY data DESC LIMIT 1",
         (ticker_norm,),
@@ -151,33 +151,42 @@ def relatorio_confiabilidade(ticker: str) -> dict:
     idade_preco = None
 
     if ind:
-        for campo in ["preco", "pvp", "dy_12m", "liquidez_diaria",
-                      "ultimo_dividendo", "patrimonio_liquido",
-                      "vacancia_fisica", "vacancia_financeira"]:
+        for campo in [
+            "preco",
+            "pvp",
+            "dy_12m",
+            "liquidez_diaria",
+            "ultimo_dividendo",
+            "patrimonio_liquido",
+            "vacancia_fisica",
+            "vacancia_financeira",
+        ]:
             if _row_get(ind, campo) is None:
                 campos_ausentes.append(campo)
+
         idade_preco = _idade_preco_dias(ind)
 
     score = calcular_score(ticker_norm)
+
     if ind:
-        _, alertas = _aplicar_teto_preco(100, ind)
+        score, alertas = _aplicar_teto_preco(score, ind)
 
     nivel = (
         "EXCELENTE" if score >= 90 else
-        "BOM"       if score >= 75 else
+        "BOM" if score >= 75 else
         "SUFICIENTE" if score >= 60 else
-        "FRACO"     if score >= 40 else
+        "FRACO" if score >= 40 else
         "INSUFICIENTE"
     )
 
     return {
-        "ticker":          ticker_norm,
-        "score":           score,
-        "nivel":           nivel,
-        "suficiente":      score >= CONFIABILIDADE_MINIMA,
+        "ticker": ticker_norm,
+        "score": score,
+        "nivel": nivel,
+        "suficiente": score >= CONFIABILIDADE_MINIMA,
         "campos_ausentes": campos_ausentes,
         "idade_preco_dias": idade_preco,
         "preco_timestamp": _row_get(ind, "preco_timestamp") if ind else None,
-        "preco_fonte":     _row_get(ind, "preco_fonte") if ind else None,
-        "alertas":         alertas,
+        "preco_fonte": _row_get(ind, "preco_fonte") if ind else None,
+        "alertas": alertas,
     }
