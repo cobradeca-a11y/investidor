@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter
@@ -42,6 +43,15 @@ def _listar_decisoes(limite: int = 50) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def _parse_data_iso(valor: str | None) -> datetime | None:
+    if not valor:
+        return None
+    try:
+        return datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 @router.get("/decisoes")
 def listar_decisoes(limite: int = 50) -> dict[str, Any]:
     try:
@@ -50,26 +60,22 @@ def listar_decisoes(limite: int = 50) -> dict[str, Any]:
             payload = _json_para_dict(row.get("payload_json"))
             gate55 = payload.get("gate55_confianca_dados", {}) or {}
             patrimonio = payload.get("patrimonio_resolvido", {}) or {}
-
-            decisoes.append(
-                {
-                    "id": row.get("id"),
-                    "ticker": row.get("ticker"),
-                    "data_decisao": row.get("data_decisao"),
-                    "decisao": row.get("decisao"),
-                    "risco": row.get("risco"),
-                    "confianca": row.get("confianca"),
-                    "score_final": row.get("score_final"),
-                    "versao_modelo": row.get("versao_modelo"),
-                    "fonte_patrimonial": payload.get("fonte_patrimonial") or patrimonio.get("fonte_patrimonial"),
-                    "usou_cvm_patrimonial": payload.get("usou_cvm_patrimonial") or patrimonio.get("usou_cvm"),
-                    "fallback_patrimonial_usado": payload.get("fallback_patrimonial_usado") or patrimonio.get("fallback_usado"),
-                    "gate55_status": gate55.get("status"),
-                    "score_confianca_dados": payload.get("score_confianca_dados") or gate55.get("score_confianca_dados"),
-                    "nivel_uso_dados": payload.get("nivel_uso_dados") or gate55.get("nivel_uso_dados"),
-                }
-            )
-
+            decisoes.append({
+                "id": row.get("id"),
+                "ticker": row.get("ticker"),
+                "data_decisao": row.get("data_decisao"),
+                "decisao": row.get("decisao"),
+                "risco": row.get("risco"),
+                "confianca": row.get("confianca"),
+                "score_final": row.get("score_final"),
+                "versao_modelo": row.get("versao_modelo"),
+                "fonte_patrimonial": payload.get("fonte_patrimonial") or patrimonio.get("fonte_patrimonial"),
+                "usou_cvm_patrimonial": payload.get("usou_cvm_patrimonial") or patrimonio.get("usou_cvm"),
+                "fallback_patrimonial_usado": payload.get("fallback_patrimonial_usado") or patrimonio.get("fallback_usado"),
+                "gate55_status": gate55.get("status"),
+                "score_confianca_dados": payload.get("score_confianca_dados") or gate55.get("score_confianca_dados"),
+                "nivel_uso_dados": payload.get("nivel_uso_dados") or gate55.get("nivel_uso_dados"),
+            })
         return {"status": "ok", "quantidade": len(decisoes), "decisoes": decisoes}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.decisoes", erro)
@@ -79,11 +85,7 @@ def listar_decisoes(limite: int = 50) -> dict[str, Any]:
 @router.get("/taxa-acerto")
 def obter_taxa_acerto() -> dict[str, Any]:
     try:
-        return {
-            "status": "ok",
-            "taxa_acerto_90d": taxa_acerto(90),
-            "taxa_acerto_365d": taxa_acerto(365),
-        }
+        return {"status": "ok", "taxa_acerto_90d": taxa_acerto(90), "taxa_acerto_365d": taxa_acerto(365)}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.taxa_acerto", erro)
         return {"status": "erro", "mensagem": str(erro)}
@@ -98,17 +100,14 @@ def listar_fallbacks(limite: int = 100) -> dict[str, Any]:
             patrimonio = payload.get("patrimonio_resolvido", {}) or {}
             fallback = payload.get("fallback_patrimonial_usado") or patrimonio.get("fallback_usado")
             if fallback:
-                resultados.append(
-                    {
-                        "id": row.get("id"),
-                        "ticker": row.get("ticker"),
-                        "data_decisao": row.get("data_decisao"),
-                        "decisao": row.get("decisao"),
-                        "fonte_patrimonial": payload.get("fonte_patrimonial") or patrimonio.get("fonte_patrimonial"),
-                        "motivo": row.get("motivo"),
-                    }
-                )
-
+                resultados.append({
+                    "id": row.get("id"),
+                    "ticker": row.get("ticker"),
+                    "data_decisao": row.get("data_decisao"),
+                    "decisao": row.get("decisao"),
+                    "fonte_patrimonial": payload.get("fonte_patrimonial") or patrimonio.get("fonte_patrimonial"),
+                    "motivo": row.get("motivo"),
+                })
         return {"status": "ok", "quantidade": len(resultados), "fallbacks": resultados}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.fallbacks", erro)
@@ -120,46 +119,36 @@ def listar_gate55(limite: int = 100) -> dict[str, Any]:
     try:
         resultados = []
         resumo = defaultdict(int)
-
         for row in _listar_decisoes(limite):
             payload = _json_para_dict(row.get("payload_json"))
             gate55 = payload.get("gate55_confianca_dados", {}) or {}
             status_gate = gate55.get("status", "NAO_REGISTRADO")
             resumo[status_gate] += 1
-            resultados.append(
-                {
-                    "id": row.get("id"),
-                    "ticker": row.get("ticker"),
-                    "data_decisao": row.get("data_decisao"),
-                    "decisao": row.get("decisao"),
-                    "gate55_status": status_gate,
-                    "score_confianca_dados": gate55.get("score_confianca_dados"),
-                    "nivel_uso_dados": gate55.get("nivel_uso_dados"),
-                    "fonte_patrimonial": gate55.get("fonte_patrimonial"),
-                    "motivo": gate55.get("motivo"),
-                }
-            )
-
-        return {
-            "status": "ok",
-            "resumo": dict(resumo),
-            "quantidade": len(resultados),
-            "gate55": resultados,
-        }
+            resultados.append({
+                "id": row.get("id"),
+                "ticker": row.get("ticker"),
+                "data_decisao": row.get("data_decisao"),
+                "decisao": row.get("decisao"),
+                "gate55_status": status_gate,
+                "score_confianca_dados": gate55.get("score_confianca_dados"),
+                "nivel_uso_dados": gate55.get("nivel_uso_dados"),
+                "fonte_patrimonial": gate55.get("fonte_patrimonial"),
+                "motivo": gate55.get("motivo"),
+            })
+        return {"status": "ok", "resumo": dict(resumo), "quantidade": len(resultados), "gate55": resultados}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.gate55", erro)
         return {"status": "erro", "mensagem": str(erro), "gate55": []}
 
 
-@router.get("/cobertura-institucional")
-def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
-    """Mede cobertura ticker -> CNPJ -> CVM patrimonial -> FNET documental."""
+@router.get("/cobertura-fnet")
+def cobertura_fnet(limite: int = 500) -> dict[str, Any]:
+    """Mede especificamente a cobertura documental FNET e idade da última importação."""
     try:
         tabela_mestre_fiis.garantir_tabela()
-        cvm_informe_mensal.garantir_tabela()
         cvm_fnet_documentos.garantir_tabela()
 
-        rows = db.buscar_todos(
+        base = db.buscar_todos(
             """
             SELECT ticker, cnpj_fundo, cnpj_classe, razao_social, nome_fundo
             FROM fiia_tabela_mestre_fiis
@@ -169,56 +158,131 @@ def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
             (limite,),
         )
 
+        meta = db.buscar_um(
+            f"""
+            SELECT
+                MAX(coletado_em) AS ultima_importacao,
+                COUNT(*) AS total_documentos,
+                COUNT(DISTINCT ticker) AS tickers_com_documentos,
+                COUNT(DISTINCT cnpj_fundo) AS cnpjs_com_documentos
+            FROM {cvm_fnet_documentos.TABELA}
+            """
+        )
+
+        arquivos_rows = db.buscar_todos(
+            f"""
+            SELECT arquivo_origem, MAX(coletado_em) AS ultima_importacao, COUNT(*) AS registros
+            FROM {cvm_fnet_documentos.TABELA}
+            GROUP BY arquivo_origem
+            ORDER BY ultima_importacao DESC
+            LIMIT 10
+            """
+        )
+
+        ultima_importacao = meta["ultima_importacao"] if meta else None
+        dt_ultima = _parse_data_iso(ultima_importacao)
+        dias_desde = None
+        if dt_ultima:
+            if dt_ultima.tzinfo is None:
+                dt_ultima = dt_ultima.replace(tzinfo=timezone.utc)
+            dias_desde = (datetime.now(timezone.utc) - dt_ultima).days
+
+        ativos = []
+        com_fnet = 0
+        sem_fnet = 0
+        for row in base:
+            item = dict(row)
+            cnpj = item.get("cnpj_fundo")
+            documento = cvm_fnet_documentos.ultimo_documento_por_cnpj(cnpj) if cnpj else None
+            tem_fnet = bool(documento)
+            com_fnet += 1 if tem_fnet else 0
+            sem_fnet += 0 if tem_fnet else 1
+            ativos.append({
+                "ticker": item.get("ticker"),
+                "cnpj_fundo": cnpj,
+                "cnpj_classe": item.get("cnpj_classe"),
+                "tem_fnet_documental": tem_fnet,
+                "ultimo_documento_fnet": documento.get("data_entrega") if documento else None,
+                "tipo_ultimo_documento": documento.get("tipo_documento") if documento else None,
+                "categoria_ultimo_documento": documento.get("categoria") if documento else None,
+                "arquivo_origem_ultimo_documento": documento.get("arquivo_origem") if documento else None,
+            })
+
+        total_base = len(base)
+        pct_com_fnet = round(com_fnet / total_base * 100, 2) if total_base else 0.0
+        pct_sem_fnet = round(sem_fnet / total_base * 100, 2) if total_base else 0.0
+
+        return {
+            "status": "ok",
+            "resumo": {
+                "total_tabela_mestre": total_base,
+                "total_documentos_fnet": meta["total_documentos"] if meta else 0,
+                "tickers_com_documentos_no_banco": meta["tickers_com_documentos"] if meta else 0,
+                "cnpjs_com_documentos_no_banco": meta["cnpjs_com_documentos"] if meta else 0,
+                "ativos_com_fnet": com_fnet,
+                "ativos_com_fnet_pct": pct_com_fnet,
+                "ativos_sem_fnet": sem_fnet,
+                "ativos_sem_fnet_pct": pct_sem_fnet,
+                "ultima_importacao": ultima_importacao,
+                "dias_desde_ultima_importacao": dias_desde,
+                "base_fnet_vazia": not bool(meta and meta["total_documentos"]),
+            },
+            "arquivos_importados_recentes": [dict(row) for row in arquivos_rows],
+            "ativos": ativos,
+            "ativos_sem_fnet": [item for item in ativos if not item.get("tem_fnet_documental")],
+        }
+    except Exception as erro:
+        observabilidade.registrar_erro("api.auditoria.cobertura_fnet", erro)
+        return {"status": "erro", "mensagem": str(erro), "resumo": {}, "ativos": []}
+
+
+@router.get("/cobertura-institucional")
+def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
+    """Mede cobertura ticker -> CNPJ -> CVM patrimonial -> FNET documental."""
+    try:
+        tabela_mestre_fiis.garantir_tabela()
+        cvm_informe_mensal.garantir_tabela()
+        cvm_fnet_documentos.garantir_tabela()
+        rows = db.buscar_todos(
+            """
+            SELECT ticker, cnpj_fundo, cnpj_classe, razao_social, nome_fundo
+            FROM fiia_tabela_mestre_fiis
+            ORDER BY ticker
+            LIMIT ?
+            """,
+            (limite,),
+        )
         ativos = []
         total = len(rows)
-        com_cnpj = 0
-        com_cvm = 0
-        com_fnet = 0
-
+        com_cnpj = com_cvm = com_fnet = 0
         for row in rows:
             item = dict(row)
             ticker = item.get("ticker")
             cnpj = item.get("cnpj_fundo")
             informe = cvm_informe_mensal.ultimo_por_cnpj(cnpj) if cnpj else None
             documento = cvm_fnet_documentos.ultimo_documento_por_cnpj(cnpj) if cnpj else None
-
             if cnpj:
                 com_cnpj += 1
             if informe:
                 com_cvm += 1
             if documento:
                 com_fnet += 1
-
-            ativos.append(
-                {
-                    "ticker": ticker,
-                    "cnpj_fundo": cnpj,
-                    "cnpj_classe": item.get("cnpj_classe"),
-                    "tem_cnpj": bool(cnpj),
-                    "tem_cvm_patrimonial": bool(informe),
-                    "competencia_cvm": informe.get("competencia") if informe else None,
-                    "tem_fnet_documental": bool(documento),
-                    "ultimo_documento_fnet": documento.get("data_entrega") if documento else None,
-                    "tipo_ultimo_documento": documento.get("tipo_documento") if documento else None,
-                }
-            )
+            ativos.append({
+                "ticker": ticker,
+                "cnpj_fundo": cnpj,
+                "cnpj_classe": item.get("cnpj_classe"),
+                "tem_cnpj": bool(cnpj),
+                "tem_cvm_patrimonial": bool(informe),
+                "competencia_cvm": informe.get("competencia") if informe else None,
+                "tem_fnet_documental": bool(documento),
+                "ultimo_documento_fnet": documento.get("data_entrega") if documento else None,
+                "tipo_ultimo_documento": documento.get("tipo_documento") if documento else None,
+            })
 
         def pct(valor: int) -> float:
             return round(valor / total * 100, 2) if total else 0.0
 
-        return {
-            "status": "ok",
-            "resumo": {
-                "total_tabela_mestre": total,
-                "com_cnpj": com_cnpj,
-                "com_cnpj_pct": pct(com_cnpj),
-                "com_cvm_patrimonial": com_cvm,
-                "com_cvm_patrimonial_pct": pct(com_cvm),
-                "com_fnet_documental": com_fnet,
-                "com_fnet_documental_pct": pct(com_fnet),
-            },
-            "ativos": ativos,
-        }
+        return {"status": "ok", "resumo": {"total_tabela_mestre": total, "com_cnpj": com_cnpj, "com_cnpj_pct": pct(com_cnpj), "com_cvm_patrimonial": com_cvm, "com_cvm_patrimonial_pct": pct(com_cvm), "com_fnet_documental": com_fnet, "com_fnet_documental_pct": pct(com_fnet)}, "ativos": ativos}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.cobertura_institucional", erro)
         return {"status": "erro", "mensagem": str(erro), "resumo": {}, "ativos": []}
@@ -226,7 +290,6 @@ def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
 
 @router.get("/ativos-sem-cobertura")
 def ativos_sem_cobertura(limite: int = 500) -> dict[str, Any]:
-    """Lista ativos da tabela mestre sem CNPJ, sem CVM patrimonial ou sem documento FNET."""
     try:
         cobertura = cobertura_institucional(limite=limite)
         problemas = []
@@ -240,7 +303,6 @@ def ativos_sem_cobertura(limite: int = 500) -> dict[str, Any]:
                 faltas.append("SEM_FNET_DOCUMENTAL")
             if faltas:
                 problemas.append({**item, "faltas": faltas})
-
         return {"status": "ok", "quantidade": len(problemas), "ativos": problemas}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.ativos_sem_cobertura", erro)
@@ -251,14 +313,12 @@ def ativos_sem_cobertura(limite: int = 500) -> dict[str, Any]:
 def detectar_instabilidade(limite: int = 300) -> dict[str, Any]:
     ofensivas = {"COMPRAR", "COMPRAR_PARCIAL", "COMPRAR_PARCIALMENTE", "MANTER"}
     defensivas = {"EVITAR", "EVITAR_ENTRADA", "VENDER", "REDUZIR", "MONITORAR", "AGUARDAR"}
-
     try:
         por_ticker: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in _listar_decisoes(limite):
             ticker = row.get("ticker")
             if ticker:
                 por_ticker[ticker].append(dict(row))
-
         instaveis = []
         for ticker, decisoes in por_ticker.items():
             if len(decisoes) < 2:
@@ -273,25 +333,8 @@ def detectar_instabilidade(limite: int = 300) -> dict[str, Any]:
                     classes.append("DEFENSIVA")
                 else:
                     classes.append("INDEFINIDA")
-
             if "OFENSIVA" in classes and "DEFENSIVA" in classes:
-                instaveis.append(
-                    {
-                        "ticker": ticker,
-                        "quantidade_decisoes_analisadas": len(recentes),
-                        "classes_detectadas": sorted(set(classes)),
-                        "decisoes": [
-                            {
-                                "id": d.get("id"),
-                                "data_decisao": d.get("data_decisao"),
-                                "decisao": d.get("decisao"),
-                                "motivo": d.get("motivo"),
-                            }
-                            for d in recentes
-                        ],
-                    }
-                )
-
+                instaveis.append({"ticker": ticker, "quantidade_decisoes_analisadas": len(recentes), "classes_detectadas": sorted(set(classes)), "decisoes": [{"id": d.get("id"), "data_decisao": d.get("data_decisao"), "decisao": d.get("decisao"), "motivo": d.get("motivo")} for d in recentes]})
         return {"status": "ok", "quantidade": len(instaveis), "instabilidades": instaveis}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.instabilidade", erro)
