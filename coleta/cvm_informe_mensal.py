@@ -144,7 +144,7 @@ def _ler_csv_do_zip(conteudo_zip: bytes) -> list[tuple[str, pd.DataFrame]]:
     return arquivos
 
 
-def _extrair_registros(ano: int, nome_arquivo: str, df: pd.DataFrame) -> list[dict[str, Any]]:
+def _extrair_registros(ano: int | None, nome_arquivo: str, df: pd.DataFrame) -> list[dict[str, Any]]:
     colunas = {
         campo: _localizar_coluna(df, candidatos)
         for campo, candidatos in _MAPEAMENTO_COLUNAS.items()
@@ -237,7 +237,7 @@ def _inferir_ano_do_nome(nome: str) -> int | None:
 def _processar_arquivos(ano: int | None, arquivos: list[tuple[str, pd.DataFrame]]) -> int:
     total = 0
     for nome_arquivo, df in arquivos:
-        registros = _extrair_registros(ano or 0, nome_arquivo, df)
+        registros = _extrair_registros(ano, nome_arquivo, df)
         for registro in registros:
             _salvar_registro(registro)
         total += len(registros)
