@@ -42,6 +42,72 @@ SCORE_ATIVO_FRACO = 30
 # abaixo de 30 = PROBLEMÁTICO
 
 # ─────────────────────────────────────────
+# Pesos estáticos iniciais por segmento
+# NÃO calibrar automaticamente antes da amostra mínima.
+# ─────────────────────────────────────────
+PESOS_SCORE_SEGMENTADO = {
+    "DEFAULT": {
+        "dy_recorrente": 20,
+        "premio_cdi": 15,
+        "confiabilidade": 15,
+        "historico": 10,
+        "pvp": 15,
+        "vacancia": 10,
+        "liquidez": 5,
+        "score_cvm": 10,
+    },
+    "PAPEL": {
+        "dy_recorrente": 25,
+        "premio_cdi": 25,
+        "confiabilidade": 15,
+        "historico": 10,
+        "pvp": 5,
+        "liquidez": 5,
+        "score_cvm": 15,
+    },
+    "LOGISTICA": {
+        "dy_recorrente": 15,
+        "premio_cdi": 10,
+        "confiabilidade": 15,
+        "historico": 10,
+        "pvp": 20,
+        "vacancia": 15,
+        "liquidez": 5,
+        "score_cvm": 10,
+    },
+    "LAJES": {
+        "dy_recorrente": 10,
+        "premio_cdi": 10,
+        "confiabilidade": 15,
+        "historico": 10,
+        "pvp": 20,
+        "vacancia": 20,
+        "liquidez": 5,
+        "score_cvm": 10,
+    },
+    "SHOPPINGS": {
+        "dy_recorrente": 15,
+        "premio_cdi": 10,
+        "confiabilidade": 15,
+        "historico": 10,
+        "pvp": 15,
+        "vacancia": 15,
+        "liquidez": 5,
+        "score_cvm": 15,
+    },
+    "HIBRIDO": {
+        "dy_recorrente": 15,
+        "premio_cdi": 15,
+        "confiabilidade": 15,
+        "historico": 10,
+        "pvp": 15,
+        "vacancia": 10,
+        "liquidez": 5,
+        "score_cvm": 15,
+    },
+}
+
+# ─────────────────────────────────────────
 # Janelas de avaliação do paper trading
 # ─────────────────────────────────────────
 JANELAS_AVALIACAO_DIAS = [90, 180, 365]
