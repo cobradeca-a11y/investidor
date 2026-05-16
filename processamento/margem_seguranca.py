@@ -5,7 +5,8 @@ Calcula o preço justo e a margem de segurança de um FII.
 Regra atual:
   - preço vem da base de indicadores;
   - VP/Cota e P/VP passam pelo resolvedor patrimonial CVM-first;
-  - Fundamentus/banco atual fica apenas como fallback rastreável.
+  - Fundamentus/banco atual fica apenas como fallback rastreável;
+  - fundos de tijolo usam Gordon com crescimento contratual estimado por segmento.
 """
 from typing import Optional
 
@@ -15,6 +16,21 @@ from processamento.dividendo_recorrente import calcular_dy_recorrente
 from servicos.resolvedor_patrimonial import resolver_patrimonio
 
 _SELIC_FALLBACK = 10.75  # usado somente se BCB e base local falharem
+_TAXA_EFETIVA_MINIMA = 0.01
+
+_CRESCIMENTO_CONTRATUAL_SEGMENTO = {
+    "LOGISTICA": 0.040,
+    "LOGÍSTICA": 0.040,
+    "LAJES": 0.030,
+    "CORPORATIVO": 0.030,
+    "ESCRITORIO": 0.030,
+    "ESCRITÓRIO": 0.030,
+    "SHOPPING": 0.035,
+    "SHOPPINGS": 0.035,
+    "RESIDENCIAL": 0.040,
+    "HÍBRIDO": 0.025,
+    "HIBRIDO": 0.025,
+}
 
 
 def _taxa_desconto() -> float:
@@ -27,6 +43,27 @@ def _taxa_desconto() -> float:
 def _buscar_segmento(ticker: str) -> str | None:
     fii_info = db.buscar_um("SELECT segmento FROM fiis WHERE ticker = ?", (ticker,))
     return fii_info["segmento"].upper() if fii_info and fii_info["segmento"] else None
+
+
+def _eh_papel(segmento: str | None) -> bool:
+    segmento_norm = (segmento or "").upper()
+    return "PAPEL" in segmento_norm or "RECEBÍVEIS" in segmento_norm or "RECEBIVEIS" in segmento_norm
+
+
+def _crescimento_contratual(segmento: str | None, cenario_stress: bool = False) -> float:
+    """
+    Retorna crescimento contratual anual estimado para fundos de tijolo.
+
+    Conservador por desenho: no stress, o crescimento considerado é cortado pela metade.
+    Segmentos não mapeados usam crescimento zero, preservando prudência.
+    """
+    segmento_norm = (segmento or "").upper()
+    crescimento = 0.0
+    for chave, valor in _CRESCIMENTO_CONTRATUAL_SEGMENTO.items():
+        if chave in segmento_norm:
+            crescimento = valor
+            break
+    return crescimento * 0.5 if cenario_stress else crescimento
 
 
 def _dados_base_margem(ticker: str) -> dict:
@@ -51,6 +88,32 @@ def _dados_base_margem(ticker: str) -> dict:
     }
 
 
+def _preco_justo(base: dict, cenario_stress: bool = False) -> float | None:
+    preco_atual = float(base["preco"])
+    vpa = float(base["vpa"])
+    segmento = base["segmento"]
+    taxa_desconto_exigida = _taxa_desconto()
+
+    if _eh_papel(segmento):
+        premio_vpa = 1.02 if not cenario_stress else 0.95
+        return vpa * premio_vpa
+
+    dy_anual = calcular_dy_recorrente(base["ticker"], preco_atual)
+    if dy_anual is None:
+        return vpa * (0.90 if not cenario_stress else 0.75)
+
+    fluxo_anual = dy_anual * preco_atual
+    if cenario_stress:
+        fluxo_anual *= 0.85
+
+    crescimento = _crescimento_contratual(segmento, cenario_stress=cenario_stress)
+    taxa_efetiva = taxa_desconto_exigida - crescimento
+    if taxa_efetiva <= 0:
+        taxa_efetiva = _TAXA_EFETIVA_MINIMA
+
+    return fluxo_anual / taxa_efetiva
+
+
 def calcular_margem_seguranca(ticker: str, cenario_stress: bool = False) -> Optional[float]:
     """
     Motor quantitativo com macrocorrelação e stress test.
@@ -64,22 +127,9 @@ def calcular_margem_seguranca(ticker: str, cenario_stress: bool = False) -> Opti
         return None
 
     preco_atual = float(base["preco"])
-    vpa = float(base["vpa"])
-    segmento = base["segmento"]
-    taxa_desconto_exigida = _taxa_desconto()
-
-    if "PAPEL" in segmento or "RECEBÍVEIS" in segmento or "RECEBIVEIS" in segmento:
-        premio_vpa = 1.02 if not cenario_stress else 0.95
-        preco_justo = vpa * premio_vpa
-    else:
-        dy_anual = calcular_dy_recorrente(base["ticker"], preco_atual)
-        if dy_anual is None:
-            preco_justo = vpa * (0.90 if not cenario_stress else 0.75)
-        else:
-            fluxo_anual = dy_anual * preco_atual
-            if cenario_stress:
-                fluxo_anual *= 0.85
-            preco_justo = fluxo_anual / taxa_desconto_exigida
+    preco_justo = _preco_justo(base, cenario_stress=cenario_stress)
+    if preco_justo is None:
+        return None
 
     margem = (preco_justo / preco_atual) - 1
     return round(margem, 4)
@@ -118,9 +168,13 @@ def relatorio_margem(ticker: str) -> dict:
     preco_stress = preco_atual * (1 + margem_stress)
     avaliacao = "POSITIVA" if margem > 0 else "NEGATIVA"
     taxa_desconto = _taxa_desconto()
+    crescimento_contratual = 0.0 if _eh_papel(segmento) else _crescimento_contratual(segmento)
+    crescimento_contratual_stress = 0.0 if _eh_papel(segmento) else _crescimento_contratual(segmento, cenario_stress=True)
+    taxa_efetiva = max(taxa_desconto - crescimento_contratual, _TAXA_EFETIVA_MINIMA)
+    taxa_efetiva_stress = max(taxa_desconto - crescimento_contratual_stress, _TAXA_EFETIVA_MINIMA)
     dy_anual = (
         calcular_dy_recorrente(base["ticker"], preco_atual)
-        if "PAPEL" not in segmento and "RECEBÍVEIS" not in segmento and "RECEBIVEIS" not in segmento
+        if not _eh_papel(segmento)
         else None
     )
 
@@ -142,4 +196,8 @@ def relatorio_margem(ticker: str) -> dict:
         "segmento": segmento,
         "dy_anual": dy_anual,
         "taxa_desconto": taxa_desconto,
+        "crescimento_contratual": crescimento_contratual,
+        "crescimento_contratual_stress": crescimento_contratual_stress,
+        "taxa_efetiva_gordon": taxa_efetiva,
+        "taxa_efetiva_gordon_stress": taxa_efetiva_stress,
     }
