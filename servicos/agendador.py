@@ -60,11 +60,11 @@ def rotina_semanal_deep_scan():
     print(f"[agendador] Deep Scan concluído para {len(vencedores)} fundos.")
 
 
-def rotina_noturna_cvm():
-    """Executada às 20:00 - Varredura noturna."""
-    print(f"[{datetime.now()}] Iniciando Varredura Noturna (CVM/RI)...")
+def rotina_noturna_radar():
+    """Executada às 20:00 - Varredura noturna do radar."""
+    print(f"[{datetime.now()}] Iniciando Varredura Noturna do Radar...")
     estrategia.radar_oportunidades()
-    print("[agendador] Dossiê noturno concluído.")
+    print("[agendador] Dossiê noturno do radar concluído.")
 
 
 # Agendamento Estratégico
@@ -73,7 +73,7 @@ schedule.every().day.at("07:00").do(rotina_cvm_diaria)             # CVM diário
 schedule.every().monday.at("07:20").do(rotina_cvm_trimestral)      # CVM trimestral
 schedule.every().day.at("09:00").do(rotina_diaria_abertura)        # Macro
 schedule.every().day.at("10:45").do(rotina_oportunidades_mercado) # Radar
-schedule.every().day.at("20:00").do(rotina_noturna_cvm)           # Dossiê noturno
+schedule.every().day.at("20:00").do(rotina_noturna_radar)         # Dossiê noturno do radar
 schedule.every().day.at("22:30").do(lambda: rotina_cvm_mensal() if datetime.now().day == 1 else None)
 schedule.every().saturday.at("10:00").do(rotina_semanal_deep_scan)# Deep scan
 
