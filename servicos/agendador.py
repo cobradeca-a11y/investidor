@@ -7,7 +7,7 @@ import time
 import threading
 from datetime import datetime
 from processamento import estrategia
-from coleta import api_bcb, api_fundamentus, api_yfinance
+from coleta import api_bcb, cvm_informe_mensal, informe_diario, informe_trimestral
 from servicos.agendador_avaliador import executar_avaliador_temporal
 
 
@@ -23,6 +23,27 @@ def rotina_avaliador_temporal():
     print(f"[{datetime.now()}] Iniciando Avaliador Temporal...")
     resultado = executar_avaliador_temporal()
     print(f"[agendador] Avaliador temporal concluído: {resultado}")
+
+
+def rotina_cvm_diaria():
+    """Executada diariamente - Atualiza o informe diário CVM do mês corrente."""
+    print(f"[{datetime.now()}] Iniciando Coleta CVM Diária...")
+    registros = informe_diario.coletar_mes_atual()
+    print(f"[agendador] Informe diário CVM atualizado: {registros} registros.")
+
+
+def rotina_cvm_mensal():
+    """Executada mensalmente - Atualiza informes mensais CVM do ano corrente."""
+    print(f"[{datetime.now()}] Iniciando Coleta CVM Mensal...")
+    resultado = cvm_informe_mensal.coletar_ano(datetime.now().year)
+    print(f"[agendador] Informe mensal CVM atualizado: {resultado}")
+
+
+def rotina_cvm_trimestral():
+    """Executada semanalmente - Mantém o último informe trimestral CVM sincronizado."""
+    print(f"[{datetime.now()}] Iniciando Coleta CVM Trimestral...")
+    resultado = informe_trimestral.coletar_atual()
+    print(f"[agendador] Informe trimestral CVM atualizado: {resultado}")
 
 
 def rotina_oportunidades_mercado():
@@ -48,9 +69,12 @@ def rotina_noturna_cvm():
 
 # Agendamento Estratégico
 schedule.every().day.at("06:00").do(rotina_avaliador_temporal)     # Aprendizado operacional
+schedule.every().day.at("07:00").do(rotina_cvm_diaria)             # CVM diário
+schedule.every().monday.at("07:20").do(rotina_cvm_trimestral)      # CVM trimestral
 schedule.every().day.at("09:00").do(rotina_diaria_abertura)        # Macro
 schedule.every().day.at("10:45").do(rotina_oportunidades_mercado) # Radar
 schedule.every().day.at("20:00").do(rotina_noturna_cvm)           # Dossiê noturno
+schedule.every().day.at("22:30").do(lambda: rotina_cvm_mensal() if datetime.now().day == 1 else None)
 schedule.every().saturday.at("10:00").do(rotina_semanal_deep_scan)# Deep scan
 
 
