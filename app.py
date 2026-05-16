@@ -51,9 +51,7 @@ def get_radar():
             "INFO",
             "api.radar",
             "Radar executado com sucesso",
-            contexto={
-                "quantidade_oportunidades": len(vencedores)
-            }
+            contexto={"quantidade_oportunidades": len(vencedores)},
         )
 
         return {
@@ -66,11 +64,8 @@ def get_radar():
         observabilidade.registrar_erro(
             "api.radar",
             e,
-            contexto={
-                "endpoint": "/api/radar"
-            }
+            contexto={"endpoint": "/api/radar"},
         )
-
         return {
             "status": "erro",
             "oportunidades": [],
@@ -81,25 +76,40 @@ def get_radar():
 
 @app.get("/api/analisar/{ticker}")
 def analisar_fundo(ticker: str):
-    ticker = ticker.upper()
+    """
+    Endpoint técnico de dados brutos.
+
+    Não executa o pipeline oficial de decisão do FIIA.
+    Usar para debug, inspeção de coleta e comparação com o veredito profissional.
+    """
+    ticker = ticker.upper().replace(".SA", "")
 
     try:
         dados = db.get_by_ticker("indicadores", ticker)
+        origem = "BANCO_LOCAL"
 
         if not dados:
             from coleta import api_fundamentus
             dados = api_fundamentus.coletar_fii(ticker)
+            origem = "FUNDAMENTUS_FALLBACK"
 
         observabilidade.registrar_evento(
             "INFO",
             "api.analisar",
-            "Análise executada",
+            "Consulta de dado bruto executada",
             ticker=ticker,
+            contexto={"tipo": "DADO_BRUTO_NAO_OFICIAL", "origem": origem},
         )
 
         return {
             "status": "ok",
+            "tipo": "DADO_BRUTO_NAO_OFICIAL",
+            "endpoint": "/api/analisar/{ticker}",
+            "aviso": "Este endpoint retorna dados brutos de indicadores e não executa o pipeline oficial de decisão do FIIA.",
+            "usar_para": ["debug", "verificacao_de_coleta", "comparacao_com_decisao_final"],
+            "pipeline_oficial": "Use os endpoints de relatorios/decisao para veredito profissional com CVM-first, confiança, gates e FNET.",
             "ticker": ticker,
+            "origem": origem,
             "dados": dados,
         }
 
@@ -108,15 +118,13 @@ def analisar_fundo(ticker: str):
             "api.analisar",
             e,
             ticker=ticker,
-            contexto={
-                "endpoint": "/api/analisar/{ticker}"
-            }
+            contexto={"endpoint": "/api/analisar/{ticker}", "tipo": "DADO_BRUTO_NAO_OFICIAL"},
         )
-
         return {
             "status": "erro",
+            "tipo": "DADO_BRUTO_NAO_OFICIAL",
             "ticker": ticker,
-            "mensagem": "Falha controlada ao analisar ativo.",
+            "mensagem": "Falha controlada ao consultar dado bruto do ativo.",
             "detalhe": str(e),
         }
 
