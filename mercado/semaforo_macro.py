@@ -17,12 +17,16 @@ import banco.db as db
 _SELIC_HOSTIL   = 13.5   # % aa — acima disso renda fixa domina
 _SELIC_NEUTRO   = 11.0   # % aa — abaixo disso FIIs competitivos
 _SPREAD_MINIMO  = 3.0    # pp acima da SELIC para FII valer o risco
+_JANELA_SPREAD_DIAS = 30
 
 
-def calcular_spread_medio() -> float | None:
+def calcular_spread_medio(janela_dias: int = _JANELA_SPREAD_DIAS) -> float | None:
     """
-    Calcula o DY medio dos FIIs no banco vs SELIC atual.
+    Calcula o DY medio recente dos FIIs no banco vs SELIC atual.
     Spread positivo = FIIs pagam acima da renda fixa.
+
+    Usa apenas registros dos últimos `janela_dias` para evitar que DY antigo
+    distorça o semáforo macro atual.
     """
     selic = obter_selic_atual()
     if not selic:
@@ -32,9 +36,20 @@ def calcular_spread_medio() -> float | None:
         """
         SELECT dy_12m FROM indicadores
         WHERE dy_12m IS NOT NULL AND dy_12m > 0
+          AND data >= date('now', ?)
         ORDER BY data DESC
-        """
+        """,
+        (f"-{int(janela_dias)} days",),
     )
+    if not rows:
+        rows = db.buscar_todos(
+            """
+            SELECT dy_12m FROM indicadores
+            WHERE dy_12m IS NOT NULL AND dy_12m > 0
+            ORDER BY data DESC
+            LIMIT 100
+            """
+        )
     if not rows:
         return None
 
@@ -100,18 +115,20 @@ def avaliar() -> dict:
         teto_decisao  = "COMPRAR_PARCIAL"
 
     elif selic < _SELIC_NEUTRO or tendencia == "QUEDA":
-        if spread and spread >= _SPREAD_MINIMO:
+        if spread is not None and spread >= _SPREAD_MINIMO:
             cor          = "VERDE"
-            motivo       = f"SELIC em {selic:.1f}% aa com spread de {spread:.1f}pp. FIIs competitivos."
+            motivo       = f"SELIC em {selic:.1f}% aa com spread recente de {spread:.1f}pp. FIIs competitivos."
             teto_decisao = "COMPRAR"
         else:
+            spread_txt = f"{spread:.1f}pp" if spread is not None else "indisponível"
             cor          = "AMARELO"
-            motivo       = f"SELIC em queda mas spread ({spread:.1f}pp) ainda insuficiente."
+            motivo       = f"SELIC em queda mas spread recente ({spread_txt}) ainda insuficiente."
             teto_decisao = "COMPRAR_PARCIAL"
 
     else:
+        spread_txt = f"{spread:.1f}pp" if spread is not None else "indisponível"
         cor          = "AMARELO"
-        motivo       = f"Ambiente neutro. SELIC {selic:.1f}% aa, spread {spread:.1f}pp."
+        motivo       = f"Ambiente neutro. SELIC {selic:.1f}% aa, spread recente {spread_txt}."
         teto_decisao = "COMPRAR_PARCIAL"
 
     return {
@@ -119,6 +136,7 @@ def avaliar() -> dict:
         "selic":        selic,
         "ipca":         ipca,
         "spread":       spread,
+        "janela_spread_dias": _JANELA_SPREAD_DIAS,
         "tendencia":    tendencia,
         "motivo":       motivo,
         "teto_decisao": teto_decisao,
