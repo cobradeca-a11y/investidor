@@ -7,7 +7,8 @@ Objetivo:
 - trazer CVM para o núcleo estrutural do FIIA;
 - persistir VP/cota, patrimônio líquido, cotistas e competência;
 - permitir recalcular P/VP internamente;
-- reduzir dependência de Fundamentus para dados patrimoniais.
+- reduzir dependência de Fundamentus para dados patrimoniais;
+- versionar reapresentações CVM sem sobrescrever histórico.
 
 Observação:
 Os ZIPs públicos da CVM não exigem token CKAN.
@@ -38,9 +39,31 @@ _MAPEAMENTO_COLUNAS = {
     "num_cotas": ["QT_COTAS", "QT_COTA", "QUANTIDADE_COTAS"],
 }
 
+_CAMPOS_VERSIONADOS = (
+    "patrimonio_liquido",
+    "valor_patrimonial_cota",
+    "num_cotistas",
+    "num_cotas",
+    "payload_json",
+)
+
 
 def _agora_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _row_get(row: Any, chave: str, padrao: Any = None) -> Any:
+    try:
+        return row[chave]
+    except Exception:
+        return padrao
+
+
+def _garantir_coluna(nome_tabela: str, nome_coluna: str, definicao: str) -> None:
+    colunas = db.buscar_todos(f"PRAGMA table_info({nome_tabela})")
+    existentes = {_row_get(col, "name") for col in colunas}
+    if nome_coluna not in existentes:
+        db.executar(f"ALTER TABLE {nome_tabela} ADD COLUMN {nome_coluna} {definicao}")
 
 
 def garantir_tabela() -> None:
@@ -49,6 +72,8 @@ def garantir_tabela() -> None:
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         cnpj_fundo TEXT NOT NULL,
         competencia TEXT NOT NULL,
+        versao INTEGER NOT NULL DEFAULT 1,
+        reapresentacao INTEGER NOT NULL DEFAULT 0,
         patrimonio_liquido REAL,
         valor_patrimonial_cota REAL,
         num_cotistas INTEGER,
@@ -58,10 +83,13 @@ def garantir_tabela() -> None:
         arquivo_origem TEXT,
         coletado_em TEXT NOT NULL,
         payload_json TEXT,
-        UNIQUE(cnpj_fundo, competencia)
+        UNIQUE(cnpj_fundo, competencia, versao)
     );
     """
     db.executar(sql)
+    _garantir_coluna(TABELA, "versao", "INTEGER NOT NULL DEFAULT 1")
+    _garantir_coluna(TABELA, "reapresentacao", "INTEGER NOT NULL DEFAULT 0")
+    db.executar(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{TABELA}_versao ON {TABELA}(cnpj_fundo, competencia, versao)")
 
 
 def _baixar_zip(ano: int) -> bytes:
@@ -161,19 +189,41 @@ def _extrair_registros(ano: int, nome_arquivo: str, df: pd.DataFrame) -> list[di
     return registros
 
 
+def _registro_igual(registro: dict[str, Any], existente: dict[str, Any]) -> bool:
+    for campo in _CAMPOS_VERSIONADOS:
+        if registro.get(campo) != existente.get(campo):
+            return False
+    return True
+
+
 def _salvar_registro(registro: dict[str, Any]) -> None:
+    """Salva registro CVM mantendo histórico de reapresentações."""
+    existente = db.buscar_um(
+        f"""
+        SELECT * FROM {TABELA}
+        WHERE cnpj_fundo = ? AND competencia = ?
+        ORDER BY versao DESC
+        LIMIT 1
+        """,
+        (registro["cnpj_fundo"], registro["competencia"]),
+    )
+
+    if existente:
+        existente_dict = dict(existente)
+        if _registro_igual(registro, existente_dict):
+            return
+        versao = int(existente_dict.get("versao") or 1) + 1
+        registro["versao"] = versao
+        registro["reapresentacao"] = 1
+    else:
+        registro["versao"] = 1
+        registro["reapresentacao"] = 0
+
     colunas = ", ".join(registro.keys())
     placeholders = ", ".join("?" for _ in registro)
-    updates = ", ".join(
-        f"{col}=excluded.{col}"
-        for col in registro.keys()
-        if col not in {"cnpj_fundo", "competencia"}
-    )
     sql = f"""
-    INSERT INTO {TABELA} ({colunas})
+    INSERT OR IGNORE INTO {TABELA} ({colunas})
     VALUES ({placeholders})
-    ON CONFLICT(cnpj_fundo, competencia)
-    DO UPDATE SET {updates}
     """
     db.executar(sql, tuple(registro.values()))
 
@@ -209,7 +259,7 @@ def importar_zip_local(caminho_zip: str | Path, ano: int | None = None) -> dict[
             "arquivo_zip": str(caminho),
             "ano": ano_final,
             "arquivos": len(arquivos),
-            "registros": total,
+            "registros_processados": total,
         }
         observabilidade.registrar_evento(
             "INFO",
@@ -238,7 +288,7 @@ def coletar_ano(ano: int) -> dict[str, Any]:
         arquivos = _ler_csv_do_zip(conteudo)
         total = _processar_arquivos(ano, arquivos)
 
-        resumo = {"origem": "download", "ano": ano, "arquivos": len(arquivos), "registros": total}
+        resumo = {"origem": "download", "ano": ano, "arquivos": len(arquivos), "registros_processados": total}
         observabilidade.registrar_evento(
             "INFO",
             "coleta.cvm_informe_mensal",
@@ -268,9 +318,23 @@ def ultimo_por_cnpj(cnpj_fundo: str) -> dict[str, Any] | None:
         f"""
         SELECT * FROM {TABELA}
         WHERE cnpj_fundo = ?
-        ORDER BY competencia DESC
+        ORDER BY competencia DESC, versao DESC
         LIMIT 1
         """,
         (cnpj_fundo,),
     )
     return dict(row) if row else None
+
+
+def historico_versoes(cnpj_fundo: str, competencia: str) -> list[dict[str, Any]]:
+    """Retorna todas as versões de uma competência CVM para auditoria."""
+    garantir_tabela()
+    rows = db.buscar_todos(
+        f"""
+        SELECT * FROM {TABELA}
+        WHERE cnpj_fundo = ? AND competencia = ?
+        ORDER BY versao ASC
+        """,
+        (cnpj_fundo, competencia),
+    )
+    return [dict(row) for row in rows]
