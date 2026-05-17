@@ -8,6 +8,7 @@ from pathlib import Path
 from banco import db
 from acesso import auth
 from coleta import api_bcb, api_fundamentus, api_yfinance
+from coleta.importar_tabela_mestre import importar_arquivo as importar_tabela_mestre
 from processamento import estrategia, tradutor
 from backtest import maquina_tempo
 from sistema import autoupdater
@@ -90,7 +91,6 @@ def rodar_radar():
     print("\nColetando dados macroeconômicos...")
     api_bcb.coletar_macro()
 
-    # Aciona o motor de busca (Top 15 com IA + motor de decisão)
     oportunidades = estrategia.radar_oportunidades()
 
     print("\n" + "="*50)
@@ -101,7 +101,6 @@ def rodar_radar():
         print("\n[radar] O mercado está caro! Nenhuma oportunidade com margem de segurança positiva encontrada.")
         return
 
-    # ── Ranking resumido completo ─────────────────────────────────────────
     print("\n  📊 RANKING:\n")
     for i, op in enumerate(oportunidades):
         veredito = op.get("veredito")
@@ -111,7 +110,6 @@ def rodar_radar():
             margem_val = (op["margem"] * 100) if op.get("margem") else 0
             print(f"  {i+1:2}.   {op['ticker']:<8} Margem: {margem_val:+.1f}%")
 
-    # ── Veredito detalhado — Top 3 ────────────────────────────────────────
     print("\n" + "="*50)
     print("      ANÁLISE DETALHADA — TOP 3")
     print("="*50)
@@ -121,20 +119,23 @@ def rodar_radar():
         if veredito:
             print(formatar_veredito(veredito))
         else:
-            # Fallback: exibe análise individual se motor não retornou veredito
             analisar_fii(op["ticker"])
 
 
 def rodar_backtest(ticker: str):
     """Aciona a máquina do tempo para o FII especificado."""
-    # Chama o auto-updater
     autoupdater.verificar_e_atualizar()
-    
-    # É preciso puxar o histórico de dividendos para rodar
     api_yfinance.coletar_historico_dividendos(ticker)
-    
     from backtest.maquina_tempo import executar_backtest
     executar_backtest(ticker)
+
+
+def importar_master(caminho_csv: str):
+    """Importa a tabela mestre B3 ↔ CVM."""
+    resultado = importar_tabela_mestre(caminho_csv)
+    print("\n=== IMPORTAÇÃO TABELA MESTRE ===")
+    for chave, valor in resultado.items():
+        print(f"{chave}: {valor}")
 
 def main():
     parser = argparse.ArgumentParser(description="FIIA - Fundo Inteligente de Investimento em Ativos")
@@ -142,11 +143,14 @@ def main():
     parser.add_argument("--backtest", type=str, help="Roda a máquina do tempo simulando 5 anos no passado para o TICKER.")
     parser.add_argument("--top10", action="store_true", help="Analisa os 10 FIIs mais populares do mercado.")
     parser.add_argument("--radar", action="store_true", help="Varre o mercado inteiro em busca de oportunidades reais.")
+    parser.add_argument("--importar-master", type=str, help="Importa CSV da tabela mestre B3 ↔ CVM.")
     
     args = parser.parse_args()
 
     if args.setup:
         setup()
+    elif args.importar_master:
+        importar_master(args.importar_master)
     elif args.backtest:
         auth.exigir_autenticacao()
         rodar_backtest(args.backtest.upper())
@@ -157,7 +161,6 @@ def main():
         auth.exigir_autenticacao()
         rodar_radar()
     else:
-        # Pede senha para a demonstração normal
         auth.exigir_autenticacao()
         demonstracao()
 
