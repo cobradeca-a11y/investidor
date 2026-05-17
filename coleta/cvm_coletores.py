@@ -9,12 +9,6 @@ Funções:
 - filtrar apenas fundos presentes em cadastro_fundos_master;
 - extrair links FNET disponíveis nos informes anuais;
 - sincronizar indicadores CVM recentes na tabela mestre.
-
-Fontes:
-- https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS/
-- https://dados.cvm.gov.br/dados/FII/DOC/INF_TRIMESTRAL/DADOS/
-- https://dados.cvm.gov.br/dados/FII/DOC/INF_ANUAL/DADOS/
-- https://dados.cvm.gov.br/dados/FII/DOC/DFIN/DADOS/
 """
 from __future__ import annotations
 
@@ -28,8 +22,6 @@ from typing import Any
 
 import pandas as pd
 import requests
-
-from banco import db
 
 logger = logging.getLogger(__name__)
 HEADERS = {"User-Agent": "FIIA/1.0"}
@@ -84,15 +76,6 @@ def _conectar(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
-
-
-def _normalizar_cnpj_valor(valor: Any) -> str | None:
-    if valor is None:
-        return None
-    apenas_digitos = re.sub(r"\D", "", str(valor))
-    if not apenas_digitos:
-        return None
-    return apenas_digitos.zfill(14)
 
 
 def _normalizar_cnpj(serie: pd.Series) -> pd.Series:
@@ -209,6 +192,25 @@ def _processar_zip(
     return total
 
 
+def _tabela_existe(conn: sqlite3.Connection, tabela: str) -> bool:
+    row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (tabela,)).fetchone()
+    return row is not None
+
+
+def _colunas(conn: sqlite3.Connection, tabela: str) -> set[str]:
+    if not _tabela_existe(conn, tabela):
+        return set()
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({tabela})").fetchall()}
+
+
+def _primeira_coluna_existente(conn: sqlite3.Connection, tabela: str, candidatas: list[str]) -> str | None:
+    existentes = _colunas(conn, tabela)
+    for coluna in candidatas:
+        if coluna in existentes:
+            return coluna
+    return None
+
+
 def coletar_mensal(db_path: str = "fiia.db", ano: int | None = None) -> int:
     ano = ano or date.today().year
     url = URL_MENSAL.format(ano=ano)
@@ -301,18 +303,23 @@ def extrair_links_fnet(db_path: str = "fiia.db") -> int:
     """Lê cvm_anual_complemento e popula cvm_fnet_documentos_fii com links de download."""
     conn = _conectar(db_path)
     try:
-        try:
-            df = pd.read_sql(
-                """
-                SELECT CNPJ_Fundo_Classe, Data_Referencia, Versao, Link_Download_Anexo
-                FROM cvm_anual_complemento
-                WHERE Link_Download_Anexo IS NOT NULL AND Link_Download_Anexo != ''
-                """,
-                conn,
-            )
-        except Exception as erro:
-            logger.warning("cvm_anual_complemento indisponível para links FNET: %s", erro)
+        if not _tabela_existe(conn, "cvm_anual_complemento"):
+            logger.warning("cvm_anual_complemento inexistente; rode coletar_anual() antes de extrair FNET")
             return 0
+
+        colunas = _colunas(conn, "cvm_anual_complemento")
+        if "Link_Download_Anexo" not in colunas:
+            logger.warning("cvm_anual_complemento existe, mas não tem Link_Download_Anexo")
+            return 0
+
+        df = pd.read_sql(
+            """
+            SELECT CNPJ_Fundo_Classe, Data_Referencia, Versao, Link_Download_Anexo
+            FROM cvm_anual_complemento
+            WHERE Link_Download_Anexo IS NOT NULL AND Link_Download_Anexo != ''
+            """,
+            conn,
+        )
 
         if df.empty:
             logger.warning("cvm_anual_complemento vazia ou sem links")
@@ -330,20 +337,11 @@ def extrair_links_fnet(db_path: str = "fiia.db") -> int:
         df["dedupe_key"] = df["cnpj_fundo"].astype(str) + "|" + df["url_documento"].astype(str)
 
         registros = df[[
-            "cnpj_fundo",
-            "categoria",
-            "tipo_documento",
-            "Data_Referencia",
-            "url_documento",
-            "protocolo",
-            "assunto",
-            "fonte",
-            "arquivo_origem",
-            "coletado_em",
-            "dedupe_key",
+            "cnpj_fundo", "categoria", "tipo_documento", "Data_Referencia",
+            "url_documento", "protocolo", "assunto", "fonte", "arquivo_origem",
+            "coletado_em", "dedupe_key",
         ]].rename(columns={"Data_Referencia": "data_referencia"})
 
-        total = 0
         for row in registros.to_dict(orient="records"):
             conn.execute(
                 """
@@ -356,7 +354,6 @@ def extrair_links_fnet(db_path: str = "fiia.db") -> int:
                 """,
                 row,
             )
-            total += conn.total_changes
         conn.commit()
         logger.info("Links FNET extraídos: %s", len(registros))
         return len(registros)
@@ -368,30 +365,57 @@ def extrair_links_fnet(db_path: str = "fiia.db") -> int:
 
 
 def sincronizar_indicadores_master(db_path: str = "fiia.db") -> dict[str, Any]:
-    """Atualiza cadastro_fundos_master com campos recentes de informe mensal quando existirem."""
+    """Atualiza cadastro_fundos_master com campos recentes do informe mensal quando existirem."""
     conn = _conectar(db_path)
     try:
-        # A CVM muda nomes ao longo do tempo; usar subqueries tolerantes via tabelas existentes.
-        conn.execute(
-            """
-            UPDATE cadastro_fundos_master AS m
-            SET
-                inf_diario_vl_patrim_liq = COALESCE((
-                    SELECT a.Patrimonio_Liquido
-                    FROM cvm_mensal_ativo_passivo a
-                    WHERE a.CNPJ_Fundo_Classe = REPLACE(REPLACE(REPLACE(m.cnpj_fundo,'.',''),'/',''),'-','')
-                    ORDER BY a.Data_Referencia DESC LIMIT 1
-                ), inf_diario_vl_patrim_liq),
-                inf_diario_nr_cotistas = COALESCE((
-                    SELECT c.Total_Numero_Cotistas
-                    FROM cvm_mensal_complemento c
-                    WHERE c.CNPJ_Fundo_Classe = REPLACE(REPLACE(REPLACE(m.cnpj_fundo,'.',''),'/',''),'-','')
-                    ORDER BY c.Data_Referencia DESC LIMIT 1
-                ), inf_diario_nr_cotistas)
-            """
-        )
+        if not _tabela_existe(conn, "cadastro_fundos_master"):
+            return {"sincronizado": False, "erro": "cadastro_fundos_master inexistente"}
+
+        updates: list[str] = []
+
+        if _tabela_existe(conn, "cvm_mensal_ativo_passivo"):
+            col_pl = _primeira_coluna_existente(
+                conn,
+                "cvm_mensal_ativo_passivo",
+                ["Patrimonio_Liquido", "Patrimonio_Liq", "Patrimonio_Liquido_Contabil", "PL", "Total_Ativo"],
+            )
+            if col_pl:
+                updates.append(
+                    f"""
+                    inf_diario_vl_patrim_liq = COALESCE((
+                        SELECT a.{col_pl}
+                        FROM cvm_mensal_ativo_passivo a
+                        WHERE a.CNPJ_Fundo_Classe = REPLACE(REPLACE(REPLACE(m.cnpj_fundo,'.',''),'/',''),'-','')
+                        ORDER BY a.Data_Referencia DESC LIMIT 1
+                    ), inf_diario_vl_patrim_liq)
+                    """
+                )
+
+        if _tabela_existe(conn, "cvm_mensal_complemento"):
+            col_cotistas = _primeira_coluna_existente(
+                conn,
+                "cvm_mensal_complemento",
+                ["Total_Numero_Cotistas", "Numero_Cotistas", "NR_COTST", "Num_Cotistas"],
+            )
+            if col_cotistas:
+                updates.append(
+                    f"""
+                    inf_diario_nr_cotistas = COALESCE((
+                        SELECT c.{col_cotistas}
+                        FROM cvm_mensal_complemento c
+                        WHERE c.CNPJ_Fundo_Classe = REPLACE(REPLACE(REPLACE(m.cnpj_fundo,'.',''),'/',''),'-','')
+                        ORDER BY c.Data_Referencia DESC LIMIT 1
+                    ), inf_diario_nr_cotistas)
+                    """
+                )
+
+        if not updates:
+            return {"sincronizado": False, "erro": "nenhuma coluna CVM compatível encontrada"}
+
+        sql = f"UPDATE cadastro_fundos_master AS m SET {', '.join(updates)}"
+        conn.execute(sql)
         conn.commit()
-        return {"sincronizado": True, "linhas_afetadas": conn.total_changes}
+        return {"sincronizado": True, "linhas_afetadas": conn.total_changes, "campos_atualizados": len(updates)}
     except Exception as erro:
         logger.error("Erro sync master: %s", erro)
         return {"sincronizado": False, "erro": str(erro)}
@@ -401,7 +425,7 @@ def sincronizar_indicadores_master(db_path: str = "fiia.db") -> dict[str, Any]:
 
 def carga_historica(db_path: str = "fiia.db", anos: int = 3) -> dict[str, Any]:
     ano_atual = date.today().year
-    totais = {"mensal": 0, "trimestral": 0, "anual": 0, "dfin": 0, "links_fnet": 0}
+    totais: dict[str, Any] = {"mensal": 0, "trimestral": 0, "anual": 0, "dfin": 0, "links_fnet": 0}
 
     for i in range(anos):
         ano = ano_atual - i
@@ -417,10 +441,12 @@ def carga_historica(db_path: str = "fiia.db", anos: int = 3) -> dict[str, Any]:
 
 
 def carga_corrente(db_path: str = "fiia.db") -> dict[str, Any]:
+    """Carga operacional corrente; inclui anual anterior para habilitar extração FNET."""
     ano_atual = date.today().year
-    resultado = {
+    resultado: dict[str, Any] = {
         "mensal": coletar_mensal(db_path, ano=ano_atual),
         "trimestral": coletar_trimestral(db_path, ano=ano_atual),
+        "anual": coletar_anual(db_path, ano=ano_atual - 1),
         "dfin": coletar_dfin(db_path, ano=ano_atual),
     }
     resultado["links_fnet"] = extrair_links_fnet(db_path)
