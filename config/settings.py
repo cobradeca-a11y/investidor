@@ -127,8 +127,9 @@ URL_STATUS_INVEST = "https://statusinvest.com.br/fundos-imobiliarios/{ticker}"
 URL_FUNDS_EXPLORER = "https://www.fundsexplorer.com.br/funds/{ticker}"
 URL_B3_FIIS = "https://www.b3.com.br/pt_br/produtos-e-servicos/negociacao/renda-variavel/fundos-de-investimentos/fii/fiis-listados/"
 
-URL_BCB_SELIC = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.11/dados/ultimos/1?formato=json"
-URL_BCB_CDI   = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json"
+# Banco Central SGS — séries anualizadas oficiais quando disponíveis
+URL_BCB_SELIC = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json"
+URL_BCB_CDI   = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.4389/dados/ultimos/1?formato=json"
 URL_BCB_IPCA  = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/1?formato=json"
 
 # ─────────────────────────────────────────
