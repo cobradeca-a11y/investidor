@@ -9,6 +9,9 @@ from datetime import datetime
 from processamento import estrategia
 from coleta import api_bcb, cvm_informe_mensal, informe_diario, informe_trimestral
 from servicos.agendador_avaliador import executar_avaliador_temporal
+from aprendizado.snapshots import criar_snapshots_diarios
+from aprendizado.paper_trading import executar_paper_trading_diario
+from operacional.saude_fontes import gerar_relatorio_saude_fontes
 
 
 def rotina_diaria_abertura():
@@ -46,6 +49,24 @@ def rotina_cvm_trimestral():
     print(f"[agendador] Informe trimestral CVM atualizado: {resultado}")
 
 
+def rotina_snapshots_diarios():
+    print(f"[{datetime.now()}] Iniciando Snapshots Diários...")
+    resultado = criar_snapshots_diarios()
+    print(f"[agendador] Snapshots concluídos: {resultado}")
+
+
+def rotina_paper_trading_diario():
+    print(f"[{datetime.now()}] Iniciando Paper Trading Diário...")
+    resultado = executar_paper_trading_diario()
+    print(f"[agendador] Paper trading concluído: {resultado.get('resumo')}")
+
+
+def rotina_saude_fontes():
+    print(f"[{datetime.now()}] Iniciando Saúde das Fontes...")
+    resultado = gerar_relatorio_saude_fontes()
+    print(f"[agendador] Saúde das fontes concluída: {resultado.get('cobertura')}")
+
+
 def rotina_oportunidades_mercado():
     """Executada às 11:00 - Busca oportunidades com a bolsa aberta."""
     print(f"[{datetime.now()}] Iniciando Radar de Oportunidades...")
@@ -71,10 +92,13 @@ def rotina_noturna_radar():
 schedule.every().day.at("06:00").do(rotina_avaliador_temporal)     # Aprendizado operacional
 schedule.every().day.at("07:00").do(rotina_cvm_diaria)             # CVM diário
 schedule.every().monday.at("07:20").do(rotina_cvm_trimestral)      # CVM trimestral
+schedule.every().day.at("08:00").do(rotina_snapshots_diarios)      # Snapshots históricos
 schedule.every().day.at("09:00").do(rotina_diaria_abertura)        # Macro
+schedule.every().day.at("10:00").do(rotina_paper_trading_diario)   # Paper trading diário
 schedule.every().day.at("10:45").do(rotina_oportunidades_mercado) # Radar
 schedule.every().day.at("20:00").do(rotina_noturna_radar)         # Dossiê noturno do radar
 schedule.every().day.at("22:30").do(lambda: rotina_cvm_mensal() if datetime.now().day == 1 else None)
+schedule.every().day.at("23:00").do(rotina_saude_fontes)           # Saúde das fontes
 schedule.every().saturday.at("10:00").do(rotina_semanal_deep_scan)# Deep scan
 
 
