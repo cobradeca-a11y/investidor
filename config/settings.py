@@ -109,8 +109,9 @@ PESOS_SCORE_SEGMENTADO = {
 
 # ─────────────────────────────────────────
 # Janelas de avaliação do paper trading
+# 180 dias removido até existir suporte completo no avaliador.
 # ─────────────────────────────────────────
-JANELAS_AVALIACAO_DIAS = [90, 180, 365]
+JANELAS_AVALIACAO_DIAS = [90, 365]
 
 # ─────────────────────────────────────────
 # Governança do aprendizado adaptativo
