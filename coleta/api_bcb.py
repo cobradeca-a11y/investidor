@@ -4,13 +4,14 @@ Coleta dados macroeconômicos da API oficial do Banco Central do Brasil.
 API pública, gratuita, sem autenticação.
 
 Convenção interna do FIIA:
-- selic: taxa anualizada em percentual (% a.a.)
-- cdi: taxa anualizada em percentual (% a.a.)
-- ipca: valor retornado pela série configurada no BCB
+- selic: taxa anualizada oficial (% a.a.)
+- cdi: taxa anualizada oficial (% a.a.)
+- ipca: variação mensal oficial
 
-Observação crítica:
-Algumas séries configuradas podem retornar taxa diária em percentual.
-Sempre que SELIC/CDI vierem entre 0 e 1, o FIIA anualiza para % a.a.
+Séries SGS utilizadas:
+- SELIC anualizada base 252 → 1178
+- CDI anualizado base 252 → 4389
+- IPCA oficial → 433
 """
 from __future__ import annotations
 
@@ -18,10 +19,8 @@ import requests
 from datetime import date
 from typing import Optional
 
-from config.settings import URL_BCB_SELIC, URL_BCB_CDI, URL_BCB_IPCA
 from banco import db
-
-_DIAS_UTEIS_ANO = 252
+from config.settings import URL_BCB_CDI, URL_BCB_IPCA, URL_BCB_SELIC
 
 _CACHE_MEMORIA: dict[str, float | None] = {
     "selic": None,
@@ -43,29 +42,6 @@ def _buscar_valor(url: str) -> Optional[float]:
     return None
 
 
-def _anualizar_taxa_diaria_percentual(taxa_diaria_pct: float | None) -> Optional[float]:
-    """Converte taxa diária em percentual para taxa anualizada em percentual."""
-    if taxa_diaria_pct is None:
-        return None
-    return round(((1 + float(taxa_diaria_pct) / 100) ** _DIAS_UTEIS_ANO - 1) * 100, 4)
-
-
-def _normalizar_taxa_anual(valor_pct: float | None) -> Optional[float]:
-    """
-    Normaliza taxa para % a.a.
-
-    Heurística:
-    - 0 < valor < 1: taxa diária percentual, anualizar.
-    - valor >= 1: já está em percentual anual ou acumulado compatível.
-    """
-    if valor_pct is None:
-        return None
-    valor = float(valor_pct)
-    if 0 < valor < 1:
-        return _anualizar_taxa_diaria_percentual(valor)
-    return valor
-
-
 def coletar_macro(forcar_atualizacao: bool = False) -> dict:
     """Coleta SELIC, CDI e IPCA do BCB e salva no banco."""
     hoje = date.today().isoformat()
@@ -75,12 +51,9 @@ def coletar_macro(forcar_atualizacao: bool = False) -> dict:
         print(f"[bcb] Macro já coletado para {hoje}")
         return dict(existente)
 
-    selic_bruta = _buscar_valor(URL_BCB_SELIC)
-    cdi_bruto = _buscar_valor(URL_BCB_CDI)
+    selic = _buscar_valor(URL_BCB_SELIC)
+    cdi = _buscar_valor(URL_BCB_CDI)
     ipca = _buscar_valor(URL_BCB_IPCA)
-
-    selic = _normalizar_taxa_anual(selic_bruta)
-    cdi = _normalizar_taxa_anual(cdi_bruto)
 
     if selic is None and cdi is None:
         print("[bcb] Falha na coleta — sem dados disponíveis")
@@ -98,52 +71,55 @@ def coletar_macro(forcar_atualizacao: bool = False) -> dict:
     _CACHE_MEMORIA.update({"selic": selic, "cdi": cdi, "ipca": ipca})
 
     print(
-        f"[bcb] Macro coletado → SELIC: {selic}% a.a. (bruta: {selic_bruta}%) | "
-        f"CDI: {cdi}% a.a. (bruta: {cdi_bruto}%) | IPCA: {ipca}%"
+        f"[bcb] Macro coletado → "
+        f"SELIC: {selic}% a.a. | "
+        f"CDI: {cdi}% a.a. | "
+        f"IPCA: {ipca}%"
     )
     return registro
 
 
 def corrigir_macro_cdi_diario_gravado() -> dict:
     """
-    Corrige registros antigos gravados com CDI/SELIC diário.
+    Corrige registros antigos que foram gravados como taxa diária.
 
-    Heurística segura:
-    - se selic/cdi estão entre 0 e 1, assume taxa diária percentual e anualiza;
-    - não consulta o BCB por registro, evitando travar o paper trading.
+    Estratégia:
+    - se valor estiver entre 0 e 1, substitui pela coleta oficial atual;
+    - registros já corretos permanecem intactos.
     """
-    rows = db.buscar_todos("SELECT id, data, selic, cdi FROM macro ORDER BY data")
+    rows = db.buscar_todos("SELECT id, selic, cdi FROM macro")
 
-    corrigidos_cdi = 0
-    corrigidos_selic = 0
+    selic_oficial = _buscar_valor(URL_BCB_SELIC)
+    cdi_oficial = _buscar_valor(URL_BCB_CDI)
+
+    corrigidos = 0
 
     for row in rows:
         selic = row["selic"]
         cdi = row["cdi"]
-        nova_selic = _normalizar_taxa_anual(selic)
-        novo_cdi = _normalizar_taxa_anual(cdi)
 
-        if nova_selic != selic:
-            corrigidos_selic += 1
-        if novo_cdi != cdi:
-            corrigidos_cdi += 1
+        nova_selic = selic_oficial if selic is not None and 0 < float(selic) < 1 else selic
+        novo_cdi = cdi_oficial if cdi is not None and 0 < float(cdi) < 1 else cdi
 
         if nova_selic != selic or novo_cdi != cdi:
             db.executar(
                 "UPDATE macro SET selic = ?, cdi = ? WHERE id = ?",
                 (nova_selic, novo_cdi, row["id"]),
             )
+            corrigidos += 1
 
     _CACHE_MEMORIA.update({"selic": None, "cdi": None, "ipca": None})
+
     return {
         "registros_lidos": len(rows),
-        "cdi_diario_anualizado": corrigidos_cdi,
-        "selic_diaria_anualizada": corrigidos_selic,
+        "registros_corrigidos": corrigidos,
+        "selic_oficial": selic_oficial,
+        "cdi_oficial": cdi_oficial,
     }
 
 
 def obter_cdi_atual() -> Optional[float]:
-    """Retorna o CDI anualizado mais recente disponível no banco."""
+    """Retorna o CDI anualizado mais recente disponível."""
     if _CACHE_MEMORIA.get("cdi") is not None:
         return _CACHE_MEMORIA["cdi"]
 
@@ -152,10 +128,10 @@ def obter_cdi_atual() -> Optional[float]:
         "SELECT cdi FROM macro WHERE data <= ? ORDER BY data DESC LIMIT 1",
         (hoje,),
     )
+
     if row and row["cdi"] is not None:
-        cdi = _normalizar_taxa_anual(float(row["cdi"]))
-        _CACHE_MEMORIA["cdi"] = cdi
-        return cdi
+        _CACHE_MEMORIA["cdi"] = float(row["cdi"])
+        return float(row["cdi"])
 
     dados = coletar_macro()
     return dados.get("cdi")
@@ -171,10 +147,10 @@ def obter_selic_atual() -> Optional[float]:
         "SELECT selic FROM macro WHERE data <= ? ORDER BY data DESC LIMIT 1",
         (hoje,),
     )
+
     if row and row["selic"] is not None:
-        selic = _normalizar_taxa_anual(float(row["selic"]))
-        _CACHE_MEMORIA["selic"] = selic
-        return selic
+        _CACHE_MEMORIA["selic"] = float(row["selic"])
+        return float(row["selic"])
 
     dados = coletar_macro()
     return dados.get("selic")
@@ -190,6 +166,7 @@ def obter_ipca_atual() -> Optional[float]:
         "SELECT ipca FROM macro WHERE data <= ? ORDER BY data DESC LIMIT 1",
         (hoje,),
     )
+
     if row and row["ipca"] is not None:
         _CACHE_MEMORIA["ipca"] = row["ipca"]
         return row["ipca"]
