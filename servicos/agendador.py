@@ -8,6 +8,8 @@ import threading
 from datetime import datetime
 from processamento import estrategia
 from coleta import api_bcb, cvm_informe_mensal, informe_diario, informe_trimestral
+from coleta.informe_anual import coletar_atual as anual_atual
+from coleta.informe_trimestral_completo import coletar_atual as tri_completo_atual
 from servicos.agendador_avaliador import executar_avaliador_temporal
 from aprendizado.snapshots import criar_snapshots_diarios
 from aprendizado.paper_trading import executar_paper_trading_diario
@@ -47,6 +49,20 @@ def rotina_cvm_trimestral():
     print(f"[{datetime.now()}] Iniciando Coleta CVM Trimestral...")
     resultado = informe_trimestral.coletar_atual()
     print(f"[agendador] Informe trimestral CVM atualizado: {resultado}")
+
+
+def rotina_cvm_trimestral_completa():
+    """Executada semanalmente - Persiste tabelas trimestrais estendidas."""
+    print(f"[{datetime.now()}] Iniciando Coleta CVM Trimestral Completa...")
+    resultado = tri_completo_atual()
+    print(f"[agendador] Informe trimestral completo atualizado: {resultado}")
+
+
+def rotina_cvm_anual():
+    """Executada anualmente - Atualiza informes anuais completos."""
+    print(f"[{datetime.now()}] Iniciando Coleta CVM Anual...")
+    resultado = anual_atual()
+    print(f"[agendador] Informe anual CVM atualizado: {resultado}")
 
 
 def rotina_snapshots_diarios():
@@ -89,17 +105,19 @@ def rotina_noturna_radar():
 
 
 # Agendamento Estratégico
-schedule.every().day.at("06:00").do(rotina_avaliador_temporal)     # Aprendizado operacional
-schedule.every().day.at("07:00").do(rotina_cvm_diaria)             # CVM diário
-schedule.every().monday.at("07:20").do(rotina_cvm_trimestral)      # CVM trimestral
-schedule.every().day.at("08:00").do(rotina_snapshots_diarios)      # Snapshots históricos
-schedule.every().day.at("09:00").do(rotina_diaria_abertura)        # Macro
-schedule.every().day.at("10:00").do(rotina_paper_trading_diario)   # Paper trading diário
-schedule.every().day.at("10:45").do(rotina_oportunidades_mercado) # Radar
-schedule.every().day.at("20:00").do(rotina_noturna_radar)         # Dossiê noturno do radar
+schedule.every().day.at("06:00").do(rotina_avaliador_temporal)
+schedule.every().day.at("07:00").do(rotina_cvm_diaria)
+schedule.every().monday.at("07:20").do(rotina_cvm_trimestral)
+schedule.every().monday.at("07:35").do(rotina_cvm_trimestral_completa)
+schedule.every().day.at("08:00").do(rotina_snapshots_diarios)
+schedule.every().day.at("09:00").do(rotina_diaria_abertura)
+schedule.every().day.at("10:00").do(rotina_paper_trading_diario)
+schedule.every().day.at("10:45").do(rotina_oportunidades_mercado)
+schedule.every().day.at("20:00").do(rotina_noturna_radar)
 schedule.every().day.at("22:30").do(lambda: rotina_cvm_mensal() if datetime.now().day == 1 else None)
-schedule.every().day.at("23:00").do(rotina_saude_fontes)           # Saúde das fontes
-schedule.every().saturday.at("10:00").do(rotina_semanal_deep_scan)# Deep scan
+schedule.every().day.at("22:45").do(lambda: rotina_cvm_anual() if datetime.now().month in [3, 4] and datetime.now().day == 1 else None)
+schedule.every().day.at("23:00").do(rotina_saude_fontes)
+schedule.every().saturday.at("10:00").do(rotina_semanal_deep_scan)
 
 
 def iniciar_agendador_background():
