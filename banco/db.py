@@ -2,10 +2,14 @@
 banco/db.py
 Conexão com o banco SQLite e helpers de acesso.
 """
+from __future__ import annotations
+
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
+
+from banco.migracoes import aplicar_migracoes_p2_p3
 
 # Caminho do banco — sempre na raiz do projeto
 _RAIZ = Path(__file__).parent.parent
@@ -42,15 +46,29 @@ def transacao() -> Iterator[sqlite3.Connection]:
 
 
 def inicializar() -> None:
-    """Cria as tabelas se ainda não existirem."""
+    """
+    Cria as tabelas se ainda não existirem e aplica migrações idempotentes.
+
+    Objetivo:
+    - banco novo nasce sincronizado com schema.sql;
+    - banco antigo recebe colunas P2/P3 automaticamente.
+    """
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     conn = conectar()
     try:
         conn.executescript(schema)
+
+        migracao = aplicar_migracoes_p2_p3(conn)
+
         conn.commit()
     finally:
         conn.close()
+
     print(f"[db] Banco inicializado em: {DB_PATH}")
+    if migracao["total_adicionadas"]:
+        print(f"[db] Migração P2/P3 aplicada: {migracao['colunas_adicionadas']}")
+    else:
+        print("[db] Banco já estava sincronizado com P2/P3.")
 
 
 def inserir(tabela: str, dados: dict[str, Any]) -> int:
