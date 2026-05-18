@@ -12,17 +12,31 @@ Objetivo:
 """
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from carteira import repositorio_carteira
 from carteira.politica_carteira import avaliar_alocacao_sugerida
 from decisao.decisao_com_confianca import decidir
 from sistema import observabilidade
+from config.settings import FIIA_API_KEY
 
-router = APIRouter(prefix="/api/carteira", tags=["carteira"])
+router = APIRouter(
+    prefix="/api/carteira",
+    tags=["carteira"],
+    dependencies=[Depends(verificar_api_key)],
+)
+
+
+def verificar_api_key(x_api_key: str | None = Header(None)) -> None:
+    """Verifica se a chave fornecida coincide com a configurada (FIIA_API_KEY)."""
+    if not FIIA_API_KEY:
+        raise HTTPException(status_code=500, detail="FIIA_API_KEY não configurada")
+    if not x_api_key or not secrets.compare_digest(x_api_key, FIIA_API_KEY):
+        raise HTTPException(status_code=401, detail="API Key inválida ou ausente")
 
 
 class OperacaoCarteira(BaseModel):

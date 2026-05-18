@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS macro (
 );
 
 -- ─────────────────────────────────────────
--- Carteira pessoal
+-- Carteira pessoal e de operações do FIIA
 -- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS carteira (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,29 +185,58 @@ CREATE TABLE IF NOT EXISTS carteira (
     FOREIGN KEY (ticker) REFERENCES fiis(ticker)
 );
 
+CREATE TABLE IF NOT EXISTS carteira_posicoes (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker              TEXT NOT NULL UNIQUE,
+    quantidade          REAL NOT NULL DEFAULT 0,
+    preco_medio         REAL NOT NULL DEFAULT 0,
+    custo_total         REAL NOT NULL DEFAULT 0,
+    segmento            TEXT,
+    atualizado_em       TEXT NOT NULL,
+    FOREIGN KEY (ticker) REFERENCES fiis(ticker)
+);
+
+CREATE TABLE IF NOT EXISTS carteira_operacoes (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker              TEXT NOT NULL,
+    tipo                TEXT NOT NULL,
+    quantidade          REAL NOT NULL,
+    preco               REAL NOT NULL,
+    custos              REAL NOT NULL DEFAULT 0,
+    valor_total         REAL NOT NULL,
+    data_operacao       TEXT NOT NULL,
+    origem              TEXT DEFAULT 'MANUAL',
+    observacao          TEXT,
+    criado_em           TEXT NOT NULL,
+    FOREIGN KEY (ticker) REFERENCES fiis(ticker)
+);
+
 -- ─────────────────────────────────────────
 -- Decisões do sistema
 -- ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS decisoes (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker              TEXT NOT NULL,
-    data                TEXT NOT NULL,
-    preco_na_decisao    REAL,
-    status              TEXT NOT NULL,
-    score_qualidade     REAL,
-    score_preco         REAL,
-    score_risco         REAL,
-    score_renda         REAL,
-    score_mercado       REAL,
-    score_confianca     REAL,
-    margem_seguranca    REAL,
-    premio_cdi          REAL,
-    alertas             TEXT,
-    justificativa       TEXT,
-    explicacao_simples  TEXT,
-    score_ia            REAL,
-    versao_modelo       TEXT DEFAULT '1.0',
-    criado_em           TEXT DEFAULT (datetime('now','localtime')),
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker            TEXT NOT NULL,
+    data_decisao      TEXT NOT NULL,
+    decisao           TEXT NOT NULL,
+    motivo            TEXT,
+    confianca         TEXT,
+    preco_na_decisao  REAL,
+    preco_justo       REAL,
+    preco_entrada     REAL,
+    margem            REAL,
+    score_ia          REAL,
+    ia_status         TEXT,
+    tom_gestor        TEXT,
+    travas            TEXT,
+    riscos_ia         TEXT,
+    versao_modelo     TEXT DEFAULT '2.0',
+    avaliada          INTEGER DEFAULT 0,
+    criado_em         TEXT DEFAULT (datetime('now','localtime')),
+    risco             TEXT,
+    score_final       REAL,
+    preco_teto        REAL,
+    payload_json      TEXT,
     FOREIGN KEY (ticker) REFERENCES fiis(ticker)
 );
 

@@ -15,8 +15,10 @@ from api.fnet import router as fnet_router
 
 app = FastAPI(title="FIIA API", version="1.0")
 
-# Iniciar o Funcionário Digital (Rotinas em Segundo Plano)
-agendador.iniciar_agendador_background()
+# Iniciar o Funcionário Digital (Rotinas em Segundo Plano) no evento de startup controladamente
+@app.on_event("startup")
+def startup_event():
+    agendador.iniciar_agendador_background()
 
 # APIs
 app.include_router(auditoria_router)
@@ -28,11 +30,13 @@ app.include_router(fnet_router)
 # Servir a interface web
 app.mount("/web", StaticFiles(directory="static"), name="static")
 
-# Permitir acesso do celular/PWA
+from config.settings import CORS_ALLOWED_ORIGINS
+
+# Permitir acesso do celular/PWA com origens restritas e sem credentials
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

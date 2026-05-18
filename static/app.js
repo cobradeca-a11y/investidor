@@ -123,6 +123,12 @@ document.addEventListener('DOMContentLoaded', () => {
         transactionForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const apiKey = localStorage.getItem('fiia_api_key');
+            if (!apiKey) {
+                alert('Configure sua chave de API (fiia_api_key) no localStorage antes de registrar operações.');
+                return;
+            }
+            
             const submitBtn = transactionForm.querySelector('.btn-submit');
             submitBtn.disabled = true;
             submitBtn.innerHTML = 'Gravando...';
@@ -139,7 +145,10 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const response = await fetch('/api/carteira/compra', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-API-Key': apiKey
+                    },
                     body: JSON.stringify(payload)
                 });
                 const data = await response.json();
@@ -198,29 +207,74 @@ document.getElementById('btnClear').addEventListener('click', () => {
     window.location.reload();
 });
 
+function normalizarFii(fii) {
+    const v = fii.veredito || {};
+    const ind = fii.indicadores || {};
+    
+    // Converte trilha de gates se vier como string ou array
+    let trilha_gates = fii.trilha_gates || v.trilha_gates || [];
+    if (typeof trilha_gates === 'string') {
+        try {
+            trilha_gates = JSON.parse(trilha_gates);
+        } catch (e) {
+            trilha_gates = [trilha_gates];
+        }
+    }
+    
+    // Converte alertas se vier como string ou array
+    let alertas = fii.alertas || v.alertas || [];
+    if (typeof alertas === 'string') {
+        try {
+            alertas = JSON.parse(alertas);
+        } catch (e) {
+            alertas = [alertas];
+        }
+    }
+
+    // Normaliza os valores de porcentagem do DY
+    let dy_12m_pct = fii.dy_12m_pct ?? v.dy_12m_pct ?? ((v.dy_12m || ind.dy_12m || 0) * 100);
+    // Se o valor já estiver em decimal menor que 1.0 (ex: 0.145), multiplica por 100
+    if (dy_12m_pct > 0 && dy_12m_pct < 1.0) {
+        dy_12m_pct = dy_12m_pct * 100;
+    }
+
+    return {
+        ticker: fii.ticker || v.ticker || '---',
+        segmento: fii.segmento || v.segmento || 'FII',
+        decisao: fii.decisao || v.decisao || 'MONITORAR',
+        confianca: fii.confianca || v.confianca || 'MEDIA',
+        preco_atual: fii.preco_atual ?? v.preco_atual ?? v.preco_na_decisao ?? 0.0,
+        preco_justo: fii.preco_justo ?? v.preco_justo ?? 0.0,
+        preco_entrada: fii.preco_entrada ?? v.preco_entrada ?? v.preco_teto ?? 0.0,
+        margem: fii.margem ?? v.margem ?? v.margem_seguranca ?? 0.0,
+        pvp: fii.pvp ?? v.pvp ?? ind.pvp ?? 1.0,
+        dy_12m_pct: dy_12m_pct,
+        pct_recorrente: fii.pct_recorrente ?? v.pct_recorrente ?? 100.0,
+        trilha_gates: trilha_gates.length > 0 ? trilha_gates : ["G0:DADOS_OK", "G1:ELEGIVEL"],
+        score_ia: fii.score_ia ?? v.score_ia ?? 7.0,
+        motivo: fii.motivo || v.motivo || 'Ativo em monitoramento.',
+        alertas: alertas,
+        quantidade: fii.quantidade ?? 0,
+        preco_medio: fii.preco_medio ?? 0.0,
+        custo_total: fii.custo_total ?? 0.0,
+        revisao: fii.revisao || v.revisao || 'Próximo Radar'
+    };
+}
+
 function renderResults(oportunidades, targetId = 'results', isPortfolio = false) {
     const grid = document.getElementById(targetId);
     grid.innerHTML = ''; // Limpa resultados anteriores
     
-    oportunidades.forEach((fii, index) => {
+    oportunidades.forEach((raw) => {
+        const fii = normalizarFii(raw);
         const card = document.createElement('div');
         card.className = 'fii-card';
         
-        // Dados do motor de decisão
-        const v = fii.veredito || {};
-        const qual = fii.qualitativo || {};
-        
-        // Classes de status
-        const statusClass = `status-${fii.decisao?.toLowerCase().replace('_', '-') || 'monitorar'}`;
-        
-        const fmtReais = (val) => val ? `R$ ${parseFloat(val).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : 'N/A';
-        const fmtPct = (val) => val ? `${val > 0 ? '+' : ''}${parseFloat(val).toFixed(1)}%` : 'N/A';
-
         card.innerHTML = `
             <div class="card-header">
                 <div class="ticker-box">
                     <span class="ticker-symbol">${fii.ticker}</span>
-                    <span class="segment-badge">${fii.segmento || 'FII'}</span>
+                    <span class="segment-badge">${fii.segmento}</span>
                 </div>
                 <div class="decision-badge ${fii.decisao.toLowerCase()}">${fii.decisao.replace('_', ' ')}</div>
             </div>
@@ -306,7 +360,7 @@ function renderResults(oportunidades, targetId = 'results', isPortfolio = false)
             ` : ''}
 
             <div class="card-footer">
-                <span class="footer-info">Próxima Revisão: ${fii.revisao || 'Próximo Radar'}</span>
+                <span class="footer-info">Próxima Revisão: ${fii.revisao}</span>
             </div>
         `;
         

@@ -52,14 +52,6 @@ CREATE TABLE IF NOT EXISTS decisoes (
 )
 """
 
-_COLUNAS_EXTRAS = {
-    "risco": "TEXT",
-    "score_final": "REAL",
-    "preco_teto": "REAL",
-    "payload_json": "TEXT",
-}
-
-
 def _colunas_decisoes() -> list[str]:
     rows = db.buscar_todos("PRAGMA table_info(decisoes)")
     return [r["name"] for r in rows] if rows else []
@@ -69,21 +61,70 @@ def _garantir_tabela() -> None:
     """
     Garante que a tabela decisoes existe e contém as colunas modernas.
     Não apaga histórico salvo.
+    Usa migração puramente aditiva para preservar chaves estrangeiras.
     """
     colunas = _colunas_decisoes()
 
-    if colunas and "data_decisao" not in colunas:
-        print("[decisao] Migrando tabela 'decisoes' para schema v2.0...")
-        db.executar("DROP TABLE IF EXISTS decisoes")
-        colunas = []
-
     if not colunas:
+        # Tabela não existe, cria do zero
         db.executar(_SCHEMA_V2)
-        colunas = _colunas_decisoes()
+        return
 
-    for coluna, tipo in _COLUNAS_EXTRAS.items():
+    # Se a tabela existe, adiciona dinamicamente colunas que possam estar faltando
+    colunas_v2 = {
+        "data_decisao": "TEXT",
+        "decisao": "TEXT",
+        "motivo": "TEXT",
+        "confianca": "TEXT",
+        "preco_na_decisao": "REAL",
+        "preco_justo": "REAL",
+        "preco_entrada": "REAL",
+        "margem": "REAL",
+        "score_ia": "REAL",
+        "ia_status": "TEXT",
+        "tom_gestor": "TEXT",
+        "travas": "TEXT",
+        "riscos_ia": "TEXT",
+        "versao_modelo": "TEXT",
+        "avaliada": "INTEGER DEFAULT 0",
+        "criado_em": "TEXT DEFAULT (datetime('now','localtime'))",
+        "risco": "TEXT",
+        "score_final": "REAL",
+        "preco_teto": "REAL",
+        "payload_json": "TEXT",
+    }
+
+    migrou = False
+    for coluna, tipo in colunas_v2.items():
         if coluna not in colunas:
-            db.executar(f"ALTER TABLE decisoes ADD COLUMN {coluna} {tipo}")
+            try:
+                db.executar(f"ALTER TABLE decisoes ADD COLUMN {coluna} {tipo}")
+                migrou = True
+            except Exception as e:
+                print(f"[decisao] Erro ao adicionar coluna {coluna}: {e}")
+
+    if migrou:
+        print("[decisao] Colunas adicionadas. Atualizando dados legados...")
+        try:
+            # Verifica se as colunas de origem existem antes do COALESCE
+            colunas_atuais = _colunas_decisoes()
+            set_clauses = []
+            
+            if "data" in colunas_atuais:
+                set_clauses.append("data_decisao = COALESCE(data_decisao, data)")
+            if "status" in colunas_atuais:
+                set_clauses.append("decisao = COALESCE(decisao, status)")
+            if "justificativa" in colunas_atuais:
+                set_clauses.append("motivo = COALESCE(motivo, justificativa)")
+            if "margem_seguranca" in colunas_atuais:
+                set_clauses.append("margem = COALESCE(margem, margem_seguranca)")
+                
+            if set_clauses:
+                sql = f"UPDATE decisoes SET {', '.join(set_clauses)}"
+                db.executar(sql)
+                print("[decisao] Migração de dados legados concluída com sucesso!")
+        except Exception as e:
+            print(f"[decisao] Erro ao preencher dados legados: {e}")
 
 
 def _json_seguro(valor: Any) -> str:

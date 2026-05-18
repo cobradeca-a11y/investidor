@@ -16,6 +16,41 @@ _RAIZ = Path(__file__).parent.parent
 DB_PATH = _RAIZ / "fiia.db"
 SCHEMA_PATH = _RAIZ / "schema.sql"
 
+# Whitelist de tabelas permitidas para evitar SQL injection nos helpers dinâmicos
+_TABELAS_PERMITIDAS = {
+    "fiis",
+    "indicadores",
+    "dividendos",
+    "cvm_informes_mensais_fii",
+    "fnet_dividendos_fii",
+    "fnet_nlp_classificacoes",
+    "inf_trimestral_imoveis",
+    "inf_trimestral_contratos",
+    "macro",
+    "carteira",
+    "carteira_posicoes",
+    "carteira_operacoes",
+    "decisoes",
+    "decisoes_resultado",
+    "aprendizado_simulacoes",
+    "aprendizado_resultados",
+    "aprendizado_ajustes_pesos",
+    "snapshots_indicadores",
+    "versoes_modelo",
+    "sugestoes_ajuste",
+}
+
+
+def _validar_identificador(nome: str) -> None:
+    """Valida se um nome de identificador (tabela ou coluna) é seguro contra injeção SQL."""
+    if not nome:
+        raise ValueError("Identificador vazio não é permitido.")
+    if nome[0].isdigit():
+        raise ValueError(f"Identificador inválido (não pode começar com número): {nome}")
+    # Permite apenas caracteres alfanuméricos e underscores
+    if not nome.replace("_", "").isalnum():
+        raise ValueError(f"Identificador inválido (caracteres não permitidos): {nome}")
+
 
 def conectar() -> sqlite3.Connection:
     """Retorna conexão com o banco com foreign keys ativas."""
@@ -78,6 +113,12 @@ def inserir(tabela: str, dados: dict[str, Any]) -> int:
     Atenção: usa INSERT OR IGNORE. Em caso de duplicidade ignorada,
     o SQLite pode retornar lastrowid sem criar novo registro.
     """
+    if tabela not in _TABELAS_PERMITIDAS:
+        raise ValueError(f"Tabela não permitida: {tabela}")
+
+    for coluna in dados.keys():
+        _validar_identificador(coluna)
+
     colunas = ", ".join(dados.keys())
     placeholders = ", ".join("?" * len(dados))
     sql = f"INSERT OR IGNORE INTO {tabela} ({colunas}) VALUES ({placeholders})"
@@ -92,6 +133,12 @@ def inserir(tabela: str, dados: dict[str, Any]) -> int:
 
 def upsert(tabela: str, dados: dict[str, Any]) -> None:
     """Insere ou substitui um registro."""
+    if tabela not in _TABELAS_PERMITIDAS:
+        raise ValueError(f"Tabela não permitida: {tabela}")
+
+    for coluna in dados.keys():
+        _validar_identificador(coluna)
+
     colunas = ", ".join(dados.keys())
     placeholders = ", ".join("?" * len(dados))
     sql = f"INSERT OR REPLACE INTO {tabela} ({colunas}) VALUES ({placeholders})"
@@ -133,6 +180,9 @@ def executar(sql: str, params: tuple = ()) -> None:
 
 def get_by_ticker(tabela: str, ticker: str) -> dict | None:
     """Helper para buscar dados de um FII pelo ticker."""
+    if tabela not in _TABELAS_PERMITIDAS:
+        raise ValueError(f"Tabela não permitida: {tabela}")
+
     sql = f"SELECT * FROM {tabela} WHERE ticker = ?"
     row = buscar_um(sql, (ticker,))
     return dict(row) if row else None

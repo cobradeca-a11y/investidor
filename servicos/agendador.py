@@ -120,8 +120,19 @@ schedule.every().day.at("23:00").do(rotina_saude_fontes)
 schedule.every().saturday.at("10:00").do(rotina_semanal_deep_scan)
 
 
+_agendador_iniciado = False
+_lock = threading.Lock()
+
+
 def iniciar_agendador_background():
-    """Inicia o loop do agendador em uma thread separada."""
+    """Inicia o loop do agendador em uma thread separada com protecao contra multiplas inicializacoes."""
+    global _agendador_iniciado
+    with _lock:
+        if _agendador_iniciado:
+            print("[agendador] Tentativa de iniciar agendador ja ativo ignorada.")
+            return
+        _agendador_iniciado = True
+
     def loop():
         while True:
             schedule.run_pending()

@@ -151,3 +151,13 @@ if not GEMINI_API_KEY:
         "GEMINI_API_KEY não encontrada. Crie um arquivo .env na raiz com GEMINI_API_KEY=sua_chave.",
         stacklevel=2,
     )
+
+# ─────────────────────────────────────────
+# Segurança, CORS e Autenticação da API
+# ─────────────────────────────────────────
+# Chave de acesso para endpoints sensíveis da carteira (compra/venda/politica)
+FIIA_API_KEY = os.getenv("FIIA_API_KEY", "")
+
+# Origens permitidas para CORS (configuráveis via .env, padrão local)
+CORS_ALLOWED_ORIGINS_RAW = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000")
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS_RAW.split(",") if origin.strip()]
