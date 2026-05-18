@@ -49,7 +49,7 @@ def garantir_tabela() -> None:
 
 
 def _hash_documento(texto: str, assunto: str | None = None) -> str:
-    base = f"{assunto or ''}\n{text or ''}".strip().encode("utf-8")
+    base = f"{assunto or ''}\n{texto or ''}".strip().encode("utf-8")
     return hashlib.sha256(base).hexdigest()
 
 
