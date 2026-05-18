@@ -12,11 +12,12 @@ from typing import Optional
 from processamento.margem_seguranca import relatorio_margem
 
 
-def calcular(ticker: str) -> dict:
+def calcular(ticker: str, contexto: Optional[dict] = None) -> dict:
     """
     Retorna as zonas de entrada em R$ para o ticker.
     """
-    rel = relatorio_margem(ticker)
+    rel = relatorio_margem(ticker, contexto=contexto)
+
 
     if not rel.get("calculavel"):
         return {

@@ -69,12 +69,36 @@ def _registrar_gate55(veredito: dict[str, Any], gate55: dict[str, Any]) -> None:
         veredito["gate_parada"] = 55
 
 
+def _patrimonio_a_partir_contexto(contexto: dict) -> dict[str, Any]:
+    """
+    Mapeia os atributos patrimoniais resolvidos do contexto em memória para
+    um dicionário compatível com resolver_patrimonio (Achado 2).
+    """
+    return {
+        "patrimonio_liquido": contexto.get("patrimonio_liquido"),
+        "valor_patrimonial_cota": contexto.get("vpa"),
+        "pvp": contexto.get("pvp"),
+        "fonte_patrimonial": contexto.get("patrimonio_fonte") or "FALLBACK_BANCO_ATUAL",
+        "usou_cvm": contexto.get("patrimonio_fonte") == "CVM_INF_MENSAL",
+        "fallback_usado": contexto.get("patrimonio_fonte") != "CVM_INF_MENSAL",
+        "confianca_dados": {
+            "score_global": contexto.get("score_confianca", 0.0),
+            "nivel_uso": contexto.get("nivel_uso_dados", "INSUFICIENTE"),
+            "campos_criticos_frageis": contexto.get("campos_vencidos") or [],
+            "divergencias": [],
+            "observacoes": [],
+            "detalhes": [],
+        },
+    }
+
+
 def decidir(
     ticker: str,
     score_ia: float | None = None,
     riscos_ia: list | None = None,
     tom_gestor: str | None = None,
     ia_status: str = "INDISPONIVEL",
+    contexto: dict | None = None,
 ) -> dict:
     ticker_norm = ticker.upper().replace(".SA", "").strip()
 
@@ -85,10 +109,18 @@ def decidir(
             riscos_ia=riscos_ia,
             tom_gestor=tom_gestor,
             ia_status=ia_status,
+            contexto=contexto,
         )
 
-        patrimonio = resolver_patrimonio(ticker_norm)
-        gate55 = gate55_confianca_dados(ticker_norm)
+        if veredito.get("decisao") == "BLOQUEADO_CONTEXTO_INCOMPLETO":
+            return veredito
+
+        if contexto:
+
+            patrimonio = _patrimonio_a_partir_contexto(contexto)
+        else:
+            patrimonio = resolver_patrimonio(ticker_norm)
+        gate55 = gate55_confianca_dados(ticker_norm, contexto=contexto)
         _registrar_gate55(veredito, gate55)
 
         decisao_original = _normalizar_acao(veredito.get("decisao") or veredito.get("status"))

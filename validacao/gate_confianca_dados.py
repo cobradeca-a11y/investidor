@@ -18,16 +18,41 @@ from validacao.relatorio_confianca import NivelUsoDecisao
 from sistema import observabilidade
 
 
-def gate55_confianca_dados(ticker: str) -> dict[str, Any]:
+def _patrimonio_a_partir_contexto(contexto: dict) -> dict[str, Any]:
+    """
+    Mapeia os atributos patrimoniais resolvidos do contexto em memória para
+    um dicionário compatível com resolver_patrimonio (Achado 2).
+    """
+    return {
+        "patrimonio_liquido": contexto.get("patrimonio_liquido"),
+        "valor_patrimonial_cota": contexto.get("vpa"),
+        "pvp": contexto.get("pvp"),
+        "fonte_patrimonial": contexto.get("patrimonio_fonte") or "FALLBACK_BANCO_ATUAL",
+        "usou_cvm": contexto.get("patrimonio_fonte") == "CVM_INF_MENSAL",
+        "fallback_usado": contexto.get("patrimonio_fonte") != "CVM_INF_MENSAL",
+        "confianca_dados": {
+            "score_global": contexto.get("score_confianca", 0.0),
+            "nivel_uso": contexto.get("nivel_uso_dados", "INSUFICIENTE"),
+            "campos_criticos_frageis": contexto.get("campos_vencidos") or [],
+            "divergencias": [],
+            "observacoes": [],
+            "detalhes": [],
+        },
+    }
+
+
+def gate55_confianca_dados(ticker: str, contexto: dict | None = None) -> dict[str, Any]:
     """
     Executa Gate 5.5 com foco inicial em dados patrimoniais críticos.
-
-    Retorna dict compatível com o padrão de gate do motor_decisao.
+    Se o contexto em memória estiver presente, avalia os dados já presentes (Achado 2).
     """
     ticker_norm = ticker.upper().replace(".SA", "").strip()
 
     try:
-        patrimonio = resolver_patrimonio(ticker_norm)
+        if contexto:
+            patrimonio = _patrimonio_a_partir_contexto(contexto)
+        else:
+            patrimonio = resolver_patrimonio(ticker_norm)
         relatorio = patrimonio.get("confianca_dados", {}) or {}
         nivel = relatorio.get("nivel_uso", "INSUFICIENTE")
         score = relatorio.get("score_global", 0.0)

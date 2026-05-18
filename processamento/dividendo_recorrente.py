@@ -46,12 +46,15 @@ def classificar_dividendos(ticker: str) -> None:
         conn.close()
 
 
-def calcular_dy_recorrente(ticker: str, preco: Optional[float]) -> Optional[float]:
+def calcular_dy_recorrente(ticker: str, preco: Optional[float], contexto: Optional[dict] = None) -> Optional[float]:
     """
     Calcula o DY anualizado usando a MEDIANA dos dividendos
     dos últimos 12 meses. A mediana expurga automaticamente picos absurdos.
     Retorna percentual anual (ex: 0.115 = 11,5% a.a.) ou None.
     """
+    if contexto:
+        return contexto.get("dy_recorrente")
+
     if not preco or preco <= 0:
         return None
 
@@ -74,7 +77,7 @@ def calcular_dy_recorrente(ticker: str, preco: Optional[float]) -> Optional[floa
     return round(anual, 6)
 
 
-def percentual_recorrente(ticker: str) -> Optional[float]:
+def percentual_recorrente(ticker: str, contexto: Optional[dict] = None) -> Optional[float]:
     """
     Retorna a fração do DY total que é recorrente (0 a 1).
     Ex: 0.85 = 85% do dividendo é recorrente.
@@ -83,6 +86,9 @@ def percentual_recorrente(ticker: str) -> Optional[float]:
     antes de consultar. Se houver registros INDEFINIDO, roda
     classificar_dividendos() automaticamente com commit explícito.
     """
+    if contexto:
+        return contexto.get("recorrencia_dividendos_pct")
+
     indefinidos = db.buscar_um(
         "SELECT COUNT(*) as qtd FROM dividendos WHERE ticker = ? AND tipo = 'INDEFINIDO'",
         (ticker,)
@@ -113,3 +119,4 @@ def percentual_recorrente(ticker: str) -> Optional[float]:
 
     rec = recorrente["total"] if recorrente and recorrente["total"] else 0
     return round(rec / total["total"], 4)
+

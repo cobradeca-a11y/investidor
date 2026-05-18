@@ -137,7 +137,7 @@ def _quando_revisar(decisao: str, margem: Optional[float], vacancia: Optional[fl
 # Gates 0–6
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _gate0_validacao(ticker: str, ind: dict, fii_info: dict) -> dict:
+def _gate0_validacao(ticker: str, ind: dict, fii_info: dict, contexto: dict | None = None) -> dict:
     """
     Gate 0 - Validação dos dados.
     Bloqueia se campos essenciais estiverem ausentes.
@@ -153,10 +153,15 @@ def _gate0_validacao(ticker: str, ind: dict, fii_info: dict) -> dict:
         ausentes.append("segmento")
 
     tem_dy    = ind.get("dy_12m") is not None
-    tem_divs  = db.buscar_um(
-        "SELECT COUNT(*) as qtd FROM dividendos WHERE ticker = ?", (ticker,)
-    )
-    if not tem_dy and (not tem_divs or tem_divs["qtd"] < 1):
+    if contexto:
+        tem_divs_qtd = 1 if contexto.get("recorrencia_dividendos_pct") is not None else 0
+    else:
+        tem_divs  = db.buscar_um(
+            "SELECT COUNT(*) as qtd FROM dividendos WHERE ticker = ?", (ticker,)
+        )
+        tem_divs_qtd = tem_divs["qtd"] if tem_divs else 0
+
+    if not tem_dy and tem_divs_qtd < 1:
         ausentes.append("dy_12m_ou_historico_dividendos")
 
     if ausentes:
@@ -166,15 +171,20 @@ def _gate0_validacao(ticker: str, ind: dict, fii_info: dict) -> dict:
         )
 
     # Semáforo macro — não elimina, mas registra teto
-    macro = avaliar_macro()
-    if macro["cor"] == "VERMELHO":
+    if contexto:
+        macro = contexto.get("semaforo_macro") or {}
+    else:
+        macro = avaliar_macro()
+
+    if macro.get("cor") == "VERMELHO":
         return _gate_result(
             0, "APROVADO_DADOS_SEMAFORO_VERMELHO",
-            f"Dados OK. Semáforo MACRO: VERMELHO — {macro['motivo']} "
-            f"Teto de decisão: {macro['teto_decisao']}."
+            f"Dados OK. Semáforo MACRO: VERMELHO — {macro.get('motivo')} "
+            f"Teto de decisão: {macro.get('teto_decisao')}."
         )
 
-    return _gate_result(0, "APROVADO_DADOS", f"Dados mínimos presentes. Semáforo macro: {macro['cor']}.")
+    return _gate_result(0, "APROVADO_DADOS", f"Dados mínimos presentes. Semáforo macro: {macro.get('cor')}.")
+
 
 
 def _gate1_elegibilidade(ind: dict, fii_info: dict, meses_hist: int) -> dict:
@@ -439,7 +449,7 @@ def _gate6_qualitativo(score_ia: Optional[float], riscos_ia: Optional[list],
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _gate7_veredito(gates: dict, margem: Optional[float], confiabilidade: int,
-                     tom_gestor: Optional[str], ia_status: str, segmento: str = "") -> tuple:
+                     tom_gestor: Optional[str], ia_status: str, segmento: str = "", contexto: dict | None = None) -> tuple:
     """Traduz os resultados dos gates em (decisao, motivo) aplicando teto macro."""
     g4 = gates.get(4, {})
     g5 = gates.get(5, {})
@@ -484,7 +494,10 @@ def _gate7_veredito(gates: dict, margem: Optional[float], confiabilidade: int,
         motivo = f"{motivo} (sem validação qualitativa - IA indisponível)."
 
     # Aplica teto macro
-    teto = teto_macro()
+    if contexto:
+        teto = contexto.get("teto_macro")
+    else:
+        teto = teto_macro()
     ordem = ["COMPRAR", "COMPRAR_PARCIAL", "AGUARDAR", "MONITORAR", "EVITAR"]
     if decisao in ordem and teto in ordem:
         if ordem.index(decisao) < ordem.index(teto):
@@ -494,9 +507,62 @@ def _gate7_veredito(gates: dict, margem: Optional[float], confiabilidade: int,
     return decisao, motivo
 
 
+
+def _carregar_base_decisao(ticker: str, contexto: dict | None = None) -> tuple[dict, dict]:
+    """
+    Carrega os dados base (indicadores e fiis) do ativo.
+    Se o contexto estiver presente em memória, usa os dados pré-resolvidos.
+    Caso contrário (modo legado), realiza as consultas necessárias no SQLite (Achado 4).
+    """
+    if contexto:
+        ind = {
+            "preco": contexto.get("preco"),
+            "pvp": contexto.get("pvp"),
+            "liquidez_diaria": contexto.get("liquidez_diaria"),
+            "dy_12m": contexto.get("dy_12m"),
+            "vacancia_fisica": contexto.get("vacancia_fisica"),
+            "patrimonio_liquido": contexto.get("patrimonio_liquido"),
+            "vpa": contexto.get("vpa"),
+            "qtd_ativos": contexto.get("qtd_ativos"),
+            "confiabilidade": contexto.get("score_confianca"),
+        }
+        fii_info = {
+            "ticker": ticker,
+            "nome": contexto.get("nome_fundo") or ticker,
+            "segmento": contexto.get("segmento") or "INDEFINIDO",
+            "tipo": contexto.get("tipo") or "INDEFINIDO",
+        }
+        return ind, fii_info
+
+    ind_row = db.buscar_um(
+        "SELECT * FROM indicadores WHERE ticker = ? ORDER BY data DESC LIMIT 1",
+        (ticker,)
+    )
+    fii_info_row = db.buscar_um("SELECT * FROM fiis WHERE ticker = ?", (ticker,))
+
+    ind = dict(ind_row) if ind_row else {}
+    fii_info = dict(fii_info_row) if fii_info_row else {}
+    return ind, fii_info
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Interface pública
 # ─────────────────────────────────────────────────────────────────────────────
+
+def validar_contexto_completo(contexto: dict) -> list[str]:
+    campos_obrigatorios = [
+        "ticker", "preco", "vpa", "pvp", "patrimonio_liquido", "liquidez_diaria",
+        "dy_12m", "dy_recorrente", "recorrencia_dividendos_pct", "meses_historico",
+        "quedas_consecutivas", "score_confianca", "cdi_atual", "selic_atual",
+        "ipca_atual", "semaforo_macro", "teto_macro", "premio_cdi", "patrimonio_fonte",
+        "nivel_uso_dados", "permitir_decisao", "segmento"
+    ]
+    ausentes = []
+    for c in campos_obrigatorios:
+        if c not in contexto or contexto[c] is None:
+            ausentes.append(c)
+    return ausentes
+
 
 def decidir(
     ticker: str,
@@ -504,6 +570,7 @@ def decidir(
     riscos_ia: Optional[list] = None,
     tom_gestor: Optional[str] = None,
     ia_status: str = "INDISPONIVEL",
+    contexto: Optional[dict] = None,
 ) -> dict:
     """
     Pipeline eliminatório de 8 gates.
@@ -512,16 +579,24 @@ def decidir(
     """
     ticker = ticker.upper().strip()
 
-    ind_row      = db.buscar_um(
-        "SELECT * FROM indicadores WHERE ticker = ? ORDER BY data DESC LIMIT 1",
-        (ticker,)
-    )
-    fii_info_row = db.buscar_um("SELECT * FROM fiis WHERE ticker = ?", (ticker,))
+    if contexto:
+        ausentes = validar_contexto_completo(contexto)
+        if ausentes:
+            return _montar_retorno(
+                ticker, "BLOQUEADO_CONTEXTO_INCOMPLETO",
+                f"Contexto em memória incompleto. Campos ausentes: {', '.join(ausentes)}.",
+                gate_parada=0, gates={}, penalidades=[], alertas=[],
+                confiabilidade=0, preco=None, pvp=None, dy_12m=None,
+                margem=None, margem_stress=None, preco_justo=None,
+                preco_entrada=None, preco_stress_val=None, dy_recorrente=None,
+                pct_rec=None, premio_cdi=None, vacancia=None, liquidez=None,
+                segmento="INDEFINIDO", meses_hist=0, score_ia=score_ia,
+                riscos_ia=riscos_ia, tom_gestor=tom_gestor, ia_status=ia_status
+            )
 
-    ind      = dict(ind_row)      if ind_row      else {}
-    fii_info = dict(fii_info_row) if fii_info_row else {}
+    ind, fii_info = _carregar_base_decisao(ticker, contexto)
 
-    if not ind_row or not fii_info_row:
+    if not ind or not fii_info or not ind.get("preco"):
         return _montar_retorno(
             ticker, "BLOQUEADO_DADOS_INSUFICIENTES",
             "Fundo não encontrado no banco de dados.",
@@ -542,14 +617,32 @@ def decidir(
     vacancia      = ind.get("vacancia_fisica")
     segmento      = fii_info.get("segmento", "INDEFINIDO")
 
-    confiabilidade  = calcular_confiabilidade(ticker)
-    margem          = calcular_margem_seguranca(ticker)
-    margem_stress   = calcular_margem_seguranca(ticker, cenario_stress=True)
-    dy_recorrente   = calcular_dy_recorrente(ticker, preco) if preco else None
-    pct_rec         = percentual_recorrente(ticker)
-    premio_cdi      = calcular_premio(dy_recorrente)
-    meses_hist      = _meses_historico(ticker)
-    quedas_consec   = _queda_dividendos_consecutivos(ticker)
+    if contexto and "score_confianca" in contexto:
+        confiabilidade = contexto["score_confianca"]
+    else:
+        confiabilidade = calcular_confiabilidade(ticker)
+
+    margem          = calcular_margem_seguranca(ticker, contexto=contexto)
+    margem_stress   = calcular_margem_seguranca(ticker, cenario_stress=True, contexto=contexto)
+    dy_recorrente   = calcular_dy_recorrente(ticker, preco, contexto=contexto) if preco else None
+
+    if contexto and "recorrencia_dividendos_pct" in contexto:
+        # Garante a escala decimal correta (ex: 0.70) do recorrencia_dividendos_pct (Achado 6)
+        pct_rec = contexto["recorrencia_dividendos_pct"]
+    else:
+        pct_rec = percentual_recorrente(ticker)
+
+    premio_cdi      = calcular_premio(dy_recorrente, contexto=contexto)
+
+    if contexto and "meses_historico" in contexto:
+        meses_hist = contexto["meses_historico"]
+    else:
+        meses_hist = _meses_historico(ticker)
+
+    if contexto and "quedas_consecutivas" in contexto:
+        quedas_consec = contexto["quedas_consecutivas"]
+    else:
+        quedas_consec = _queda_dividendos_consecutivos(ticker)
 
     preco_justo      = preco * (1 + margem)        if preco and margem is not None else None
     preco_entrada    = preco_justo * 0.95           if preco_justo else None
@@ -581,7 +674,7 @@ def decidir(
         )
 
     # ── Gate 0: Validação ────────────────────────────────────────────────
-    g0 = _gate0_validacao(ticker, ind, fii_info)
+    g0 = _gate0_validacao(ticker, ind, fii_info, contexto=contexto)
     if _check(g0): return _saida(g0)
 
     # ── Gate 1: Elegibilidade ────────────────────────────────────────────
@@ -613,7 +706,7 @@ def decidir(
     _check(g6)
 
     # ── Gate 7: Veredito final ───────────────────────────────────────────
-    decisao, motivo = _gate7_veredito(gates, margem, confiabilidade, tom_gestor, ia_status)
+    decisao, motivo = _gate7_veredito(gates, margem, confiabilidade, tom_gestor, ia_status, contexto=contexto)
 
     if confiabilidade >= 90 and ia_status == "OK":
         confianca = "ALTA"
@@ -648,16 +741,18 @@ def decidir(
                 travas_ativas=[g["status"] for g in gates.values() if "ELIMINADO" in g["status"] or "BLOQUEADO" in g["status"]],
                 segmento=segmento,
                 score_ia=score_ia,
+                contexto=contexto,
             )
         except Exception:
             pass
 
         try:
-            resultado["zonas_entrada"] = calcular_zonas(ticker)
+            resultado["zonas_entrada"] = calcular_zonas(ticker, contexto=contexto)
         except Exception:
             pass
 
     return resultado
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -33,10 +33,16 @@ _CRESCIMENTO_CONTRATUAL_SEGMENTO = {
 }
 
 
-def _taxa_desconto() -> float:
+def _taxa_desconto(contexto: Optional[dict] = None) -> float:
     """Taxa de desconto dinâmica: MAX(IPCA + 8%, SELIC + 1%)."""
-    ipca = api_bcb.obter_ipca_atual() or 4.5
-    selic = api_bcb.obter_selic_atual() or _SELIC_FALLBACK
+    if contexto:
+        ipca = contexto.get("ipca_atual")
+        selic = contexto.get("selic_atual")
+        if ipca is None or selic is None:
+            raise ValueError("IPCA ou SELIC ausente no contexto.")
+    else:
+        ipca = api_bcb.obter_ipca_atual() or 4.5
+        selic = api_bcb.obter_selic_atual() or _SELIC_FALLBACK
     return max((ipca / 100.0) + 0.08, (selic / 100.0) + 0.01)
 
 
@@ -66,9 +72,22 @@ def _crescimento_contratual(segmento: str | None, cenario_stress: bool = False) 
     return crescimento * 0.5 if cenario_stress else crescimento
 
 
-def _dados_base_margem(ticker: str) -> dict:
+def _dados_base_margem(ticker: str, contexto: Optional[dict] = None) -> dict:
     """Resolve preço, VP/Cota e fonte patrimonial para o cálculo de margem."""
     ticker_norm = ticker.upper().replace(".SA", "").strip()
+    if contexto:
+        return {
+            "ticker": ticker_norm,
+            "preco": contexto.get("preco"),
+            "vpa": contexto.get("vpa"),
+            "pvp": contexto.get("pvp"),
+            "segmento": contexto.get("segmento"),
+            "fonte_patrimonial": contexto.get("patrimonio_fonte"),
+            "usou_cvm": contexto.get("patrimonio_fonte") == "CVM_INF_MENSAL",
+            "fallback_usado": contexto.get("patrimonio_fonte") != "CVM_INF_MENSAL",
+            "competencia_cvm": contexto.get("competencia_patrimonial"),
+        }
+
     patrimonio = resolver_patrimonio(ticker_norm)
     segmento = _buscar_segmento(ticker_norm)
 
@@ -88,17 +107,17 @@ def _dados_base_margem(ticker: str) -> dict:
     }
 
 
-def _preco_justo(base: dict, cenario_stress: bool = False) -> float | None:
+def _preco_justo(base: dict, cenario_stress: bool = False, contexto: Optional[dict] = None) -> float | None:
     preco_atual = float(base["preco"])
     vpa = float(base["vpa"])
     segmento = base["segmento"]
-    taxa_desconto_exigida = _taxa_desconto()
+    taxa_desconto_exigida = _taxa_desconto(contexto)
 
     if _eh_papel(segmento):
         premio_vpa = 1.02 if not cenario_stress else 0.95
         return vpa * premio_vpa
 
-    dy_anual = calcular_dy_recorrente(base["ticker"], preco_atual)
+    dy_anual = calcular_dy_recorrente(base["ticker"], preco_atual, contexto=contexto)
     if dy_anual is None:
         return vpa * (0.90 if not cenario_stress else 0.75)
 
@@ -114,20 +133,20 @@ def _preco_justo(base: dict, cenario_stress: bool = False) -> float | None:
     return fluxo_anual / taxa_efetiva
 
 
-def calcular_margem_seguranca(ticker: str, cenario_stress: bool = False) -> Optional[float]:
+def calcular_margem_seguranca(ticker: str, cenario_stress: bool = False, contexto: Optional[dict] = None) -> Optional[float]:
     """
     Motor quantitativo com macrocorrelação e stress test.
 
     Retorna a margem de segurança em decimal.
     Exemplo: 0.12 = +12%.
     """
-    base = _dados_base_margem(ticker)
+    base = _dados_base_margem(ticker, contexto)
 
     if not base["preco"] or not base["vpa"] or not base["segmento"]:
         return None
 
     preco_atual = float(base["preco"])
-    preco_justo = _preco_justo(base, cenario_stress=cenario_stress)
+    preco_justo = _preco_justo(base, cenario_stress=cenario_stress, contexto=contexto)
     if preco_justo is None:
         return None
 
@@ -135,9 +154,9 @@ def calcular_margem_seguranca(ticker: str, cenario_stress: bool = False) -> Opti
     return round(margem, 4)
 
 
-def relatorio_margem(ticker: str) -> dict:
+def relatorio_margem(ticker: str, contexto: Optional[dict] = None) -> dict:
     """Retorna relatório completo de valuation para exibição no CLI/API."""
-    base = _dados_base_margem(ticker)
+    base = _dados_base_margem(ticker, contexto)
 
     if not base["preco"] or not base["vpa"] or not base["segmento"]:
         return {
@@ -152,8 +171,8 @@ def relatorio_margem(ticker: str) -> dict:
     vpa = float(base["vpa"])
     segmento = base["segmento"]
 
-    margem = calcular_margem_seguranca(base["ticker"])
-    margem_stress = calcular_margem_seguranca(base["ticker"], cenario_stress=True)
+    margem = calcular_margem_seguranca(base["ticker"], contexto=contexto)
+    margem_stress = calcular_margem_seguranca(base["ticker"], cenario_stress=True, contexto=contexto)
 
     if margem is None or margem_stress is None:
         return {
@@ -167,13 +186,13 @@ def relatorio_margem(ticker: str) -> dict:
     preco_justo = preco_atual * (1 + margem)
     preco_stress = preco_atual * (1 + margem_stress)
     avaliacao = "POSITIVA" if margem > 0 else "NEGATIVA"
-    taxa_desconto = _taxa_desconto()
+    taxa_desconto = _taxa_desconto(contexto)
     crescimento_contratual = 0.0 if _eh_papel(segmento) else _crescimento_contratual(segmento)
     crescimento_contratual_stress = 0.0 if _eh_papel(segmento) else _crescimento_contratual(segmento, cenario_stress=True)
     taxa_efetiva = max(taxa_desconto - crescimento_contratual, _TAXA_EFETIVA_MINIMA)
     taxa_efetiva_stress = max(taxa_desconto - crescimento_contratual_stress, _TAXA_EFETIVA_MINIMA)
     dy_anual = (
-        calcular_dy_recorrente(base["ticker"], preco_atual)
+        calcular_dy_recorrente(base["ticker"], preco_atual, contexto=contexto)
         if not _eh_papel(segmento)
         else None
     )
@@ -201,3 +220,4 @@ def relatorio_margem(ticker: str) -> dict:
         "taxa_efetiva_gordon": taxa_efetiva,
         "taxa_efetiva_gordon_stress": taxa_efetiva_stress,
     }
+

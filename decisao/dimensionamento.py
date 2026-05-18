@@ -59,6 +59,7 @@ def calcular(
     score_ia: Optional[float] = None,
     valor_carteira_total: Optional[float] = None,
     preco_cota: Optional[float] = None,
+    contexto: Optional[dict] = None,
 ) -> dict:
     """
     Retorna o dimensionamento recomendado para o ativo.
@@ -82,10 +83,10 @@ def calcular(
         motivo_base = f"Margem forte ({margem*100:.1f}%) + historico solido ({meses_historico}m)"
     elif margem >= 0.25 or meses_historico >= 24:
         pct_base = 5.0
-        motivo_base = f"Margem boa ({margem*100:.1f}%) ou historico adequado ({meses_historico}m)"
+        motivo_base = f"Margem boa ({margem*100:.1f}%) or historico adequado ({meses_historico}m)"
     elif margem >= 0.15 or meses_historico >= 12:
         pct_base = 3.0
-        motivo_base = f"Margem moderada ({margem*100:.1f}%) ou historico curto ({meses_historico}m)"
+        motivo_base = f"Margem moderada ({margem*100:.1f}%) or historico curto ({meses_historico}m)"
     else:
         pct_base = 1.0
         motivo_base = f"Margem baixa ({margem*100:.1f}%) e historico insuficiente ({meses_historico}m)"
@@ -102,7 +103,7 @@ def calcular(
         reducao_travas += f" | Score IA baixo ({score_ia}/10)"
 
     # Ajuste setorial
-    ctx_setorial = score_segmento(segmento)
+    ctx_setorial = score_segmento(segmento, contexto=contexto)
     score_set = ctx_setorial["score"]
     reducao_setorial = ""
     if score_set <= 4:
@@ -113,12 +114,15 @@ def calcular(
         reducao_setorial = f"Segmento cauteloso ({segmento}, score {score_set}/10): -20%"
 
     # Ajuste macro
-    macro = avaliar_macro()
+    if contexto:
+        macro = contexto.get("semaforo_macro") or {}
+    else:
+        macro = avaliar_macro()
     reducao_macro = ""
-    if macro["cor"] == "VERMELHO":
+    if macro.get("cor") == "VERMELHO":
         pct_base *= 0.5
-        reducao_macro = f"Semaforo VERMELHO ({macro['motivo'][:60]}): -50%"
-    elif macro["cor"] == "AMARELO":
+        reducao_macro = f"Semaforo VERMELHO ({macro.get('motivo', '')[:60]}): -50%"
+    elif macro.get("cor") == "AMARELO":
         pct_base *= 0.67
         reducao_macro = "Semaforo AMARELO: -33%"
 
@@ -135,6 +139,7 @@ def calcular(
         "reducao_travas":     reducao_travas,
         "reducao_setorial":   reducao_setorial,
         "reducao_macro":      reducao_macro,
-        "semaforo":           macro["cor"],
+        "semaforo":           macro.get("cor"),
         "score_setorial":     score_set,
     }
+

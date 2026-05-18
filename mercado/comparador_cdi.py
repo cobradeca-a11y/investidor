@@ -8,7 +8,7 @@ from coleta.api_bcb import obter_cdi_atual
 from config.settings import PREMIO_CDI_MINIMO
 
 
-def calcular_premio(dy_recorrente_anual: Optional[float]) -> Optional[float]:
+def calcular_premio(dy_recorrente_anual: Optional[float], contexto: Optional[dict] = None) -> Optional[float]:
     """
     Calcula o prêmio do FII sobre o CDI.
     Ex: DY recorrente 11,5% - CDI 10,75% = prêmio de 0,75 pp
@@ -17,7 +17,11 @@ def calcular_premio(dy_recorrente_anual: Optional[float]) -> Optional[float]:
     if dy_recorrente_anual is None:
         return None
 
-    cdi = obter_cdi_atual()
+    if contexto:
+        cdi = contexto.get("cdi_atual")
+    else:
+        cdi = obter_cdi_atual()
+
     if cdi is None:
         return None
 
@@ -27,22 +31,26 @@ def calcular_premio(dy_recorrente_anual: Optional[float]) -> Optional[float]:
     return round(dy_pct - cdi, 4)
 
 
-def premio_suficiente(dy_recorrente_anual: Optional[float]) -> bool:
+def premio_suficiente(dy_recorrente_anual: Optional[float], contexto: Optional[dict] = None) -> bool:
     """
     Retorna True se o prêmio sobre o CDI atinge o mínimo exigido.
     """
-    premio = calcular_premio(dy_recorrente_anual)
+    premio = calcular_premio(dy_recorrente_anual, contexto=contexto)
     if premio is None:
         return False
     return premio >= PREMIO_CDI_MINIMO
 
 
-def relatorio_vs_cdi(dy_recorrente_anual: Optional[float]) -> dict:
+def relatorio_vs_cdi(dy_recorrente_anual: Optional[float], contexto: Optional[dict] = None) -> dict:
     """
     Retorna comparativo completo FII vs CDI para o relatório.
     """
-    cdi = obter_cdi_atual()
-    premio = calcular_premio(dy_recorrente_anual)
+    if contexto:
+        cdi = contexto.get("cdi_atual")
+    else:
+        cdi = obter_cdi_atual()
+
+    premio = calcular_premio(dy_recorrente_anual, contexto=contexto)
 
     dy_pct = (dy_recorrente_anual * 100) if dy_recorrente_anual else None
 
@@ -70,3 +78,4 @@ def relatorio_vs_cdi(dy_recorrente_anual: Optional[float]) -> dict:
         "suficiente":           premio is not None and premio >= PREMIO_CDI_MINIMO,
         "explicacao":           explicacao,
     }
+

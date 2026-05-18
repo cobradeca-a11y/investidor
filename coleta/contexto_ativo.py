@@ -20,11 +20,73 @@ from sistema import observabilidade
 _CACHE_CONTEXTO: dict[str, dict[str, Any]] = {}
 
 # Versão atual do contexto para invalidação dinâmica de snapshots legados (Achado 2)
-VERSAO_CONTEXTO = "asset-context-v1.1"
+VERSAO_CONTEXTO = "asset-context-v1.2"
+
+# Contrato de Campos Obrigatórios do Contexto v1.2
+CAMPOS_CORE_CONTEXTO = {
+    "contexto_versao": str,
+    "ticker": str,
+    "data": str,
+    "atualizado_em": str,
+    "segmento": str,
+    "preco": float,
+    "vpa": float,
+    "pvp": float,
+    "patrimonio_liquido": float,
+    "liquidez_diaria": float,
+    "ultimo_dividendo": float,
+    "dy_12m": float,
+    "dy_recorrente": float,
+    "recorrencia_dividendos_pct": float,
+    "meses_historico": int,
+    "quedas_consecutivas": int,
+    "score_confianca": (int, float),
+    "cdi_atual": float,
+    "selic_atual": float,
+    "ipca_atual": float,
+    "semaforo_macro": dict,
+    "teto_macro": str,
+    "premio_cdi": float,
+    "patrimonio_fonte": str,
+    "nivel_uso_dados": str,
+    "permitir_decisao": bool,
+}
 
 
 def _agora_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _meses_historico(ticker: str) -> int:
+    row = db.buscar_um(
+        "SELECT MIN(data_pagamento) as inicio FROM dividendos WHERE ticker = ?",
+        (ticker,)
+    )
+    if not row or not row["inicio"]:
+        return 0
+    try:
+        inicio = datetime.strptime(str(row["inicio"])[:10], "%Y-%m-%d").date()
+        return (date.today() - inicio).days // 30
+    except Exception:
+        return 0
+
+
+def _queda_dividendos_consecutivos(ticker: str) -> int:
+    rows = db.buscar_todos(
+        "SELECT valor FROM dividendos WHERE ticker = ? ORDER BY data_pagamento DESC LIMIT 6",
+        (ticker,)
+    )
+    if len(rows) < 2:
+        return 0
+    valores = [r["valor"] for r in rows]
+    consecutivos = 0
+    for i in range(len(valores) - 1):
+        if valores[i] < valores[i + 1]:
+            consecutivos += 1
+        else:
+            break
+    return consecutivos
+
 
 
 def _converter_data(valor: Any) -> Optional[date]:
@@ -452,6 +514,31 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
     if score_confianca < settings.CONFIABILIDADE_MINIMA:
         permitir_decisao = False
 
+    # Coletas adicionais para v1.2
+    from coleta.api_bcb import obter_cdi_atual, obter_selic_atual, obter_ipca_atual
+    from processamento.dividendo_recorrente import calcular_dy_recorrente
+    from mercado.comparador_cdi import calcular_premio
+    from mercado.semaforo_macro import avaliar as avaliar_macro
+
+    cdi_atual = obter_cdi_atual()
+    selic_atual = obter_selic_atual()
+    ipca_atual = obter_ipca_atual()
+
+    semaforo = avaliar_macro()
+    semaforo_macro = {
+        "cor": semaforo.get("cor"),
+        "motivo": semaforo.get("motivo"),
+        "teto_decisao": semaforo.get("teto_decisao"),
+        "tendencia": semaforo.get("tendencia"),
+    }
+    teto_macro = semaforo.get("teto_decisao")
+
+    meses_hist = _meses_historico(ticker_norm)
+    quedas_consec = _queda_dividendos_consecutivos(ticker_norm)
+
+    dy_recorrente = calcular_dy_recorrente(ticker_norm, preco) if preco else None
+    premio_cdi = calcular_premio(dy_recorrente) if dy_recorrente is not None else None
+
     # 9. Consolidação do Contexto
     contexto = {
         "contexto_versao": VERSAO_CONTEXTO,
@@ -490,7 +577,19 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         "campos_ausentes": campos_ausentes,
         "campos_vencidos": campos_vencidos,
         "fontes_falharam": list(set(fontes_falharam)),
+
+        # Campos v1.2
+        "dy_recorrente": dy_recorrente,
+        "meses_historico": meses_hist,
+        "quedas_consecutivas": quedas_consec,
+        "cdi_atual": cdi_atual,
+        "selic_atual": selic_atual,
+        "ipca_atual": ipca_atual,
+        "semaforo_macro": semaforo_macro,
+        "teto_macro": teto_macro,
+        "premio_cdi": premio_cdi,
     }
+
 
     # 10. Persistência de Duas Camadas
     # Camada A: indicadores operacionais normalizados

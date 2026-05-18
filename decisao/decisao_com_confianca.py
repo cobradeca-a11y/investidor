@@ -105,6 +105,7 @@ def decidir(
             riscos_ia=riscos_ia,
             tom_gestor=tom_gestor,
             ia_status=ia_status,
+            contexto=contexto,
         )
 
         campos = _montar_campos_confianca(ticker, veredito)

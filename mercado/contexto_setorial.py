@@ -12,6 +12,7 @@ Cada segmento responde a drivers economicos diferentes:
 Score 0-10: 10 = melhor momento possivel para o segmento
 """
 
+from typing import Optional
 from coleta.api_bcb import obter_selic_atual, obter_ipca_atual
 from mercado.semaforo_macro import tendencia_selic
 
@@ -56,15 +57,23 @@ def _normalizar_segmento(segmento: str) -> str:
     return "INDEFINIDO"
 
 
-def score_segmento(segmento: str) -> dict:
+def score_segmento(segmento: str, contexto: Optional[dict] = None) -> dict:
     """
     Retorna score setorial (0-10) e justificativa para o segmento.
     """
     seg_norm  = _normalizar_segmento(segmento)
     pesos     = _SENSIBILIDADE.get(seg_norm, _SENSIBILIDADE["INDEFINIDO"])
-    selic     = obter_selic_atual() or 10.0
-    ipca      = obter_ipca_atual()  or 4.0
-    tendencia = tendencia_selic()
+
+    if contexto:
+        selic = contexto.get("selic_atual") or 10.0
+        ipca = contexto.get("ipca_atual") or 4.0
+        macro = contexto.get("semaforo_macro") or {}
+        tendencia = macro.get("tendencia") or "ESTAVEL"
+    else:
+        selic     = obter_selic_atual() or 10.0
+        ipca      = obter_ipca_atual()  or 4.0
+        tendencia = tendencia_selic()
+
 
     score = _BASE_SCORE
 
