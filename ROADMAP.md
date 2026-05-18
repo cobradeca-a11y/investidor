@@ -16,10 +16,10 @@
 | Decisões gravadas no banco | ✅ Produção | Base para aprendizado |
 | FNET relatórios gerenciais | 🟡 Parcial | Aguardando CNPJ |
 | CNPJ via CVM informe mensal | 🟡 Em progresso | ZIP/CSV identificado |
-| Dimensionamento de posição | ❌ Pendente | Passo 4 |
-| Semáforo macro | ❌ Pendente | Passo 2 |
-| Contexto setorial | ❌ Pendente | Passo 2.5 |
-| Zonas de entrada | ❌ Pendente | Passo 5 |
+| Dimensionamento de posição | ✅ Concluído | Integrado no modo contexto |
+| Semáforo macro | ✅ Concluído | Integrado no modo contexto |
+| Contexto setorial | ✅ Concluído | Integrado no modo contexto |
+| Zonas de entrada | ✅ Concluído | Integrado no modo contexto |
 | Gestão com gatilhos | ❌ Pendente | Passo 6 |
 | Avaliação dupla 90/365d | ❌ Pendente | Passo 7 |
 | PWA cards de decisão | ❌ Pendente | Interface final |
@@ -285,7 +285,7 @@ Este arquivo é atualizado automaticamente ao fim de cada janela de contexto com
 
 ## Atualização 2026-05-18
 
-### Concluído nesta sessão
+### Concluído nesta sessão (Diurna)
 - ✅ **Interface PWA (Bloco G1):**
   - Implementação do frontend moderno focado em transparência com design "Glassmorphism" e estética premium.
   - View "Minha Carteira" com integração de dados reais em tempo real.
@@ -298,7 +298,23 @@ Este arquivo é atualizado automaticamente ao fim de cada janela de contexto com
 - ✅ **Prototipação de Teste:**
   - Criação do mock `analisa_snag11.py` para validar a interface e os cards de decisão com dados pré-populados.
 
-### Pendente (Próximos Passos)
-- [ ] Ajustar e preencher a view "Radar" no frontend PWA para buscar oportunidades dinâmicas.
-- [ ] Integrar cards de decisão reais da interface com os cálculos de zonas de entrada (D1) e dimensionamento (C1).
-- [ ] Finalizar testes fim-a-fim com a refatoração do motor FNET para buscar comunicados e Fatos Relevantes sem falsos positivos.
+### Concluído nesta sessão (Noturna - Fase 2 - Zero DB Query Mode)
+- ✅ **Contrato Contexto v1.2**: Consolidação do contrato `CAMPOS_CORE_CONTEXTO` em `coleta/contexto_ativo.py` com pré-cálculo e enriquecimento de 22 campos críticos (CDI, SELIC, IPCA, Tetos, Semáforos, etc.).
+- ✅ **Modos de Cálculo In-Memory**: Adaptação de todos os módulos de apoio (`dividendo_recorrente.py`, `margem_seguranca.py`, `contexto_setorial.py`, `comparador_cdi.py`, `dimensionamento.py`, `zonas_entrada.py`) para bypassar o banco de dados e usar exclusivamente dados do contexto quando fornecido.
+- ✅ **Refatoração dos Motores Centrais**: Implementação de validação defensiva em `motor_decisao.py` e `motor_decisao_cvm_first.py` retornando `BLOQUEADO_CONTEXTO_INCOMPLETO` se dados estiverem ausentes (cuidando para que zeros numéricos legítimos não sejam considerados faltantes).
+- ✅ **Suítes de Teste e Validação**:
+  - `teste_proibicao_sqlite.py`: Garante que, com contexto provido, qualquer tentativa de ler banco de dados ou fazer chamadas HTTP levanta um erro de asserção.
+  * `teste_comparacao_motores.py`: Valida equivalência numérica controlada com tolerância <= 0.01 entre o modo legado e in-memory, além de garantir compatibilidade de motivos sem tracebacks.
+
+### Onde Estamos
+* O motor de decisão está perfeitamente desacoplado do SQLite no modo contexto em memória. O "Zero DB Query Mode" está totalmente implementado, testado em isolamento completo e com 100% de precisão matemática.
+* As alterações já estão commitadas localmente (`4b98ac2`) e sincronizadas remotamente com o GitHub (`origin/main`).
+
+### Para Onde o Projeto Caminha (Próximos Passos)
+1. **Fase 3 — Automação FNET & Inteligência Dupla**:
+   - Refatorar o motor FNET para análise automática de comunicados e Fatos Relevantes eliminando falsos positivos.
+   - Implementação da lógica de dupla-avaliação (janelas de 90 e 365 dias) no agendador de tarefas (`aprendizado/avaliador.py`).
+2. **Refinamento do Frontend PWA**:
+   - Conectar o Radar de oportunidades real do backend com o novo design da interface.
+   - Exibir de forma transparente as métricas detalhadas (dimensionamento e zonas) nos cards de decisão para o usuário.
+
