@@ -161,3 +161,10 @@ FIIA_API_KEY = os.getenv("FIIA_API_KEY", "")
 # Origens permitidas para CORS (configuráveis via .env, padrão local)
 CORS_ALLOWED_ORIGINS_RAW = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000")
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS_RAW.split(",") if origin.strip()]
+
+# ─────────────────────────────────────────
+# Validade temporal de dados
+# ─────────────────────────────────────────
+PRECO_MAX_IDADE_HORAS = int(os.getenv("PRECO_MAX_IDADE_HORAS", "24"))
+CVM_MAX_IDADE_MESES = int(os.getenv("CVM_MAX_IDADE_MESES", "3"))
+

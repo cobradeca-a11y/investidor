@@ -61,6 +61,7 @@ def decidir(
     riscos_ia: list | None = None,
     tom_gestor: str | None = None,
     ia_status: str = "INDISPONIVEL",
+    contexto: dict | None = None,
 ) -> dict:
     """
     Executa o motor CVM-first e adiciona:
@@ -69,6 +70,32 @@ def decidir(
     - registro explícito de evidência FNET para aprendizado.
     """
     ticker = ticker.upper().replace(".SA", "").strip()
+
+    # Se contexto foi fornecido diretamente, garante persistência
+    if contexto:
+        hoje = contexto.get("data") or date.today().isoformat()
+        # Mapeia campos do contexto para a tabela indicadores
+        dados_indicadores = {
+            "ticker": ticker,
+            "data": hoje,
+            "preco": contexto.get("preco"),
+            "preco_timestamp": contexto.get("preco_timestamp"),
+            "preco_fonte": contexto.get("preco_fonte"),
+            "preco_moeda": contexto.get("preco_moeda"),
+            "pvp": contexto.get("pvp"),
+            "liquidez_diaria": contexto.get("liquidez_diaria"),
+            "ultimo_dividendo": contexto.get("ultimo_dividendo"),
+            "dy_12m": contexto.get("dy_12m"),
+            "dy_patrimonial": contexto.get("dy_patrimonial"),
+            "vacancia_fisica": contexto.get("vacancia_fisica"),
+            "patrimonio_liquido": contexto.get("patrimonio_liquido"),
+            "vpa": contexto.get("vpa"),
+            "qtd_ativos": contexto.get("qtd_ativos"),
+            "fonte": contexto.get("patrimonio_fonte"),
+            "confiabilidade": contexto.get("score_confianca"),
+            "coletado_em": contexto.get("atualizado_em"),
+        }
+        db.upsert("indicadores", dados_indicadores)
 
     try:
         veredito = motor_decisao_cvm_first.decidir(

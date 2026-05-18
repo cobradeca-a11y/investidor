@@ -24,11 +24,12 @@ def aplicar_filtros_sobrevivencia(ticker: str) -> Tuple[bool, List[str]]:
 
 
 def radar_oportunidades() -> list:
-    from coleta.api_fundamentus import coletar_mercado_inteiro, coletar_fii
+    from coleta.api_fundamentus import coletar_mercado_inteiro
     from coleta.api_yfinance import coletar_historico_dividendos
     from processamento.analise_qualitativa import analisar_fundo_ia
     from decisao.decisao_com_confianca import decidir
     from decisao.persistencia_decisao import gravar
+    from coleta.contexto_ativo import obter_contexto_ativo
 
     mercado = coletar_mercado_inteiro()
 
@@ -56,12 +57,40 @@ def radar_oportunidades() -> list:
 
     candidatos_preco = []
     log_gates = {}
+    finalistas = []
 
     for ticker in sobreviventes_a[:50]:
-        coletar_fii(ticker)
+        # 1. Carrega e Audita o Contexto do Ativo
+        contexto = obter_contexto_ativo(ticker)
+
+        # 2. Se o contexto bloquear a decisão (fail-closed), gera o card de bloqueio imediatamente
+        if not contexto.get("permitir_decisao", True):
+            veredito_bloqueado = {
+                "ticker": ticker,
+                "decisao": f"BLOQUEADO_DADOS_{contexto.get('nivel_uso_dados', 'INSUFICIENTE')}",
+                "motivo": f"Campos ausentes: {', '.join(contexto.get('campos_ausentes', []))}. Campos vencidos: {', '.join(contexto.get('campos_vencidos', []))}.",
+                "permitir_decisao": False,
+                "campos_ausentes": contexto.get("campos_ausentes", []),
+                "campos_vencidos": contexto.get("campos_vencidos", []),
+                "fontes_falharam": contexto.get("fontes_falharam", []),
+                "score_confianca_dados_consolidado": contexto.get("score_confianca", 0.0),
+                "nivel_uso_dados_consolidado": contexto.get("nivel_uso_dados", "INSUFICIENTE"),
+                "preco": contexto.get("preco") or 0.0,
+                "pvp": contexto.get("pvp") or 0.0,
+                "vpa": contexto.get("vpa") or 0.0,
+                "dy_12m": contexto.get("dy_12m") or 0.0,
+                "margem": 0.0,
+                "gate_parada": 0,
+            }
+            gravar(veredito_bloqueado)
+            finalistas.append({"ticker": ticker, "margem": 0.0, "veredito": veredito_bloqueado})
+            continue
+
+        # Coleta de suporte (histórico de dividendos)
         coletar_historico_dividendos(ticker)
 
-        veredito = decidir(ticker, ia_status="INDISPONIVEL")
+        # Roda o motor atual com o contexto já normalizado e persistido
+        veredito = decidir(ticker, ia_status="INDISPONIVEL", contexto=contexto)
         gate_parada = veredito.get("gate_parada", 0)
 
         log_gates[gate_parada] = log_gates.get(gate_parada, 0) + 1
@@ -69,21 +98,19 @@ def radar_oportunidades() -> list:
         if gate_parada < 4 or gate_parada == 55:
             continue
 
-        candidatos_preco.append({"ticker": ticker})
+        candidatos_preco.append({"ticker": ticker, "contexto": contexto})
 
     com_margem = []
 
     for item in candidatos_preco:
-        veredito = decidir(item["ticker"], ia_status="INDISPONIVEL")
+        veredito = decidir(item["ticker"], ia_status="INDISPONIVEL", contexto=item["contexto"])
         margem = veredito.get("margem")
 
         if margem is not None and margem > 0:
-            com_margem.append({"ticker": item["ticker"], "margem": margem})
+            com_margem.append({"ticker": item["ticker"], "margem": margem, "contexto": item["contexto"]})
 
     com_margem.sort(key=lambda x: x["margem"], reverse=True)
     top = com_margem[:30]
-
-    finalistas = []
 
     for i, item in enumerate(top):
         ticker = item["ticker"]
@@ -97,6 +124,7 @@ def radar_oportunidades() -> list:
             riscos_ia=qual.get("riscos"),
             tom_gestor=qual.get("tom_gestor"),
             ia_status=qual.get("status", "INDISPONIVEL"),
+            contexto=item["contexto"],
         )
 
         item["veredito"] = veredito

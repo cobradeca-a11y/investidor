@@ -415,6 +415,8 @@ header {
 .decision-badge.monitorar { background: rgba(255, 187, 0, 0.2); color: #ffbb00; border: 1px solid rgba(255, 187, 0, 0.3); }
 .decision-badge.evitar { background: rgba(255, 68, 68, 0.2); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.3); }
 .decision-badge.eliminado { background: rgba(100, 100, 100, 0.2); color: #aaaaaa; border: 1px solid rgba(100, 100, 100, 0.3); }
+.decision-badge.bloqueado_dados_insuficientes { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+.decision-badge.bloqueado_dados_usar_com_cautela { background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.3); }
 
 .card-footer {
     margin-top: auto;
