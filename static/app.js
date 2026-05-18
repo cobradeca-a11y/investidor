@@ -25,7 +25,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     ];
     
-    renderResults(mockCarteira, 'portfolioGrid');
+    // Função para carregar a carteira real do backend
+    async function carregarCarteira() {
+        const grid = document.getElementById('portfolioGrid');
+        grid.innerHTML = '<div class="loading-simple">⌛ Carregando ativos...</div>';
+        
+        try {
+            const response = await fetch('/api/carteira/posicoes');
+            const data = await response.json();
+            
+            if (data.status === 'ok' && data.posicoes && data.posicoes.length > 0) {
+                renderResults(data.posicoes, 'portfolioGrid', true);
+            } else {
+                grid.innerHTML = `
+                    <div class="empty-state-container glass-card">
+                        <h3>Sua carteira está vazia!</h3>
+                        <p>Registre suas operações clicando no botão <strong>+ Registrar Transação</strong> acima.</p>
+                        <span class="demo-badge">Abaixo você vê um exemplo de como seus ativos serão analisados:</span>
+                    </div>
+                `;
+                const mockContainer = document.createElement('div');
+                mockContainer.id = 'demoGrid';
+                mockContainer.className = 'results-grid';
+                grid.appendChild(mockContainer);
+                renderResults(mockCarteira, 'demoGrid', false);
+            }
+        } catch (error) {
+            console.error('Erro ao buscar posições da carteira:', error);
+            grid.innerHTML = '<div class="error-simple">❌ Erro ao conectar ao servidor. Exibindo dados de demonstração:</div>';
+            const mockContainer = document.createElement('div');
+            mockContainer.id = 'demoGrid';
+            mockContainer.className = 'results-grid';
+            grid.appendChild(mockContainer);
+            renderResults(mockCarteira, 'demoGrid', false);
+        }
+    }
+    
+    carregarCarteira();
 
     // Tab Logic
     const btnCarteira = document.getElementById('btnCarteira');
@@ -46,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsView.classList.add('hidden');
         loadingView.classList.add('hidden');
         btnRadarAction.classList.add('hidden');
+        carregarCarteira();
     });
 
     btnRadarTab.addEventListener('click', () => {
@@ -57,6 +94,73 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsView.classList.add('hidden');
         btnRadarAction.classList.remove('hidden');
     });
+
+    // Modal Logic
+    const btnOpenModal = document.getElementById('btnOpenModal');
+    const btnCloseModal = document.getElementById('btnCloseModal');
+    const transactionModal = document.getElementById('transactionModal');
+    const transactionForm = document.getElementById('transactionForm');
+
+    if (btnOpenModal) {
+        btnOpenModal.addEventListener('click', () => {
+            transactionModal.classList.remove('hidden');
+        });
+    }
+
+    if (btnCloseModal) {
+        btnCloseModal.addEventListener('click', () => {
+            transactionModal.classList.add('hidden');
+        });
+    }
+
+    window.addEventListener('click', (e) => {
+        if (e.target === transactionModal) {
+            transactionModal.classList.add('hidden');
+        }
+    });
+
+    if (transactionForm) {
+        transactionForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = transactionForm.querySelector('.btn-submit');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = 'Gravando...';
+            
+            const payload = {
+                ticker: document.getElementById('txTicker').value.trim().toUpperCase(),
+                quantidade: parseFloat(document.getElementById('txQtd').value),
+                preco: parseFloat(document.getElementById('txPreco').value),
+                segmento: document.getElementById('txSegmento').value || null,
+                custos: 0.0,
+                origem: "PWA_DASHBOARD"
+            };
+
+            try {
+                const response = await fetch('/api/carteira/compra', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    alert('Transação registrada com sucesso!');
+                    transactionForm.reset();
+                    transactionModal.classList.add('hidden');
+                    carregarCarteira();
+                } else {
+                    alert('Erro ao registrar transação: ' + (data.mensagem || 'Erro desconhecido'));
+                }
+            } catch (error) {
+                console.error('Erro de envio:', error);
+                alert('Falha ao conectar com a API para registrar a compra.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Registrar Compra';
+            }
+        });
+    }
 });
 
 document.getElementById('btnRadar').addEventListener('click', async () => {
@@ -94,7 +198,7 @@ document.getElementById('btnClear').addEventListener('click', () => {
     window.location.reload();
 });
 
-function renderResults(oportunidades, targetId = 'results') {
+function renderResults(oportunidades, targetId = 'results', isPortfolio = false) {
     const grid = document.getElementById(targetId);
     grid.innerHTML = ''; // Limpa resultados anteriores
     
@@ -107,11 +211,8 @@ function renderResults(oportunidades, targetId = 'results') {
         const qual = fii.qualitativo || {};
         
         // Classes de status
-        const statusClass = `status-${v.decisao?.toLowerCase().replace('_', '-') || 'monitorar'}`;
-        const emojiDecisao = {
-            'COMPRAR': '🟢', 'COMPRAR_PARCIAL': '🟡', 'AGUARDAR': '🔵', 
-            'MANTER': '⚪', 'MONITORAR': '🟠', 'EVITAR': '🔴'
-        }[v.decisao] || '⚪';
+        const statusClass = `status-${fii.decisao?.toLowerCase().replace('_', '-') || 'monitorar'}`;
+        
         const fmtReais = (val) => val ? `R$ ${parseFloat(val).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : 'N/A';
         const fmtPct = (val) => val ? `${val > 0 ? '+' : ''}${parseFloat(val).toFixed(1)}%` : 'N/A';
 
@@ -128,6 +229,23 @@ function renderResults(oportunidades, targetId = 'results') {
                 <span class="label">Confiança:</span>
                 <span class="confidence-value ${fii.confianca.toLowerCase()}">${fii.confianca}</span>
             </div>
+
+            ${isPortfolio ? `
+                <div class="holding-details-container glass-card">
+                    <div class="holding-metric">
+                        <span class="label">Minhas Cotas</span>
+                        <span class="value">${fii.quantidade}</span>
+                    </div>
+                    <div class="holding-metric">
+                        <span class="label">Preço Médio</span>
+                        <span class="value">R$ ${fii.preco_medio?.toFixed(2)}</span>
+                    </div>
+                    <div class="holding-metric highlight">
+                        <span class="label">Total Aplicado</span>
+                        <span class="value">R$ ${fii.custo_total?.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                    </div>
+                </div>
+            ` : ''}
 
             <div class="price-grid">
                 <div class="price-item">

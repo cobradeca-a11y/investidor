@@ -39,7 +39,10 @@
             <div id="portfolioView" class="portfolio-section">
                 <div class="portfolio-header">
                     <h2>Meus Ativos (XP)</h2>
-                    <span class="badge-sync">Sincronizado via Carteira FIIA</span>
+                    <div class="portfolio-actions">
+                        <span class="badge-sync">Sincronizado via Carteira FIIA</span>
+                        <button id="btnOpenModal" class="btn-transaction">+ Registrar Transação</button>
+                    </div>
                 </div>
                 <div id="portfolioGrid" class="results-grid">
                     <!-- Cards da carteira via JS -->
@@ -80,6 +83,44 @@
         <footer>
             <p>FIIA Intelligence System v2.0 • Desenvolvido para Fins Educacionais</p>
         </footer>
+    </div>
+
+    <!-- Modal de Transação -->
+    <div id="transactionModal" class="modal hidden">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h2>Registrar Operação</h2>
+                <button id="btnCloseModal" class="btn-close">&times;</button>
+            </div>
+            <form id="transactionForm" class="transaction-form">
+                <div class="form-group">
+                    <label for="txTicker">Ticker</label>
+                    <input type="text" id="txTicker" placeholder="ex: HGLG11" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="txQtd">Quantidade</label>
+                        <input type="number" id="txQtd" min="0.001" step="any" placeholder="10" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="txPreco">Preço Unitário (R$)</label>
+                        <input type="number" id="txPreco" min="0.01" step="any" placeholder="165.50" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="txSegmento">Segmento (Opcional)</label>
+                    <select id="txSegmento">
+                        <option value="">Selecione...</option>
+                        <option value="TIJOLO">TIJOLO</option>
+                        <option value="PAPEL">PAPEL</option>
+                        <option value="HIBRIDO">HÍBRIDO</option>
+                        <option value="FOF">FOF</option>
+                        <option value="FIAGRO">FIAGRO</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-submit">Registrar Compra</button>
+            </form>
+        </div>
     </div>
 
     <script src="app.js"></script>

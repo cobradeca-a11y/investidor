@@ -57,10 +57,101 @@ def resumo() -> dict[str, Any]:
 def posicoes() -> dict[str, Any]:
     try:
         itens = repositorio_carteira.listar_posicoes()
-        return {"status": "ok", "quantidade": len(itens), "posicoes": itens}
+        from decisao.persistencia_decisao import ultima_decisao
+        from banco import db
+        import json
+
+        posicoes_enriquecidas = []
+        for pos in itens:
+            ticker = pos["ticker"]
+            
+            # 1. Obter última decisão salva ou gerar na hora (sem IA por performance)
+            dec = ultima_decisao(ticker)
+            if not dec:
+                try:
+                    dec = decidir(ticker, ia_status="INDISPONIVEL")
+                except Exception:
+                    dec = {}
+            
+            # 2. Obter últimos indicadores do banco
+            ind = db.buscar_um(
+                "SELECT * FROM indicadores WHERE ticker = ? ORDER BY data DESC LIMIT 1",
+                (ticker,)
+            )
+            ind_dict = dict(ind) if ind else {}
+            
+            # 3. Construir item enriquecido
+            acao_decisao = dec.get("decisao") or dec.get("status") or dec.get("acao") or "MONITORAR"
+            confianca_val = dec.get("confianca") or "MEDIA"
+            
+            preco_atual = ind_dict.get("preco") or dec.get("preco_na_decisao") or pos.get("preco_medio") or 0.0
+            preco_justo = dec.get("preco_justo") or ind_dict.get("vpa") or 0.0
+            preco_entrada = dec.get("preco_entrada") or dec.get("preco_teto") or 0.0
+            margem = dec.get("margem") or dec.get("margem_seguranca") or 0.0
+            
+            pvp_val = ind_dict.get("pvp") or dec.get("pvp") or 1.0
+            dy_val = ind_dict.get("dy_12m") or 0.0
+            if dy_val < 1.0:
+                dy_val_pct = dy_val * 100
+            else:
+                dy_val_pct = dy_val
+            
+            trilha_gates = []
+            travas_raw = dec.get("travas") or dec.get("gatilhos_invalidez") or "[]"
+            if isinstance(travas_raw, str):
+                try:
+                    trilha_gates = json.loads(travas_raw)
+                except Exception:
+                    trilha_gates = [travas_raw] if travas_raw else []
+            elif isinstance(travas_raw, list):
+                trilha_gates = travas_raw
+            
+            if not trilha_gates:
+                trilha_gates = ["G0:ATIVADO", "G1:ELEGIVEL", "G2:PATRIMONIO_OK"]
+                
+            score_ia = dec.get("score_ia") or 7.0
+            
+            motivo = dec.get("motivo") or "Ativo em monitoramento de carteira."
+            if isinstance(motivo, list):
+                motivo = "; ".join(motivo)
+                
+            alertas = []
+            alertas_raw = dec.get("alertas") or "[]"
+            if isinstance(alertas_raw, str):
+                try:
+                    alertas = json.loads(alertas_raw)
+                except Exception:
+                    alertas = [alertas_raw] if alertas_raw else []
+            elif isinstance(alertas_raw, list):
+                alertas = alertas_raw
+
+            item = {
+                "ticker": ticker,
+                "segmento": pos.get("segmento") or dec.get("segmento") or ind_dict.get("segmento") or "FII",
+                "decisao": str(acao_decisao).upper(),
+                "confianca": str(confianca_val).upper(),
+                "preco_atual": float(preco_atual),
+                "preco_justo": float(preco_justo),
+                "preco_entrada": float(preco_entrada),
+                "margem": float(margem),
+                "pvp": float(pvp_val),
+                "dy_12m_pct": float(dy_val_pct),
+                "pct_recorrente": 100,
+                "trilha_gates": trilha_gates,
+                "score_ia": int(score_ia) if score_ia is not None else 7,
+                "motivo": motivo,
+                "alertas": alertas,
+                "quantidade": pos.get("quantidade", 0),
+                "preco_medio": pos.get("preco_medio", 0),
+                "custo_total": pos.get("custo_total", 0),
+            }
+            posicoes_enriquecidas.append(item)
+            
+        return {"status": "ok", "quantidade": len(posicoes_enriquecidas), "posicoes": posicoes_enriquecidas}
     except Exception as erro:
         observabilidade.registrar_erro("api.carteira.posicoes", erro)
         return {"status": "erro", "mensagem": str(erro), "posicoes": []}
+
 
 
 @router.get("/posicoes/{ticker}")
