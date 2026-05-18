@@ -288,14 +288,17 @@ Este arquivo é atualizado automaticamente ao fim de cada janela de contexto com
 ### Concluído nesta sessão
 - ✅ **Interface PWA (Bloco G1):**
   - Implementação do frontend moderno focado em transparência com design "Glassmorphism" e estética premium.
-  - View "Minha Carteira" com integração de dados.
+  - View "Minha Carteira" com integração de dados reais em tempo real.
+- ✅ **Integração de Carteira Dinâmica:**
+  - Enriquecimento da API `/api/carteira/posicoes` cruzando com a tabela de decisões e indicadores diários em `fiia.db`.
+  - Conexão do JS do frontend para buscar a carteira real do backend via fetch.
+  - Criação de modal de transações (+ Registrar Transação) flutuante com suporte a inserção via POST para `/api/carteira/compra` e auto-recarregamento da interface.
 - ✅ **Limpeza de Débitos Técnicos:**
   - Remoção de scripts legados e desnecessários (`scraper_statusinvest.py`, `importar_tabela_mestre.py`).
 - ✅ **Prototipação de Teste:**
   - Criação do mock `analisa_snag11.py` para validar a interface e os cards de decisão com dados pré-populados.
 
 ### Pendente (Próximos Passos)
-- [ ] Conectar os dados reais da pipeline (SQLite `fiia_dados.db`) ao servidor local `app.py`.
-- [ ] Ajustar e preencher a view "Radar" no frontend PWA.
+- [ ] Ajustar e preencher a view "Radar" no frontend PWA para buscar oportunidades dinâmicas.
 - [ ] Integrar cards de decisão reais da interface com os cálculos de zonas de entrada (D1) e dimensionamento (C1).
 - [ ] Finalizar testes fim-a-fim com a refatoração do motor FNET para buscar comunicados e Fatos Relevantes sem falsos positivos.
