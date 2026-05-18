@@ -280,3 +280,22 @@ Este arquivo é atualizado automaticamente ao fim de cada janela de contexto com
 14. Copiar tabela_mestre_fiia_fiis_b3_cvm.csv para raiz
 15. python -c "from coleta.cnpj_fundo import popular_cnpjs_banco; popular_cnpjs_banco()"
 16. python -c "from coleta.informe_trimestral import coletar_atual; coletar_atual()"
+
+---
+
+## Atualização 2026-05-18
+
+### Concluído nesta sessão
+- ✅ **Interface PWA (Bloco G1):**
+  - Implementação do frontend moderno focado em transparência com design "Glassmorphism" e estética premium.
+  - View "Minha Carteira" com integração de dados.
+- ✅ **Limpeza de Débitos Técnicos:**
+  - Remoção de scripts legados e desnecessários (`scraper_statusinvest.py`, `importar_tabela_mestre.py`).
+- ✅ **Prototipação de Teste:**
+  - Criação do mock `analisa_snag11.py` para validar a interface e os cards de decisão com dados pré-populados.
+
+### Pendente (Próximos Passos)
+- [ ] Conectar os dados reais da pipeline (SQLite `fiia_dados.db`) ao servidor local `app.py`.
+- [ ] Ajustar e preencher a view "Radar" no frontend PWA.
+- [ ] Integrar cards de decisão reais da interface com os cálculos de zonas de entrada (D1) e dimensionamento (C1).
+- [ ] Finalizar testes fim-a-fim com a refatoração do motor FNET para buscar comunicados e Fatos Relevantes sem falsos positivos.
