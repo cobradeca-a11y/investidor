@@ -25,7 +25,6 @@ def aplicar_filtros_sobrevivencia(ticker: str) -> Tuple[bool, List[str]]:
 
 def radar_oportunidades() -> list:
     from coleta.api_fundamentus import coletar_mercado_inteiro
-    from coleta.api_yfinance import coletar_historico_dividendos
     from processamento.analise_qualitativa import analisar_fundo_ia
     from decisao.decisao_com_confianca import decidir
     from decisao.persistencia_decisao import gravar

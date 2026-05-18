@@ -19,6 +19,9 @@ from sistema import observabilidade
 # Cache em memória para evitar requisições repetidas no mesmo radar loop
 _CACHE_CONTEXTO: dict[str, dict[str, Any]] = {}
 
+# Versão atual do contexto para invalidação dinâmica de snapshots legados (Achado 2)
+VERSAO_CONTEXTO = "asset-context-v1.1"
+
 
 def _agora_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -60,8 +63,10 @@ def obter_contexto_ativo(ticker: str) -> dict[str, Any]:
     if snapshot_row and snapshot_row["payload_json"]:
         try:
             contexto = json.loads(snapshot_row["payload_json"])
-            _CACHE_CONTEXTO[cache_key] = contexto
-            return contexto
+            # Valida se a versão do snapshot do banco é idêntica à versão atual (Achado 2)
+            if contexto.get("contexto_versao") == VERSAO_CONTEXTO:
+                _CACHE_CONTEXTO[cache_key] = contexto
+                return contexto
         except Exception:
             pass
 
@@ -332,6 +337,7 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
 
         if preco is not None and preco > 0:
             dy_12m = round(soma_12m / preco, 4)
+            # Retornos de dividendos calculados para o período analisado (não anualizados) (Achado 4)
             dy_6m = round(soma_6m / preco, 4)
             dy_3m = round(soma_3m / preco, 4)
         if vpa is not None and vpa > 0:
@@ -448,6 +454,7 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
 
     # 9. Consolidação do Contexto
     contexto = {
+        "contexto_versao": VERSAO_CONTEXTO,
         "ticker": ticker_norm,
         "data": hoje,
         "atualizado_em": agora,
