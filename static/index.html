@@ -20,8 +20,12 @@
                     <span>Analista Sênior Autônomo</span>
                 </div>
             </div>
+            <nav class="header-nav">
+                <button id="btnCarteira" class="nav-tab active">Minha Carteira</button>
+                <button id="btnRadarTab" class="nav-tab">Radar FIIA</button>
+            </nav>
             <div class="header-actions">
-                <button id="btnRadar" class="btn-radar">
+                <button id="btnRadar" class="btn-radar hidden">
                     <span class="icon">🔍</span> Ligar Radar
                 </button>
                 <button id="btnClear" class="btn-icon" title="Recarregar">
@@ -31,8 +35,19 @@
         </header>
 
         <main id="mainContent">
-            <!-- Welcome View -->
-            <div id="welcomeView" class="welcome-section">
+            <!-- Portfolio View -->
+            <div id="portfolioView" class="portfolio-section">
+                <div class="portfolio-header">
+                    <h2>Meus Ativos (XP)</h2>
+                    <span class="badge-sync">Sincronizado via Carteira FIIA</span>
+                </div>
+                <div id="portfolioGrid" class="results-grid">
+                    <!-- Cards da carteira via JS -->
+                </div>
+            </div>
+
+            <!-- Radar Welcome View -->
+            <div id="welcomeView" class="welcome-section hidden">
                 <div class="hero-card">
                     <h2>Encontre as melhores oportunidades</h2>
                     <p>O FIIA utiliza inteligência quantitativa e análise de IA para filtrar 550+ ativos e entregar vereditos precisos.</p>
@@ -57,7 +72,7 @@
             </div>
 
             <!-- Results View -->
-            <div id="results" class="results-grid">
+            <div id="results" class="results-grid hidden">
                 <!-- Cards renderizados via JS -->
             </div>
         </main>

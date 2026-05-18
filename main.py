@@ -8,7 +8,7 @@ from pathlib import Path
 from banco import db
 from acesso import auth
 from coleta import api_bcb, api_fundamentus, api_yfinance
-from coleta.importar_tabela_mestre import importar_arquivo as importar_tabela_mestre
+
 from processamento import estrategia, tradutor
 from backtest import maquina_tempo
 from sistema import autoupdater
@@ -130,12 +130,7 @@ def rodar_backtest(ticker: str):
     executar_backtest(ticker)
 
 
-def importar_master(caminho_csv: str):
-    """Importa a tabela mestre B3 ↔ CVM."""
-    resultado = importar_tabela_mestre(caminho_csv)
-    print("\n=== IMPORTAÇÃO TABELA MESTRE ===")
-    for chave, valor in resultado.items():
-        print(f"{chave}: {valor}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="FIIA - Fundo Inteligente de Investimento em Ativos")
@@ -143,14 +138,13 @@ def main():
     parser.add_argument("--backtest", type=str, help="Roda a máquina do tempo simulando 5 anos no passado para o TICKER.")
     parser.add_argument("--top10", action="store_true", help="Analisa os 10 FIIs mais populares do mercado.")
     parser.add_argument("--radar", action="store_true", help="Varre o mercado inteiro em busca de oportunidades reais.")
-    parser.add_argument("--importar-master", type=str, help="Importa CSV da tabela mestre B3 ↔ CVM.")
+
     
     args = parser.parse_args()
 
     if args.setup:
         setup()
-    elif args.importar_master:
-        importar_master(args.importar_master)
+
     elif args.backtest:
         auth.exigir_autenticacao()
         rodar_backtest(args.backtest.upper())

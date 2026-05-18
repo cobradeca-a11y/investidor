@@ -3,6 +3,62 @@
  * Versão 2.0 - Integração com Motor de Decisão
  */
 
+document.addEventListener('DOMContentLoaded', () => {
+    // Mock inicial da carteira com o SNAG11 real do Status Invest
+    const mockCarteira = [
+        {
+            ticker: "SNAG11",
+            segmento: "FIAGRO",
+            decisao: "COMPRAR",
+            confianca: "ALTA",
+            preco_atual: 10.61,
+            preco_justo: 11.08,
+            preco_entrada: 10.50,
+            margem: 4.4,
+            pvp: 0.95,
+            dy_12m_pct: 14.57,
+            pct_recorrente: 100,
+            trilha_gates: ["G0:APROVADO_DADOS", "G1:APROVADO_ELEG", "G2:APROVADO_ESTR", "G3:APROVADO_RENDA", "G4:APROVADO_PRECO"],
+            score_ia: 9,
+            motivo: "Excelente FIAGRO sob gestão da SUNO. Com dividendos consistentes de R$ 0,12 mensais, o DY de 14,57% supera confortavelmente o CDI de 14,40%. O ativo está sendo negociado com desconto real de 5% sobre o valor patrimonial (P/VP 0,95). Risco controlado e ótima relação retorno/risco.",
+            alertas: []
+        }
+    ];
+    
+    renderResults(mockCarteira, 'portfolioGrid');
+
+    // Tab Logic
+    const btnCarteira = document.getElementById('btnCarteira');
+    const btnRadarTab = document.getElementById('btnRadarTab');
+    const btnRadarAction = document.getElementById('btnRadar');
+    
+    const portfolioView = document.getElementById('portfolioView');
+    const welcomeView = document.getElementById('welcomeView');
+    const resultsView = document.getElementById('results');
+    const loadingView = document.getElementById('loading');
+
+    btnCarteira.addEventListener('click', () => {
+        btnCarteira.classList.add('active');
+        btnRadarTab.classList.remove('active');
+        
+        portfolioView.classList.remove('hidden');
+        welcomeView.classList.add('hidden');
+        resultsView.classList.add('hidden');
+        loadingView.classList.add('hidden');
+        btnRadarAction.classList.add('hidden');
+    });
+
+    btnRadarTab.addEventListener('click', () => {
+        btnRadarTab.classList.add('active');
+        btnCarteira.classList.remove('active');
+        
+        portfolioView.classList.add('hidden');
+        welcomeView.classList.remove('hidden');
+        resultsView.classList.add('hidden');
+        btnRadarAction.classList.remove('hidden');
+    });
+});
+
 document.getElementById('btnRadar').addEventListener('click', async () => {
     const welcomeView = document.getElementById('welcomeView');
     const loading = document.getElementById('loading');
@@ -22,7 +78,7 @@ document.getElementById('btnRadar').addEventListener('click', async () => {
         
         loading.classList.add('hidden');
         resultsGrid.classList.remove('hidden');
-        renderResults(data.oportunidades);
+        renderResults(data.oportunidades, 'results');
     } catch (error) {
         console.error(error);
         alert('Erro ao ligar o radar. Verifique se o servidor está rodando ou se a chave API é válida.');
@@ -38,8 +94,8 @@ document.getElementById('btnClear').addEventListener('click', () => {
     window.location.reload();
 });
 
-function renderResults(oportunidades) {
-    const grid = document.getElementById('results');
+function renderResults(oportunidades, targetId = 'results') {
+    const grid = document.getElementById(targetId);
     grid.innerHTML = ''; // Limpa resultados anteriores
     
     oportunidades.forEach((fii, index) => {
