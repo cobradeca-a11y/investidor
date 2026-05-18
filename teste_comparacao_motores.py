@@ -8,13 +8,12 @@ from coleta.contexto_ativo import obter_contexto_ativo
 from decisao import motor_decisao_cvm_first
 
 
-def test_equivalencia_controlada_motores():
+@pytest.mark.parametrize("ticker", ["HGLG11", "KNCR11", "CPTS11"])
+def test_equivalencia_controlada_motores(ticker):
     """
     Compara a execução legacy vs contexto e assegura tolerância numérica <= 0.01
     para todas as métricas críticas calculadas de forma equivalente.
     """
-    ticker = "HGLG11"
-
     # 1. Resolve o contexto em memória
     contexto = obter_contexto_ativo(ticker)
     assert contexto is not None
@@ -23,7 +22,7 @@ def test_equivalencia_controlada_motores():
     veredito_memoria = motor_decisao_cvm_first.decidir(
         ticker,
         score_ia=8.5,
-        riscos_ia=["Concentração em ativos premium"],
+        riscos_ia=["Concentração em ativos de qualidade"],
         tom_gestor="neutro",
         ia_status="OK",
         contexto=contexto
@@ -33,7 +32,7 @@ def test_equivalencia_controlada_motores():
     veredito_legado = motor_decisao_cvm_first.decidir(
         ticker,
         score_ia=8.5,
-        riscos_ia=["Concentração em ativos premium"],
+        riscos_ia=["Concentração em ativos de qualidade"],
         tom_gestor="neutro",
         ia_status="OK",
         contexto=None
@@ -47,29 +46,29 @@ def test_equivalencia_controlada_motores():
         val_mem = veredito_memoria.get(campo)
         val_leg = veredito_legado.get(campo)
         if val_mem is not None and val_leg is not None:
-            assert abs(val_mem - val_leg) <= 0.01, f"Diferença no campo {campo}: {val_mem} vs {val_leg}"
+            assert abs(val_mem - val_leg) <= 0.01, f"Diferença no campo {campo}: {val_mem} vs {val_leg} para {ticker}"
 
     # Compara indicadores e margens
     for campo in ["margem", "margem_stress", "pvp", "dy_12m_pct", "dy_recorrente_pct", "pct_recorrente", "premio_cdi"]:
         val_mem = veredito_memoria.get(campo)
         val_leg = veredito_legado.get(campo)
         if val_mem is not None and val_leg is not None:
-            assert abs(val_mem - val_leg) <= 0.01, f"Diferença no campo {campo}: {val_mem} vs {val_leg}"
+            assert abs(val_mem - val_leg) <= 0.01, f"Diferença no campo {campo}: {val_mem} vs {val_leg} para {ticker}"
 
 
-def test_compatibilidade_real_motivos():
+@pytest.mark.parametrize("ticker", ["HGLG11", "KNCR11", "CPTS11"])
+def test_compatibilidade_real_motivos(ticker):
     """
     Assegura que os motivos da decisão no modo contexto são válidos,
     não vazios, sem tracebacks e estruturalmente consistentes.
     """
-    ticker = "HGLG11"
     contexto = obter_contexto_ativo(ticker)
     assert contexto is not None
 
     veredito = motor_decisao_cvm_first.decidir(
         ticker,
         score_ia=8.5,
-        riscos_ia=["Concentração em ativos premium"],
+        riscos_ia=["Concentração em ativos de qualidade"],
         tom_gestor="neutro",
         ia_status="OK",
         contexto=contexto
@@ -90,3 +89,4 @@ def test_compatibilidade_real_motivos():
     # 3. Assegura que a decisão de confiança e revisão estão preenchidas
     assert veredito["confianca"] in ["ALTA", "MEDIA", "BAIXA"]
     assert len(veredito["revisao"].strip()) > 0
+

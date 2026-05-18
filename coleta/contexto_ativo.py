@@ -20,7 +20,7 @@ from sistema import observabilidade
 _CACHE_CONTEXTO: dict[str, dict[str, Any]] = {}
 
 # Versão atual do contexto para invalidação dinâmica de snapshots legados (Achado 2)
-VERSAO_CONTEXTO = "asset-context-v1.2"
+VERSAO_CONTEXTO = "asset-context-v1.3"
 
 # Contrato de Campos Obrigatórios do Contexto v1.2
 CAMPOS_CORE_CONTEXTO = {
@@ -377,7 +377,7 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         soma_12m = 0.0
         soma_6m = 0.0
         soma_3m = 0.0
-        soma_recorrente = 0.0
+        soma_6m_recorrente = 0.0
         total_recorrencia_analisada = 0
 
         for d in divs_lista:
@@ -387,15 +387,15 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
                 if dias_idade <= 365:
                     soma_12m += float(d["valor"])
                     total_recorrencia_analisada += 1
-                    if d.get("tipo", "RECORRENTE") == "RECORRENTE":
-                        soma_recorrente += float(d["valor"])
                 if dias_idade <= 180:
                     soma_6m += float(d["valor"])
+                    if d.get("tipo", "RECORRENTE") == "RECORRENTE":
+                        soma_6m_recorrente += float(d["valor"])
                 if dias_idade <= 90:
                     soma_3m += float(d["valor"])
 
-        if total_recorrencia_analisada > 0:
-            recorrencia_dividendos_pct = round(soma_recorrente / max(soma_12m, 0.01), 4)
+        if soma_6m > 0:
+            recorrencia_dividendos_pct = round(soma_6m_recorrente / max(soma_6m, 0.01), 4)
 
         if preco is not None and preco > 0:
             dy_12m = round(soma_12m / preco, 4)

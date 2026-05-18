@@ -39,7 +39,21 @@ def _buscar_base_confianca(ticker: str) -> tuple[dict[str, Any], dict[str, Any]]
     return (dict(ind_row) if ind_row else {}, dict(fii_row) if fii_row else {})
 
 
-def _montar_campos_confianca(ticker: str, veredito: dict[str, Any]) -> list:
+def _montar_campos_confianca(ticker: str, veredito: dict[str, Any], contexto: dict | None = None) -> list:
+    if contexto:
+        patrimonio = veredito.get("patrimonio_resolvido", {}) or {}
+        fonte_patrimonial = veredito.get("fonte_patrimonial") or patrimonio.get("fonte_patrimonial") or "Fundamentus"
+        return [
+            avaliar_campo("preco", "Fundamentus", contexto.get("preco")),
+            avaliar_campo("pvp", fonte_patrimonial, contexto.get("pvp")),
+            avaliar_campo("liquidez_diaria", "Fundamentus", contexto.get("liquidez_diaria")),
+            avaliar_campo("vpa", fonte_patrimonial, contexto.get("vpa")),
+            avaliar_campo("dy_12m", "Fundamentus", contexto.get("dy_12m")),
+            avaliar_campo("vacancia_fisica", "Fundamentus", contexto.get("vacancia_fisica")),
+            avaliar_campo("patrimonio_liquido", fonte_patrimonial, contexto.get("patrimonio_liquido")),
+            avaliar_campo("segmento", "base_local", contexto.get("segmento")),
+        ]
+
     ind, fii = _buscar_base_confianca(ticker)
     patrimonio = veredito.get("patrimonio_resolvido", {}) or {}
     fonte_patrimonial = veredito.get("fonte_patrimonial") or patrimonio.get("fonte_patrimonial") or "Fundamentus"
@@ -72,8 +86,8 @@ def decidir(
     """
     ticker = ticker.upper().replace(".SA", "").strip()
 
-    # Se contexto foi fornecido diretamente, garante persistência
-    if contexto:
+    # Se contexto foi fornecido diretamente, garante persistência (apenas se explicitamente solicitado)
+    if contexto and contexto.get("persistir_contexto", False):
         hoje = contexto.get("data") or date.today().isoformat()
         # Mapeia campos do contexto para a tabela indicadores
         dados_indicadores = {
@@ -108,7 +122,10 @@ def decidir(
             contexto=contexto,
         )
 
-        campos = _montar_campos_confianca(ticker, veredito)
+        if veredito.get("decisao") == "BLOQUEADO_CONTEXTO_INCOMPLETO":
+            return veredito
+
+        campos = _montar_campos_confianca(ticker, veredito, contexto)
         relatorio = gerar_relatorio_confianca(
             ticker,
             campos,
@@ -128,15 +145,26 @@ def decidir(
             veredito.setdefault("decisao_original", decisao_original)
             veredito["decisao"] = decisao_ajustada
 
-        eventos_fnet = analisar_eventos_ticker(ticker)
+        if contexto:
+            eventos_fnet = contexto.get("eventos_fnet") or {
+                "ticker": ticker,
+                "nivel_risco_documental": "BAIXO",
+                "documentos_relevantes": [],
+                "total_eventos": 0,
+                "sinalizacao_fnet": "NEUTRO"
+            }
+        else:
+            eventos_fnet = analisar_eventos_ticker(ticker)
+
         veredito = aplicar_eventos_na_decisao(veredito, eventos_fnet)
 
-        if veredito.get("status") != "ERRO_DECISAO_COM_CONFIANCA":
+        if not contexto and veredito.get("status") != "ERRO_DECISAO_COM_CONFIANCA":
             registrar_evidencia_fnet_aprendizado(veredito, eventos_fnet)
 
         veredito["confianca_dados"] = relatorio.to_dict()
         veredito["score_confianca_dados_consolidado"] = relatorio.score_global
         veredito["nivel_uso_dados_consolidado"] = relatorio.nivel_uso.value
+
 
         observabilidade.registrar_evento(
             "INFO",
