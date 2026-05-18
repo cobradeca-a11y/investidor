@@ -148,12 +148,36 @@ def classificar_documento_com_ia(
 
     prompt = f"""
 Você é um analista sênior de risco para Fundos Imobiliários brasileiros.
-Classifique o documento FNET abaixo como risco operacional/documental ALTO, MEDIO ou BAIXO.
+Sua tarefa é classificar o RISCO OPERACIONAL/DOCUMENTAL REAL do documento FNET abaixo.
+
+Regra principal:
+NÃO classifique um documento como MEDIO ou ALTO apenas porque ele é relevante, anual, trimestral, extenso, institucional ou consolidado.
+Classifique como MEDIO ou ALTO somente se houver sinal explícito de risco, deterioração ou evento material no texto.
 
 Critérios:
-- ALTO: inadimplência relevante, vacância grave, default, liquidação, destituição, renúncia crítica, reavaliação patrimonial severa, evento que muda a tese.
-- MEDIO: emissão/oferta/subscrição relevante, comunicado com impacto financeiro, alteração operacional moderada, relatório gerencial com tom defensivo.
-- BAIXO: informe rotineiro, rendimento recorrente sem alerta, documento administrativo sem impacto de tese.
+
+- BAIXO:
+Documento rotineiro sem deterioração explícita.
+Inclui: informe anual normal, informe trimestral normal, informe mensal normal, rendimento recorrente, assembleia comum,
+comunicado administrativo, relatório sem alerta material, documentação extensa porém sem sinal objetivo de risco.
+
+- MEDIO:
+Evento com potencial impacto moderado na tese.
+Inclui: emissão/oferta/subscrição relevante, alteração operacional relevante, queda operacional moderada,
+aumento moderado de vacância, renegociação relevante, mudança de gestor/administrador sem crise,
+relatório com sinais claros porém não severos de deterioração.
+
+- ALTO:
+Evento que altera materialmente a tese ou indica risco severo.
+Inclui: inadimplência relevante, default, liquidação, risco jurídico severo, vacância grave, perda estrutural de receita,
+renúncia ou destituição crítica, reavaliação patrimonial severa, descumprimento de obrigação, deterioração financeira grave.
+
+Instruções adicionais:
+- Se o documento for apenas um informe anual/trimestral padrão e o texto não trouxer alerta explícito, classifique como BAIXO.
+- Se você não conseguir apontar o termo ou trecho que prova o risco, não classifique como ALTO.
+- Em caso de dúvida entre BAIXO e MEDIO, escolha BAIXO.
+- Em caso de dúvida entre MEDIO e ALTO, escolha MEDIO.
+- Não confunda importância para análise com risco.
 
 Assunto: {assunto[:500]}
 Conteúdo:
@@ -162,7 +186,7 @@ Conteúdo:
 Responda APENAS em JSON puro:
 {{
   "nivel": "ALTO|MEDIO|BAIXO",
-  "motivo": "explicação objetiva em até 2 frases",
+  "motivo": "explicação objetiva em até 2 frases, citando o sinal de risco real quando existir",
   "termos_detectados": ["termo1", "termo2"]
 }}
 """
