@@ -76,18 +76,23 @@ def radar_oportunidades() -> list:
                 "score_confianca_dados_consolidado": contexto.get("score_confianca", 0.0),
                 "nivel_uso_dados_consolidado": contexto.get("nivel_uso_dados", "INSUFICIENTE"),
                 "preco": contexto.get("preco") or 0.0,
+                "preco_atual": contexto.get("preco") or 0.0,
+                "preco_justo": None,
+                "preco_entrada": None,
+                "margem": 0.0,
                 "pvp": contexto.get("pvp") or 0.0,
                 "vpa": contexto.get("vpa") or 0.0,
                 "dy_12m": contexto.get("dy_12m") or 0.0,
-                "margem": 0.0,
+                "dy_12m_pct": (contexto.get("dy_12m") or 0.0) * 100,
                 "gate_parada": 0,
+                "trilha_gates": ["Gate 0: BLOQUEADO_DADOS_INSUFICIENTES"],
+                "confianca": "BAIXA",
+                "alertas": [f"Fontes falharam: {', '.join(contexto.get('fontes_falharam', []))}"] if contexto.get("fontes_falharam") else [],
+                "score_ia": 0.0,
             }
             gravar(veredito_bloqueado)
             finalistas.append({"ticker": ticker, "margem": 0.0, "veredito": veredito_bloqueado})
             continue
-
-        # Coleta de suporte (histórico de dividendos)
-        coletar_historico_dividendos(ticker)
 
         # Roda o motor atual com o contexto já normalizado e persistido
         veredito = decidir(ticker, ia_status="INDISPONIVEL", contexto=contexto)

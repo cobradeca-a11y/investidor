@@ -85,6 +85,19 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
     print(f"[contexto] Iniciando coleta robusta para o ativo {ticker_norm}...")
     agora = _agora_iso()
 
+    # Helper memoizado para evitar chamadas duplicadas à API Fundamentus (Achado 6)
+    fund_cache = None
+    def obter_fundamentus_memo() -> dict:
+        nonlocal fund_cache
+        if fund_cache is None:
+            try:
+                from coleta import api_fundamentus
+                fund_cache = api_fundamentus.coletar_fii(ticker_norm) or {}
+            except Exception as e:
+                print(f"[contexto] Falha ao coletar Fundamentus para {ticker_norm}: {e}")
+                fund_cache = {}
+        return fund_cache
+
     # 1. Identidade Canônica
     # Prioridade: Tabela Mestre B3/CVM -> Cadastro Local de FIIs -> Fallback
     cnpj_fundo = None
@@ -139,8 +152,7 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
     # Fallback Fundamentus
     if preco is None:
         try:
-            from coleta import api_fundamentus
-            res_fund = api_fundamentus.coletar_fii(ticker_norm)
+            res_fund = obter_fundamentus_memo()
             if res_fund and res_fund.get("preco") is not None:
                 preco = float(res_fund["preco"])
                 preco_timestamp = agora
@@ -203,8 +215,7 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
     fund_vpa = None
     fund_pvp = None
     try:
-        from coleta import api_fundamentus
-        res_fund = api_fundamentus.coletar_fii(ticker_norm)
+        res_fund = obter_fundamentus_memo()
         if res_fund:
             fund_pl = res_fund.get("patrimonio_liquido")
             fund_vpa = res_fund.get("vpa")
@@ -255,6 +266,8 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
     ultimo_dividendo = None
     dy_12m = None
     dy_patrimonial = None
+    dy_3m = None
+    dy_6m = None
     dividendos_fonte = "AUSENTE"
     dividendos_status = "AUSENTE"
     recorrencia_dividendos_pct = 0.0
@@ -264,6 +277,21 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         "SELECT valor, data_pagamento, tipo, fonte FROM dividendos WHERE ticker = ? ORDER BY data_pagamento DESC LIMIT 24",
         (ticker_norm,),
     )
+    
+    # Se não houver dividendos locais no banco, tenta a coleta preventiva primeiro (yfinance/FNET) (Achado 3 & 4)
+    if not divs:
+        try:
+            print(f"[contexto] Nenhum dividendo no banco para {ticker_norm}. Iniciando coleta preventiva...")
+            from coleta.api_yfinance import coletar_historico_dividendos
+            coletar_historico_dividendos(ticker_norm)
+            # Tenta buscar novamente após a coleta preventiva
+            divs = db.buscar_todos(
+                "SELECT valor, data_pagamento, tipo, fonte FROM dividendos WHERE ticker = ? ORDER BY data_pagamento DESC LIMIT 24",
+                (ticker_norm,),
+            )
+        except Exception as e:
+            print(f"[contexto] Falha na coleta preventiva de dividendos para {ticker_norm}: {e}")
+
     if divs:
         divs_lista = [dict(d) for d in divs]
         ultimo_dividendo = float(divs_lista[0]["valor"])
@@ -280,32 +308,44 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         # Calcula DY 12M real com base nos pagamentos dos últimos 365 dias
         hoje_dt = date.today()
         soma_12m = 0.0
+        soma_6m = 0.0
+        soma_3m = 0.0
         soma_recorrente = 0.0
         total_recorrencia_analisada = 0
 
         for d in divs_lista:
             d_date = _converter_data(d["data_pagamento"])
-            if d_date and (hoje_dt - d_date).days <= 365:
-                soma_12m += float(d["valor"])
-                total_recorrencia_analisada += 1
-                if d.get("tipo", "RECORRENTE") == "RECORRENTE":
-                    soma_recorrente += float(d["valor"])
+            if d_date:
+                dias_idade = (hoje_dt - d_date).days
+                if dias_idade <= 365:
+                    soma_12m += float(d["valor"])
+                    total_recorrencia_analisada += 1
+                    if d.get("tipo", "RECORRENTE") == "RECORRENTE":
+                        soma_recorrente += float(d["valor"])
+                if dias_idade <= 180:
+                    soma_6m += float(d["valor"])
+                if dias_idade <= 90:
+                    soma_3m += float(d["valor"])
 
         if total_recorrencia_analisada > 0:
             recorrencia_dividendos_pct = round(soma_recorrente / max(soma_12m, 0.01), 4)
 
         if preco is not None and preco > 0:
             dy_12m = round(soma_12m / preco, 4)
+            dy_6m = round(soma_6m / preco, 4)
+            dy_3m = round(soma_3m / preco, 4)
         if vpa is not None and vpa > 0:
             dy_patrimonial = round(soma_12m / vpa, 4)
     else:
-        # Fallback para tabela de indicadores do banco ou fundamentus
+        # Fallback para tabela de indicadores do banco ou fundamentus (Achado 2)
         ind_div = db.buscar_um(
-            "SELECT dy_12m, ultimo_dividendo, dy_patrimonial FROM indicadores WHERE ticker = ? AND dy_12m IS NOT NULL ORDER BY data DESC LIMIT 1",
+            "SELECT dy_3m, dy_6m, dy_12m, ultimo_dividendo, dy_patrimonial FROM indicadores WHERE ticker = ? AND dy_12m IS NOT NULL ORDER BY data DESC LIMIT 1",
             (ticker_norm,),
         )
         if ind_div:
             dy_12m = ind_div["dy_12m"]
+            dy_6m = ind_div["dy_6m"]
+            dy_3m = ind_div["dy_3m"]
             ultimo_dividendo = ind_div["ultimo_dividendo"]
             dy_patrimonial = ind_div["dy_patrimonial"]
             dividendos_fonte = "indicadores_historico"
@@ -328,7 +368,8 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         qtd_ativos = ind_op_dict.get("qtd_ativos") or 0
 
     # Tenta obter dados mais novos com Fundamentus
-    if 'res_fund' in locals() and res_fund:
+    res_fund = obter_fundamentus_memo()
+    if res_fund:
         liquidez_diaria = res_fund.get("liquidez_diaria") or liquidez_diaria
         vacancia_fisica = res_fund.get("vacancia_fisica") or vacancia_fisica
         qtd_ativos = res_fund.get("qtd_ativos") or qtd_ativos
@@ -456,8 +497,8 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         "pvp": pvp,
         "liquidez_diaria": liquidez_diaria,
         "ultimo_dividendo": ultimo_dividendo,
-        "dy_3m": ind_div["dy_3m"] if ('ind_div' in locals() and ind_div) else None,
-        "dy_6m": ind_div["dy_6m"] if ('ind_div' in locals() and ind_div) else None,
+        "dy_3m": dy_3m,
+        "dy_6m": dy_6m,
         "dy_12m": dy_12m,
         "dy_patrimonial": dy_patrimonial,
         "vacancia_fisica": vacancia_fisica,
@@ -471,7 +512,9 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
     }
     db.upsert("indicadores", dados_indicadores)
 
-    # Camada B: snapshot bruto do contexto auditável
+    # Camada B: snapshot bruto do contexto auditável (Achado 7)
+    # Nota: Um ticker pode ter múltiplos snapshots por dia se o payload mudar.
+    # O contexto mais recente de um dia específico é recuperado por ORDER BY criado_em DESC.
     payload_str = json.dumps(contexto, ensure_ascii=False)
     hash_obj = hashlib.sha256(payload_str.encode("utf-8"))
     hash_hex = hash_obj.hexdigest()
