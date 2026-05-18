@@ -9,10 +9,6 @@ Fluxo:
 4. envia texto para processamento.nlp_fnet.classificar_documento_com_ia;
 5. grava resultado em fnet_documentos_processados;
 6. consolida score por ticker em fnet_score_documental.
-
-Observação:
-- PDF depende de pypdf quando disponível;
-- quando extração real falha, usa metadados como fallback seguro.
 """
 from __future__ import annotations
 
@@ -34,13 +30,44 @@ HEADERS = {"User-Agent": "FIIA/1.0"}
 TABELA_PROCESSADOS = "fnet_documentos_processados"
 TABELA_SCORE = "fnet_score_documental"
 
-
 _NIVEL_PESO = {
     "BAIXO": 0,
     "MEDIO": 2,
     "MÉDIO": 2,
     "ALTO": 5,
     "INDEFINIDO": 1,
+}
+
+_COLUNAS_PROCESSADOS = {
+    "documento_fnet_id": "INTEGER",
+    "ticker": "TEXT",
+    "cnpj_fundo": "TEXT",
+    "protocolo": "TEXT",
+    "url_documento": "TEXT",
+    "assunto": "TEXT",
+    "tipo_documento": "TEXT",
+    "categoria": "TEXT",
+    "texto_extraido": "TEXT",
+    "texto_hash": "TEXT",
+    "nivel": "TEXT",
+    "motivo": "TEXT",
+    "termos_detectados": "TEXT",
+    "fonte_classificacao": "TEXT",
+    "modelo": "TEXT",
+    "processado_em": "TEXT",
+    "payload_json": "TEXT",
+}
+
+_COLUNAS_SCORE = {
+    "ticker": "TEXT",
+    "score_documental": "REAL",
+    "nivel_maximo": "TEXT",
+    "qtd_documentos": "INTEGER",
+    "qtd_alto": "INTEGER DEFAULT 0",
+    "qtd_medio": "INTEGER DEFAULT 0",
+    "qtd_baixo": "INTEGER DEFAULT 0",
+    "atualizado_em": "TEXT",
+    "payload_json": "TEXT",
 }
 
 
@@ -50,6 +77,18 @@ def _agora_iso() -> str:
 
 def _hash_texto(texto: str) -> str:
     return hashlib.sha256((texto or "").encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _colunas_existentes(tabela: str) -> set[str]:
+    rows = db.buscar_todos(f"PRAGMA table_info({tabela})")
+    return {row["name"] for row in rows}
+
+
+def _garantir_colunas(tabela: str, colunas: dict[str, str]) -> None:
+    existentes = _colunas_existentes(tabela)
+    for coluna, tipo in colunas.items():
+        if coluna not in existentes:
+            db.executar(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
 
 
 def garantir_tabelas() -> None:
@@ -66,13 +105,13 @@ def garantir_tabelas() -> None:
             tipo_documento TEXT,
             categoria TEXT,
             texto_extraido TEXT,
-            texto_hash TEXT NOT NULL UNIQUE,
+            texto_hash TEXT UNIQUE,
             nivel TEXT,
             motivo TEXT,
             termos_detectados TEXT,
             fonte_classificacao TEXT,
             modelo TEXT,
-            processado_em TEXT NOT NULL,
+            processado_em TEXT,
             payload_json TEXT
         )
         """
@@ -92,6 +131,8 @@ def garantir_tabelas() -> None:
         )
         """
     )
+    _garantir_colunas(TABELA_PROCESSADOS, _COLUNAS_PROCESSADOS)
+    _garantir_colunas(TABELA_SCORE, _COLUNAS_SCORE)
 
 
 def _normalizar_html(html: str) -> str:
@@ -150,6 +191,7 @@ def baixar_e_extrair_texto(url: str) -> dict[str, Any]:
 def _ticker_por_cnpj(cnpj_fundo: str | None) -> str | None:
     if not cnpj_fundo:
         return None
+    cnpj_norm = re.sub(r"\D", "", str(cnpj_fundo)).zfill(14)
     row = db.buscar_um(
         """
         SELECT ticker_b3_11
@@ -158,7 +200,7 @@ def _ticker_por_cnpj(cnpj_fundo: str | None) -> str | None:
            OR REPLACE(REPLACE(REPLACE(cnpj_classe,'.',''),'/',''),'-','') = ?
         LIMIT 1
         """,
-        (cnpj_fundo, cnpj_fundo),
+        (cnpj_norm, cnpj_norm),
     )
     return row["ticker_b3_11"] if row else None
 
@@ -276,11 +318,7 @@ def consolidar_score_documental() -> dict[str, Any]:
         score = max(0, 100 - penalidade)
         niveis = [(d.get("nivel") or "INDEFINIDO").upper() for d in docs]
         nivel_maximo = "ALTO" if "ALTO" in niveis else "MEDIO" if "MEDIO" in niveis or "MÉDIO" in niveis else "BAIXO" if "BAIXO" in niveis else "INDEFINIDO"
-        payload = {
-            "documentos": docs[-20:],
-            "penalidade": penalidade,
-            "regra": "100 - soma_pesos_documentais_com_teto_40",
-        }
+        payload = {"documentos": docs[-20:], "penalidade": penalidade, "regra": "100 - soma_pesos_documentais_com_teto_40"}
         db.executar(
             f"""
             INSERT INTO {TABELA_SCORE}
@@ -318,20 +356,28 @@ def processar_pendentes(limite: int = 20) -> dict[str, Any]:
     garantir_tabelas()
     pendentes = documentos_pendentes(limite=limite)
     resultados: list[dict[str, Any]] = []
-    erros = 0
+    erros: list[dict[str, Any]] = []
 
     for row in pendentes:
         try:
             resultados.append(processar_documento(row))
         except Exception as erro:
-            erros += 1
+            erro_info = {
+                "erro": str(erro),
+                "tipo": type(erro).__name__,
+                "documento_id": row.get("id"),
+                "url": row.get("url_documento"),
+                "protocolo": row.get("protocolo"),
+            }
+            erros.append(erro_info)
             observabilidade.registrar_erro("coleta.fnet_parser.processar_pendentes", erro, contexto={"documento": row})
 
     score = consolidar_score_documental()
     return {
         "pendentes_lidos": len(pendentes),
         "processados": len(resultados),
-        "erros": erros,
+        "erros": len(erros),
+        "erros_amostra": erros[:3],
         "score": score,
         "amostra": resultados[:5],
     }
