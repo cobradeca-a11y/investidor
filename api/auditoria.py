@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from acesso.rate_limit import dependencia_rate_limit
 from acesso.seguranca import verificar_api_key, resposta_erro_segura
 from banco import db
 from aprendizado.avaliador import taxa_acerto
@@ -54,7 +55,10 @@ def _parse_data_iso(valor: str | None) -> datetime | None:
         return None
 
 
-@router.get("/decisoes/auditaveis", dependencies=[Depends(verificar_api_key)])
+@router.get(
+    "/decisoes/auditaveis",
+    dependencies=[Depends(verificar_api_key), Depends(dependencia_rate_limit("sensivel"))],
+)
 def listar_decisoes_auditaveis_api(limite: int = 50) -> dict[str, Any]:
     """Lista decisões salvas com metadados de auditoria, sem disparar coleta."""
     try:
@@ -64,7 +68,10 @@ def listar_decisoes_auditaveis_api(limite: int = 50) -> dict[str, Any]:
         return resposta_erro_segura("Falha controlada ao consultar decisões auditáveis.", decisoes=[])
 
 
-@router.get("/decisoes/{decisao_id}/auditavel", dependencies=[Depends(verificar_api_key)])
+@router.get(
+    "/decisoes/{decisao_id}/auditavel",
+    dependencies=[Depends(verificar_api_key), Depends(dependencia_rate_limit("sensivel"))],
+)
 def consultar_decisao_auditavel_api(
     decisao_id: int,
     incluir_payload: bool = True,
