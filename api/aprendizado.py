@@ -96,7 +96,7 @@ def deterioracao(min_amostras: int = 10, limite_falso_positivo: float = 0.35) ->
         return resposta_erro_segura("Falha controlada ao detectar deterioração.", alertas=[])
 
 
-@router.post("/ajustes-peso")
+@router.post("/ajustes-peso", dependencies=[Depends(verificar_api_key)])
 def sugerir_ajuste(payload: AjustePesoRequest) -> dict[str, Any]:
     try:
         ajuste = tentativa_erro.sugerir_ajuste_peso(**payload.model_dump())

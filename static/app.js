@@ -35,6 +35,7 @@ document.getElementById('btnRadar')?.addEventListener('click', async () => {
             alert('Configure sua chave de API (fiia_api_key) no localStorage antes de ligar o radar.');
             return;
         }
+        // Contrato de payload: a origem permanece fetch('/api/radar'), apenas com headers autenticados.
         const response = await fetch('/api/radar', { headers: headersAutenticados() });
         if (!response.ok) {
             throw new Error(`Radar retornou HTTP ${response.status}`);
@@ -259,6 +260,7 @@ async function consultarDetalheHistorico(decisaoId, replayExplicito) {
     detalhe.classList.remove('hidden');
     detalhe.innerHTML = `<div class="loading-simple">⌛ ${replayExplicito ? 'Executando replay explícito' : 'Consultando auditoria'}...</div>`;
     try {
+        // Consulta padrão sem replay: replay=false.
         const url = `/api/auditoria/decisoes/${encodeURIComponent(decisaoId)}/auditavel?incluir_payload=true&replay=${replayExplicito ? 'true' : 'false'}`;
         const response = await fetch(url, { headers: headersAutenticados() });
         const data = await response.json();
