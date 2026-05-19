@@ -69,13 +69,22 @@ _SCORE_IA_VETO                = 4           # score IA <= 4 -> veto qualitativo
 # Helper: resultado de gate padronizado
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _gate_result(gate: int, status: str, motivo: str, penalidades: list = None) -> dict:
+def _gate_result(gate: int, status: str, motivo: str, penalidades: list = None,
+                 metricas: dict = None, fontes: list = None, motivos: list = None) -> dict:
+    eliminado = status.startswith("BLOQUEADO") or status.startswith("ELIMINADO")
+    aprovado = not eliminado
+    lista_motivos = motivos or [motivo]
+
     return {
         "gate":       gate,
         "status":     status,
+        "aprovado":   aprovado,
+        "eliminado":  eliminado,
         "motivo":     motivo,
+        "motivos":    lista_motivos,
+        "metricas":   metricas or {},
+        "fontes":     fontes or [],
         "penalidades": penalidades or [],
-        "eliminado":  status.startswith("BLOQUEADO") or status.startswith("ELIMINADO"),
     }
 
 
@@ -167,7 +176,8 @@ def _gate0_validacao(ticker: str, ind: dict, fii_info: dict, contexto: dict | No
     if ausentes:
         return _gate_result(
             0, "BLOQUEADO_DADOS_INSUFICIENTES",
-            f"Campos essenciais ausentes: {', '.join(ausentes)}."
+            f"Campos essenciais ausentes: {', '.join(ausentes)}.",
+            metricas={"campos_ausentes": ausentes}, fontes=["contexto", "banco"]
         )
 
     # Semáforo macro — não elimina, mas registra teto
@@ -180,10 +190,13 @@ def _gate0_validacao(ticker: str, ind: dict, fii_info: dict, contexto: dict | No
         return _gate_result(
             0, "APROVADO_DADOS_SEMAFORO_VERMELHO",
             f"Dados OK. Semáforo MACRO: VERMELHO — {macro.get('motivo')} "
-            f"Teto de decisão: {macro.get('teto_decisao')}."
+            f"Teto de decisão: {macro.get('teto_decisao')}.",
+            metricas={"semaforo": macro.get("cor"), "teto_macro": macro.get("teto_decisao")},
+            fontes=["BCB", "B3"]
         )
 
-    return _gate_result(0, "APROVADO_DADOS", f"Dados mínimos presentes. Semáforo macro: {macro.get('cor')}.")
+    return _gate_result(0, "APROVADO_DADOS", f"Dados mínimos presentes. Semáforo macro: {macro.get('cor')}.",
+                        metricas={"semaforo": macro.get("cor")}, fontes=["contexto"])
 
 
 
@@ -195,29 +208,34 @@ def _gate1_elegibilidade(ind: dict, fii_info: dict, meses_hist: int) -> dict:
     liquidez   = ind.get("liquidez_diaria") or 0.0
     patrimonio = ind.get("patrimonio_liquido")
 
+    metrics = {"liquidez": liquidez, "patrimonio": patrimonio, "meses_hist": meses_hist}
+
     if liquidez < _LIQUIDEZ_MINIMA_GATE1:
         val = f"R${liquidez:,.0f}" if liquidez else "desconhecida"
         return _gate_result(
             1, "ELIMINADO_LIQUIDEZ",
             f"Liquidez diária ({val}) abaixo de R${_LIQUIDEZ_MINIMA_GATE1:,.0f}. "
-            "Risco real de não conseguir sair da posição."
+            "Risco real de não conseguir sair da posição.",
+            metricas=metrics
         )
 
     if patrimonio is not None and patrimonio < _PATRIMONIO_MINIMO:
         return _gate_result(
             1, "ELIMINADO_TAMANHO",
             f"Patrimônio (R${patrimonio:,.0f}) abaixo de R${_PATRIMONIO_MINIMO:,.0f}. "
-            "Fundo pequeno demais para liquidez estrutural."
+            "Fundo pequeno demais para liquidez estrutural.",
+            metricas=metrics
         )
 
     if meses_hist < _HISTORICO_MINIMO_MESES_GATE1:
         return _gate_result(
             1, "BLOQUEADO_HISTORICO_INSUFICIENTE",
             f"Apenas {meses_hist} meses de histórico (mínimo: {_HISTORICO_MINIMO_MESES_GATE1}). "
-            "Impossível avaliar comportamento em ciclos."
+            "Impossível avaliar comportamento em ciclos.",
+            metricas=metrics
         )
 
-    return _gate_result(1, "APROVADO_ELEGIBILIDADE", "Liquidez, tamanho e histórico adequados.")
+    return _gate_result(1, "APROVADO_ELEGIBILIDADE", "Liquidez, tamanho e histórico adequados.", metricas=metrics)
 
 
 def _gate2_risco_estrutural(ticker: str, ind: dict, fii_info: dict) -> dict:
@@ -229,23 +247,27 @@ def _gate2_risco_estrutural(ticker: str, ind: dict, fii_info: dict) -> dict:
     tipo        = (fii_info.get("tipo") or "").upper()
     penalidades = []
 
+    eh_papel = "PAPEL" in (segmento or "").upper() or "RECEB" in (segmento or "").upper()
+    metrics = {"segmento": segmento, "tipo": tipo, "eh_papel": eh_papel}
+
     if tipo == "DESENVOLVIMENTO":
         return _gate_result(
             2, "ELIMINADO_RISCO_ESTRUTURAL",
             "Fundo de desenvolvimento: risco estruturalmente diferente. "
-            "Sem entrada automática - avaliação humana obrigatória."
+            "Sem entrada automática - avaliação humana obrigatória.",
+            metricas=metrics
         )
-
-    eh_papel = "PAPEL" in segmento or "RECEB" in segmento
 
     if not eh_papel:
         vacancia = ind.get("vacancia_fisica")
+        metrics["vacancia_fisica"] = vacancia
         if vacancia is not None:
             if vacancia > _VACANCIA_LIMITE_ELIMINAR:
                 return _gate_result(
                     2, "ELIMINADO_RISCO_ESTRUTURAL",
                     f"Vacância física de {vacancia:.1f}% acima do limite de "
-                    f"{_VACANCIA_LIMITE_ELIMINAR:.0f}%. Risco de renda comprometida."
+                    f"{_VACANCIA_LIMITE_ELIMINAR:.0f}%. Risco de renda comprometida.",
+                    metricas=metrics
                 )
             elif vacancia > _VACANCIA_LIMITE_PENALIZAR:
                 penalidades.append(
@@ -254,6 +276,7 @@ def _gate2_risco_estrutural(ticker: str, ind: dict, fii_info: dict) -> dict:
                 )
 
         qtd_ativos = ind.get("qtd_ativos")
+        metrics["qtd_ativos"] = qtd_ativos
         if qtd_ativos is not None and qtd_ativos < _ATIVOS_MINIMOS_TIJOLO:
             penalidades.append(
                 f"Concentração alta: apenas {int(qtd_ativos)} imóveis "
@@ -264,10 +287,10 @@ def _gate2_risco_estrutural(ticker: str, ind: dict, fii_info: dict) -> dict:
         return _gate_result(
             2, "PENALIZADO_ESTRUTURA",
             "Estrutura com pontos de atenção - aprovado com penalidades.",
-            penalidades=penalidades
+            penalidades=penalidades, metricas=metrics
         )
 
-    return _gate_result(2, "APROVADO_ESTRUTURA", "Estrutura dentro dos parâmetros aceitáveis.")
+    return _gate_result(2, "APROVADO_ESTRUTURA", "Estrutura dentro dos parâmetros aceitáveis.", metricas=metrics)
 
 
 def _gate3_qualidade_renda(ticker: str, ind: dict, pct_rec: Optional[float],
@@ -280,12 +303,19 @@ def _gate3_qualidade_renda(ticker: str, ind: dict, pct_rec: Optional[float],
     DY alto por evento único não é renda - é ilusão.
     """
     penalidades = []
+    metrics = {
+        "pct_recorrente": pct_rec,
+        "dy_recorrente": dy_recorrente,
+        "premio_cdi": premio_cdi,
+        "quedas_consecutivas": quedas
+    }
 
     if pct_rec is None:
         return _gate_result(
             3, "ELIMINADO_RENDA_INSUFICIENTE",
             "Histórico insuficiente para avaliar recorrência dos dividendos. "
-            "Impossível distinguir renda real de distribuição pontual."
+            "Impossível distinguir renda real de distribuição pontual.",
+            metricas=metrics
         )
 
     if pct_rec < _RECORRENCIA_MINIMA:
@@ -293,21 +323,24 @@ def _gate3_qualidade_renda(ticker: str, ind: dict, pct_rec: Optional[float],
             3, "ELIMINADO_RENDA_INSUFICIENTE",
             f"Apenas {pct_rec*100:.0f}% do dividendo é recorrente "
             f"(mínimo: {_RECORRENCIA_MINIMA*100:.0f}%). "
-            "DY pode estar inflado por distribuições extraordinárias não sustentáveis."
+            "DY pode estar inflado por distribuições extraordinárias não sustentáveis.",
+            metricas=metrics
         )
 
     if dy_recorrente is not None and premio_cdi is not None and premio_cdi < 0:
         return _gate_result(
             3, "ELIMINADO_RENDA_INSUFICIENTE",
             f"DY recorrente abaixo do CDI (prêmio: {premio_cdi:.2f} pp). "
-            "Renda fixa remunera melhor sem o risco deste ativo."
+            "Renda fixa remunera melhor sem o risco deste ativo.",
+            metricas=metrics
         )
 
     if quedas >= _QUEDAS_CONSECUTIVAS_LIMITE:
         return _gate_result(
             3, "ELIMINADO_RENDA_INSUFICIENTE",
             f"Dividendos em queda por {quedas} meses consecutivos. "
-            "Sinal forte de deterioração da renda."
+            "Sinal forte de deterioração da renda.",
+            metricas=metrics
         )
 
     if pct_rec < 0.85:
@@ -319,10 +352,10 @@ def _gate3_qualidade_renda(ticker: str, ind: dict, pct_rec: Optional[float],
         return _gate_result(
             3, "PENALIZADO_DY_IRREGULAR",
             "Renda aprovada mas com irregularidades menores.",
-            penalidades=penalidades
+            penalidades=penalidades, metricas=metrics
         )
 
-    return _gate_result(3, "APROVADO_RENDA", "Dividendos recorrentes e sustentáveis.")
+    return _gate_result(3, "APROVADO_RENDA", "Dividendos recorrentes e sustentáveis.", metricas=metrics)
 
 
 def _gate4_preco(margem: Optional[float], margem_stress: Optional[float],
@@ -333,9 +366,11 @@ def _gate4_preco(margem: Optional[float], margem_stress: Optional[float],
     Preço bom sem qualidade já foi eliminado antes.
     Este gate classifica - não elimina definitivamente.
     """
+    metrics = {"margem": margem, "margem_stress": margem_stress, "pvp": pvp}
+
     if margem is None:
         return _gate_result(4, "BLOQUEADO_PRECO",
-                            "Não foi possível calcular margem de segurança.")
+                            "Não foi possível calcular margem de segurança.", metricas=metrics)
 
     penalidades = []
 
@@ -347,7 +382,7 @@ def _gate4_preco(margem: Optional[float], margem_stress: Optional[float],
         return _gate_result(
             4, "EVITAR_PRECO",
             f"Margem negativa ({margem*100:.1f}%). Preço acima do valor justo estimado.",
-            penalidades=penalidades
+            penalidades=penalidades, metricas=metrics
         )
 
     if margem < _MARGEM_AGUARDAR:
@@ -355,14 +390,14 @@ def _gate4_preco(margem: Optional[float], margem_stress: Optional[float],
             4, "AGUARDAR_PRECO",
             f"Margem insuficiente ({margem*100:.1f}%). "
             "Fundo pode ser saudável, mas preço não oferece desconto para entrada.",
-            penalidades=penalidades
+            penalidades=penalidades, metricas=metrics
         )
 
     if margem < _MARGEM_COMPRAR_PARCIAL:
         return _gate_result(
             4, "MARGEM_MODERADA",
             f"Margem positiva ({margem*100:.1f}%), adequada para entrada parcial.",
-            penalidades=penalidades
+            penalidades=penalidades, metricas=metrics
         )
 
     # margem >= 15%
@@ -375,7 +410,7 @@ def _gate4_preco(margem: Optional[float], margem_stress: Optional[float],
     return _gate_result(
         4, "MARGEM_FORTE",
         f"Margem expressiva ({margem*100:.1f}%). Candidato forte.",
-        penalidades=penalidades
+        penalidades=penalidades, metricas=metrics
     )
 
 
@@ -385,11 +420,13 @@ def _gate5_confiabilidade(confiabilidade: int) -> dict:
     Não elimina por mérito - bloqueia quando o dado é fraco demais para confiar.
     Dois fundos com o mesmo resultado mas dados diferentes não têm o mesmo peso.
     """
+    metrics = {"score_confianca": confiabilidade}
     if confiabilidade < 60:
         return _gate_result(
             5, "BLOQUEADO_CONFIABILIDADE_BAIXA",
             f"Confiabilidade dos dados em {confiabilidade}% (mínimo: 60%). "
-            "Decidir com dado fraco demais é falsa precisão."
+            "Decidir com dado fraco demais é falsa precisão.",
+            metricas=metrics
         )
     if confiabilidade < 70:
         nivel = "CONFIANCA_BAIXA"
@@ -400,7 +437,8 @@ def _gate5_confiabilidade(confiabilidade: int) -> dict:
 
     return _gate_result(
         5, nivel,
-        f"Confiabilidade dos dados: {confiabilidade}%."
+        f"Confiabilidade dos dados: {confiabilidade}%.",
+        metricas=metrics
     )
 
 
@@ -411,10 +449,13 @@ def _gate6_qualitativo(score_ia: Optional[float], riscos_ia: Optional[list],
     A IA não aprova compra. A IA só veta, reduz confiança ou complementa.
     Se os números passaram, a IA verifica o que os números ainda não capturaram.
     """
+    metrics = {"score_ia": score_ia, "tom_gestor": tom_gestor, "ia_status": ia_status}
+
     if ia_status != "OK" or score_ia is None:
         return _gate_result(
             6, "IA_INDISPONIVEL",
-            "Análise qualitativa indisponível. Decisão baseada apenas nos indicadores quantitativos."
+            "Análise qualitativa indisponível. Decisão baseada apenas nos indicadores quantitativos.",
+            metricas=metrics
         )
 
     if score_ia <= _SCORE_IA_VETO:
@@ -422,7 +463,8 @@ def _gate6_qualitativo(score_ia: Optional[float], riscos_ia: Optional[list],
         return _gate_result(
             6, "VETO_QUALITATIVO",
             f"IA identificou riscos graves (score qualitativo: {score_ia}/10). "
-            f"Riscos: {riscos_str}."
+            f"Riscos: {riscos_str}.",
+            metricas=metrics, motivos=riscos_ia
         )
 
     penalidades = []
@@ -435,12 +477,13 @@ def _gate6_qualitativo(score_ia: Optional[float], riscos_ia: Optional[list],
         return _gate_result(
             6, "RISCO_QUALITATIVO_ALTO",
             "Análise qualitativa aprovada com ressalvas.",
-            penalidades=penalidades
+            penalidades=penalidades, metricas=metrics
         )
 
     return _gate_result(
         6, "QUALITATIVO_OK",
-        f"Análise qualitativa sem red flags. Score IA: {score_ia}/10."
+        f"Análise qualitativa sem red flags. Score IA: {score_ia}/10.",
+        metricas=metrics
     )
 
 

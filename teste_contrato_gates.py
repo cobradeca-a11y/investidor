@@ -1,0 +1,36 @@
+import pytest
+from decisao import motor_decisao
+from decisao.motor_decisao import _gate_result, _gate0_validacao, _gate1_elegibilidade
+
+def test_contrato_minimo_gates():
+    # Testa a função auxiliar de resultados
+    res = _gate_result(0, "APROVADO_DADOS", "Motivo generico")
+    
+    # Verifica campos mínimos
+    assert "gate" in res
+    assert "status" in res
+    assert "aprovado" in res
+    assert "eliminado" in res
+    assert "motivos" in res
+    assert "metricas" in res
+    assert "fontes" in res
+    assert "penalidades" in res
+    
+    assert res["aprovado"] is True
+    assert res["eliminado"] is False
+    assert isinstance(res["motivos"], list)
+    assert isinstance(res["metricas"], dict)
+    assert isinstance(res["fontes"], list)
+    assert isinstance(res["penalidades"], list)
+
+def test_contrato_gate_eliminado():
+    res = _gate_result(1, "ELIMINADO_LIQUIDEZ", "Motivo")
+    assert res["aprovado"] is False
+    assert res["eliminado"] is True
+
+def test_contrato_na_pratica_gate0():
+    res = _gate0_validacao("TEST11", {"preco": 100.0, "pvp": 1.0, "liquidez_diaria": 2000000, "vpa": 100.0, "dy_12m": 0.1}, {"segmento": "LOGISTICA"})
+    assert "aprovado" in res
+    assert "motivos" in res
+    assert "metricas" in res
+    assert "fontes" in res
