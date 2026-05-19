@@ -7,17 +7,21 @@ Evolução profissional:
 - mantém compatibilidade com vereditos legados em dict;
 - aceita o novo objeto DecisaoFIIA;
 - grava payload completo em JSON para auditoria e backtesting;
+- grava hash SHA-256 verificável do payload normalizado;
+- persiste versão do contexto e versão do motor;
 - auto-migra colunas novas sem apagar histórico.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 from typing import Any
 
 from banco import db
 from sistema import observabilidade
+from decisao.objeto_decisao import normalizar_contrato_decisao
 
 try:
     from decisao.objeto_decisao import DecisaoFIIA
@@ -48,9 +52,13 @@ CREATE TABLE IF NOT EXISTS decisoes (
     risco             TEXT,
     score_final       REAL,
     preco_teto        REAL,
-    payload_json      TEXT
+    payload_json      TEXT,
+    payload_hash      TEXT,
+    contexto_versao   TEXT,
+    versao_motor      TEXT
 )
 """
+
 
 def _colunas_decisoes() -> list[str]:
     rows = db.buscar_todos("PRAGMA table_info(decisoes)")
@@ -92,6 +100,9 @@ def _garantir_tabela() -> None:
         "score_final": "REAL",
         "preco_teto": "REAL",
         "payload_json": "TEXT",
+        "payload_hash": "TEXT",
+        "contexto_versao": "TEXT",
+        "versao_motor": "TEXT",
     }
 
     migrou = False
@@ -109,7 +120,7 @@ def _garantir_tabela() -> None:
             # Verifica se as colunas de origem existem antes do COALESCE
             colunas_atuais = _colunas_decisoes()
             set_clauses = []
-            
+
             if "data" in colunas_atuais:
                 set_clauses.append("data_decisao = COALESCE(data_decisao, data)")
             if "status" in colunas_atuais:
@@ -118,7 +129,9 @@ def _garantir_tabela() -> None:
                 set_clauses.append("motivo = COALESCE(motivo, justificativa)")
             if "margem_seguranca" in colunas_atuais:
                 set_clauses.append("margem = COALESCE(margem, margem_seguranca)")
-                
+            if "versao_modelo" in colunas_atuais:
+                set_clauses.append("versao_motor = COALESCE(versao_motor, versao_modelo)")
+
             if set_clauses:
                 sql = f"UPDATE decisoes SET {', '.join(set_clauses)}"
                 db.executar(sql)
@@ -127,62 +140,162 @@ def _garantir_tabela() -> None:
             print(f"[decisao] Erro ao preencher dados legados: {e}")
 
 
+def _json_normalizado(valor: Any) -> str:
+    """Serializa JSON com ordenação estável para auditoria e hash."""
+    return json.dumps(
+        valor,
+        ensure_ascii=False,
+        default=str,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _hash_payload_json(payload_json: str) -> str:
+    return hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+
+
 def _json_seguro(valor: Any) -> str:
-    return json.dumps(valor, ensure_ascii=False, default=str)
+    """Serialização estável para campos JSON auxiliares."""
+    return _json_normalizado(valor)
+
+
+def _versao_motor(payload: dict[str, Any]) -> str | None:
+    return (
+        payload.get("versao_motor")
+        or payload.get("versao_modelo")
+        or payload.get("modelo_versao")
+    )
+
+
+def _contexto_versao(payload: dict[str, Any]) -> str | None:
+    contexto = payload.get("contexto") if isinstance(payload.get("contexto"), dict) else {}
+    return payload.get("contexto_versao") or contexto.get("contexto_versao")
+
+
+def _campos_auditoria(payload: dict[str, Any]) -> dict[str, str | None]:
+    """
+    Prepara o payload canônico auditável.
+
+    O hash é sempre calculado sobre o payload_json normalizado, com chaves em
+    ordem estável. Esses campos permitem reconstruir e validar a decisão salva.
+    """
+    payload_normalizado = normalizar_contrato_decisao(payload, payload.get("contexto") if isinstance(payload.get("contexto"), dict) else None)
+    payload_json = _json_normalizado(payload_normalizado)
+    return {
+        "payload_json": payload_json,
+        "payload_hash": _hash_payload_json(payload_json),
+        "contexto_versao": _contexto_versao(payload_normalizado),
+        "versao_motor": _versao_motor(payload_normalizado),
+    }
 
 
 def _normalizar_veredito(veredito: dict[str, Any]) -> dict[str, Any]:
     """Normaliza dict legado do motor_decisao para persistência."""
+    payload = normalizar_contrato_decisao(veredito, veredito.get("contexto") if isinstance(veredito.get("contexto"), dict) else None)
+    auditoria = _campos_auditoria(payload)
     return {
-        "ticker": veredito.get("ticker"),
-        "data_decisao": veredito.get("data_analise", date.today().isoformat()),
-        "decisao": veredito.get("decisao"),
-        "motivo": veredito.get("motivo"),
-        "confianca": veredito.get("confianca"),
-        "preco_na_decisao": veredito.get("preco_atual"),
-        "preco_justo": veredito.get("preco_justo"),
-        "preco_entrada": veredito.get("preco_entrada"),
-        "margem": veredito.get("margem"),
-        "score_ia": veredito.get("score_ia"),
-        "ia_status": veredito.get("ia_status"),
-        "tom_gestor": veredito.get("tom_gestor"),
-        "travas": _json_seguro(veredito.get("travas", [])),
-        "riscos_ia": _json_seguro(veredito.get("riscos_ia", [])),
-        "versao_modelo": veredito.get("versao_modelo", "2.0"),
-        "risco": veredito.get("risco"),
-        "score_final": veredito.get("score_final"),
-        "preco_teto": veredito.get("preco_teto") or veredito.get("preco_entrada"),
-        "payload_json": _json_seguro(veredito),
+        "ticker": payload.get("ticker"),
+        "data_decisao": payload.get("data_analise", date.today().isoformat()),
+        "decisao": payload.get("decisao"),
+        "motivo": payload.get("motivo"),
+        "confianca": payload.get("confianca"),
+        "preco_na_decisao": payload.get("preco_atual"),
+        "preco_justo": payload.get("preco_justo"),
+        "preco_entrada": payload.get("preco_entrada"),
+        "margem": payload.get("margem"),
+        "score_ia": payload.get("score_ia"),
+        "ia_status": payload.get("ia_status"),
+        "tom_gestor": payload.get("tom_gestor"),
+        "travas": _json_seguro(payload.get("travas", [])),
+        "riscos_ia": _json_seguro(payload.get("riscos_ia", [])),
+        "versao_modelo": payload.get("versao_modelo", "2.0"),
+        "risco": payload.get("risco"),
+        "score_final": payload.get("score_final"),
+        "preco_teto": payload.get("preco_teto") or payload.get("preco_entrada"),
+        **auditoria,
     }
 
 
 def _normalizar_objeto_decisao(decisao: Any) -> dict[str, Any]:
     """Normaliza DecisaoFIIA para persistência."""
-    payload = decisao.to_dict()
+    payload = normalizar_contrato_decisao(decisao.to_dict(), getattr(decisao, "contexto", None))
     motivo = payload.get("motivo") or "; ".join(payload.get("justificativas", []))
     riscos = payload.get("riscos", [])
+    auditoria = _campos_auditoria(payload)
 
     return {
         "ticker": payload.get("ticker"),
-        "data_decisao": payload.get("criado_em", date.today().isoformat())[:10],
-        "decisao": payload.get("acao"),
+        "data_decisao": payload.get("data_analise") or payload.get("criado_em", date.today().isoformat())[:10],
+        "decisao": payload.get("decisao") or payload.get("acao"),
         "motivo": motivo,
         "confianca": payload.get("confianca"),
         "preco_na_decisao": payload.get("preco_atual"),
         "preco_justo": payload.get("preco_justo"),
         "preco_entrada": payload.get("preco_entrada") or payload.get("preco_teto"),
         "margem": payload.get("margem") or payload.get("margem_seguranca"),
-        "score_ia": None,
-        "ia_status": payload.get("contexto", {}).get("ia_status"),
-        "tom_gestor": payload.get("contexto", {}).get("tom_gestor"),
+        "score_ia": payload.get("score_ia"),
+        "ia_status": payload.get("contexto", {}).get("ia_status") if isinstance(payload.get("contexto"), dict) else None,
+        "tom_gestor": payload.get("contexto", {}).get("tom_gestor") if isinstance(payload.get("contexto"), dict) else None,
         "travas": _json_seguro(payload.get("gatilhos_invalidez", [])),
         "riscos_ia": _json_seguro(riscos),
         "versao_modelo": payload.get("versao_modelo", "fiia-decisao-v1"),
         "risco": payload.get("risco"),
         "score_final": payload.get("score_final"),
         "preco_teto": payload.get("preco_teto"),
-        "payload_json": _json_seguro(payload),
+        **auditoria,
     }
+
+
+def validar_payload_salvo(registro: dict[str, Any]) -> dict[str, Any]:
+    """
+    Valida um registro de decisão já carregado do banco.
+
+    Retorna o payload reconstruído, o hash calculado e se ele confere com o
+    hash persistido. Não altera banco nem executa coleta.
+    """
+    payload_json = registro.get("payload_json") or ""
+    payload_hash_salvo = registro.get("payload_hash")
+    hash_calculado = _hash_payload_json(payload_json) if payload_json else None
+
+    payload = None
+    erro = None
+    try:
+        payload = json.loads(payload_json) if payload_json else None
+    except Exception as exc:
+        erro = str(exc)
+
+    return {
+        "valido": bool(payload_json and payload_hash_salvo and hash_calculado == payload_hash_salvo and erro is None),
+        "payload": payload,
+        "payload_hash_salvo": payload_hash_salvo,
+        "payload_hash_calculado": hash_calculado,
+        "contexto_versao": registro.get("contexto_versao") or (payload or {}).get("contexto_versao"),
+        "versao_motor": registro.get("versao_motor") or (payload or {}).get("versao_motor") or (payload or {}).get("versao_modelo"),
+        "erro": erro,
+    }
+
+
+def reconstruir_validar_payload_salvo(decisao_id: int) -> dict[str, Any]:
+    """
+    Reconstrói e valida uma decisão persistida pelo ID.
+
+    Esta função é o ponto de auditoria: a decisão salva pode ser reaberta,
+    ter seu payload normalizado reconstituído e seu hash verificado.
+    """
+    _garantir_tabela()
+    row = db.buscar_um("SELECT * FROM decisoes WHERE id = ?", (decisao_id,))
+    if not row:
+        return {
+            "valido": False,
+            "payload": None,
+            "payload_hash_salvo": None,
+            "payload_hash_calculado": None,
+            "contexto_versao": None,
+            "versao_motor": None,
+            "erro": "Decisão não encontrada.",
+        }
+    return validar_payload_salvo(dict(row))
 
 
 def gravar(veredito: dict[str, Any]) -> int:
@@ -200,7 +313,13 @@ def gravar(veredito: dict[str, Any]) -> int:
             "decisao.persistencia",
             "Veredito legado salvo",
             ticker=dados.get("ticker"),
-            contexto={"decisao_id": decisao_id, "decisao": dados.get("decisao")},
+            contexto={
+                "decisao_id": decisao_id,
+                "decisao": dados.get("decisao"),
+                "payload_hash": dados.get("payload_hash"),
+                "contexto_versao": dados.get("contexto_versao"),
+                "versao_motor": dados.get("versao_motor"),
+            },
         )
         print(f"[decisao] OK {dados.get('ticker')} -> {dados.get('decisao')} (id={decisao_id})")
         return decisao_id or -1
@@ -217,7 +336,7 @@ def gravar(veredito: dict[str, Any]) -> int:
 def gravar_decisao(decisao: Any) -> int:
     """
     Grava uma DecisaoFIIA no banco.
-    Mantém payload completo para auditoria futura.
+    Mantém payload completo e hash verificável para auditoria futura.
     """
     _garantir_tabela()
     dados = _normalizar_objeto_decisao(decisao)
@@ -229,7 +348,13 @@ def gravar_decisao(decisao: Any) -> int:
             "decisao.persistencia",
             "Objeto DecisaoFIIA salvo",
             ticker=dados.get("ticker"),
-            contexto={"decisao_id": decisao_id, "decisao": dados.get("decisao")},
+            contexto={
+                "decisao_id": decisao_id,
+                "decisao": dados.get("decisao"),
+                "payload_hash": dados.get("payload_hash"),
+                "contexto_versao": dados.get("contexto_versao"),
+                "versao_motor": dados.get("versao_motor"),
+            },
         )
         return decisao_id or -1
     except Exception as erro:
