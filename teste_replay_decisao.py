@@ -1,10 +1,9 @@
 from decisao import auditoria_decisao
 from decisao.objeto_decisao import normalizar_contrato_decisao
 from decisao.persistencia_decisao import (
-    VERSAO_MOTOR_DECISAO,
     _normalizar_veredito,
-    _payload_de_json,
-    _payload_hash,
+    _hash_payload_json,
+    validar_payload_salvo,
 )
 
 
@@ -49,73 +48,58 @@ def _payload_base():
 
 def test_persistencia_salva_hash_auditavel():
     dados = _normalizar_veredito(_payload_base())
-    payload = _payload_de_json(dados["payload_json"])
+    validacao = validar_payload_salvo(dados)
 
-    assert dados["payload_hash"] == _payload_hash(payload)
+    assert validacao["valido"] is True
+    assert dados["payload_hash"] == _hash_payload_json(dados["payload_json"])
     assert dados["contexto_versao"] == "asset-context-test"
-    assert dados["versao_motor"] == VERSAO_MOTOR_DECISAO
+    assert dados["versao_motor"]
 
 
-def test_replay_sem_drift(monkeypatch):
-    payload = _payload_base()
+def test_consulta_auditavel_sem_replay(monkeypatch):
+    dados = _normalizar_veredito(_payload_base())
+    dados["id"] = 10
+
+    monkeypatch.setattr(auditoria_decisao, "buscar_decisao_salva", lambda decisao_id: dados)
+
+    resultado = auditoria_decisao.consultar_decisao_auditavel(10, incluir_payload=True, replay=False)
+
+    assert resultado["status"] == "ok"
+    assert resultado["decisao"]["id"] == 10
+    assert resultado["auditoria"]["hash_valido"] is True
+    assert resultado["replay"]["executado"] is False
+    assert resultado["payload"]["ticker"] == "HGLG11"
+
+
+def test_consulta_auditavel_com_replay(monkeypatch):
+    dados = _normalizar_veredito(_payload_base())
+    dados["id"] = 11
+
+    monkeypatch.setattr(auditoria_decisao, "buscar_decisao_salva", lambda decisao_id: dados)
     monkeypatch.setattr(
         auditoria_decisao,
-        "reconstruir_payload_decisao",
+        "replay_decisao_salva",
         lambda decisao_id: {
-            "decisao_id": decisao_id,
-            "payload": payload,
-            "payload_hash_original": _payload_hash(payload),
-            "versao_motor": "fase3-contrato-v1",
+            "status": "ok",
+            "payload_hash_salvo": dados["payload_hash"],
+            "payload_hash_replay": dados["payload_hash"],
+            "replay_deterministico": True,
+            "fonte_replay": "payload_json_persistido",
         },
     )
 
-    resultado = auditoria_decisao.auditar_replay_decisao(10, payload_recalculado=dict(payload))
+    resultado = auditoria_decisao.consultar_decisao_auditavel(11, incluir_payload=False, replay=True)
 
-    assert resultado["decisao_id"] == 10
-    assert resultado["hash_confere"] is True
-    assert resultado["campos_divergentes"] == []
-    assert resultado["versao_motor_original"] == "fase3-contrato-v1"
-    assert resultado["versao_motor_atual"] == VERSAO_MOTOR_DECISAO
-
-
-def test_replay_detecta_drift(monkeypatch):
-    payload = _payload_base()
-    recalculado = dict(payload)
-    recalculado["decisao"] = "AGUARDAR"
-    recalculado["motivo"] = "Mudanca detectada."
-
-    monkeypatch.setattr(
-        auditoria_decisao,
-        "reconstruir_payload_decisao",
-        lambda decisao_id: {
-            "decisao_id": decisao_id,
-            "payload": payload,
-            "payload_hash_original": _payload_hash(payload),
-            "versao_motor": "fase3-contrato-v1",
-        },
-    )
-
-    resultado = auditoria_decisao.auditar_replay_decisao(11, payload_recalculado=recalculado)
-
-    assert resultado["hash_confere"] is False
-    assert "decisao" in resultado["campos_divergentes"]
-    assert "motivo" in resultado["campos_divergentes"]
+    assert resultado["status"] == "ok"
+    assert resultado["replay"]["executado"] is True
+    assert resultado["replay"]["replay_deterministico"] is True
+    assert resultado["replay"]["divergencia_replay"] is False
 
 
-def test_replay_aceita_reexecutor_injetado(monkeypatch):
-    payload = _payload_base()
-    monkeypatch.setattr(
-        auditoria_decisao,
-        "reconstruir_payload_decisao",
-        lambda decisao_id: {
-            "decisao_id": decisao_id,
-            "payload": payload,
-            "payload_hash_original": _payload_hash(payload),
-            "versao_motor": "fase3-contrato-v1",
-        },
-    )
+def test_consulta_auditavel_nao_encontrada(monkeypatch):
+    monkeypatch.setattr(auditoria_decisao, "buscar_decisao_salva", lambda decisao_id: None)
 
-    resultado = auditoria_decisao.auditar_replay_decisao(12, reexecutar=lambda original: dict(original))
+    resultado = auditoria_decisao.consultar_decisao_auditavel(999)
 
-    assert resultado["hash_confere"] is True
-    assert resultado["campos_divergentes"] == []
+    assert resultado["status"] == "nao_encontrado"
+    assert resultado["decisao_id"] == 999
