@@ -16,6 +16,8 @@ detecção de falso positivo / falso negativo
 sugestão controlada de ajuste
 ↓
 aprovação humana obrigatória
+↓
+registro auditável do feedback humano
 ```
 
 Nenhum ajuste é aplicado automaticamente.
@@ -114,7 +116,56 @@ Tipos de sugestão:
 - `REVISAR_REGRA`;
 - `MANTER_SEM_ALTERACAO`.
 
-## 6. Bloqueio de aplicação automática
+## 6. Estados de aprovação humana
+
+Toda sugestão possui um estado auditável:
+
+```text
+PENDENTE
+APROVADA
+REJEITADA
+EXPIRADA
+```
+
+Regras:
+
+- Toda sugestão nasce como `PENDENTE`.
+- Apenas sugestões `PENDENTE` podem mudar de estado.
+- Aprovar uma sugestão não altera motor, gates, thresholds ou pesos automaticamente.
+- Rejeitar uma sugestão apenas registra feedback humano.
+- Expirar uma sugestão apenas encerra sua validade operacional.
+
+Cada decisão humana deve registrar:
+
+- `usuario_decisao`;
+- `origem_decisao`;
+- `decidido_em`;
+- `justificativa_decisao`.
+
+## 7. Endpoints de feedback humano
+
+Endpoints protegidos por API key:
+
+```text
+GET  /api/aprendizado/ajustes
+POST /api/aprendizado/ajustes/{sugestao_id}/aprovar
+POST /api/aprendizado/ajustes/{sugestao_id}/rejeitar
+POST /api/aprendizado/ajustes/{sugestao_id}/expirar
+```
+
+Payload de aprovação/rejeição/expiração:
+
+```json
+{
+  "usuario": "andre",
+  "origem": "API",
+  "justificativa": "Amostra suficiente para revisão manual."
+}
+```
+
+Esses endpoints não disparam scraping e não chamam o motor decisório.
+
+## 8. Bloqueio de aplicação automática
 
 A função `aplicar_sugestao_automaticamente()` existe apenas como bloqueio explícito.
 
@@ -128,12 +179,21 @@ Resposta esperada:
 }
 ```
 
-## 7. Persistência
+## 9. Persistência
 
 Tabelas aditivas criadas no `schema.sql`:
 
 - `aprendizado_resultados_operacionais`;
 - `aprendizado_sugestoes_ajuste_pesos`.
+
+A tabela de sugestões registra também:
+
+- `estado`;
+- `usuario_decisao`;
+- `origem_decisao`;
+- `decidido_em`;
+- `justificativa_decisao`;
+- `data_expiracao`.
 
 As migrações são aditivas:
 
@@ -143,7 +203,7 @@ As migrações são aditivas:
 - não alteram motor;
 - não alteram contrato final da decisão.
 
-## 8. Contratos preservados
+## 10. Contratos preservados
 
 A camada de aprendizado não pode:
 
@@ -153,23 +213,28 @@ A camada de aprendizado não pode:
 - alterar coleta/contexto;
 - aplicar pesos automaticamente;
 - esconder regra de ajuste;
-- usar rede em teste unitário.
+- usar rede em teste unitário;
+- aceitar feedback humano sem autenticação nos endpoints de aprovação.
 
-## 9. Comandos de verificação
+## 11. Comandos de verificação
 
 ```bash
-python -m compileall -q aprendizado config banco decisao
-pytest teste_aprendizado_operacional.py teste_contrato_decisao.py
+python -m compileall -q aprendizado api banco config
+pytest teste_aprovacao_ajustes.py teste_seguranca_api.py
 ```
 
-## 10. Checklist de homologação
+## 12. Checklist de homologação
 
 ```text
 [ ] Janelas 30, 90, 180 e 365 suportadas.
 [ ] Falso positivo detectado.
 [ ] Falso negativo detectado.
 [ ] Sugestões contêm evidência, amostra, período e impacto estimado.
-[ ] Sugestões exigem aprovação humana.
+[ ] Sugestões nascem como PENDENTE.
+[ ] Estados APROVADA, REJEITADA e EXPIRADA funcionam.
+[ ] Feedback humano registra usuário, origem, data e justificativa.
+[ ] Endpoints de aprovação exigem autenticação.
+[ ] Aprovação não altera motor automaticamente.
 [ ] Nenhum ajuste é aplicado automaticamente.
 [ ] Nenhum threshold de gate foi alterado.
 [ ] Contrato final da decisão preservado.
