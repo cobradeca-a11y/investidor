@@ -14,6 +14,7 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: "1"
+      FIIA_ENV: "ci"
       FIIA_OBSERVABILIDADE: "0"
       FIIA_API_KEY: "ci-fiia-key"
 
@@ -40,6 +41,9 @@ jobs:
 
       - name: Check Python Syntax
         run: python -m compileall -q acesso api aprendizado backtest banco cadastro carteira coleta config decisao educacao mercado operacional processamento relatorios servicos sistema validacao app.py main.py
+
+      - name: Testar segurança da API
+        run: pytest teste_seguranca_api.py
 
       - name: Testar Zero DB Query Mode
         run: pytest teste_proibicao_sqlite.py teste_regressao_zero_db.py
