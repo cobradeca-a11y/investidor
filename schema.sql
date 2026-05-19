@@ -346,8 +346,15 @@ CREATE TABLE IF NOT EXISTS aprendizado_sugestoes_ajuste_pesos (
     motivo                      TEXT NOT NULL,
     aplicado                    INTEGER NOT NULL DEFAULT 0,
     requer_aprovacao_humana     INTEGER NOT NULL DEFAULT 1,
+    estado                      TEXT NOT NULL DEFAULT 'PENDENTE' CHECK(estado IN ('PENDENTE', 'APROVADA', 'REJEITADA', 'EXPIRADA')),
+    usuario_decisao             TEXT,
+    origem_decisao              TEXT,
+    decidido_em                 TEXT,
+    justificativa_decisao       TEXT,
+    data_expiracao              TEXT,
     criado_em                   TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_aprendizado_sugestoes_ajuste_pesos_regra ON aprendizado_sugestoes_ajuste_pesos(regra);
 CREATE INDEX IF NOT EXISTS idx_aprendizado_sugestoes_ajuste_pesos_aplicado ON aprendizado_sugestoes_ajuste_pesos(aplicado);
+CREATE INDEX IF NOT EXISTS idx_aprendizado_sugestoes_ajuste_pesos_estado ON aprendizado_sugestoes_ajuste_pesos(estado);
