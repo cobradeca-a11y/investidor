@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from acesso.rate_limit import dependencia_rate_limit
 from acesso.seguranca import verificar_api_key, resposta_erro_segura
 from carteira import repositorio_carteira
 from carteira.politica_carteira import avaliar_alocacao_sugerida
@@ -26,7 +27,7 @@ from sistema import observabilidade
 router = APIRouter(
     prefix="/api/carteira",
     tags=["carteira"],
-    dependencies=[Depends(verificar_api_key)],
+    dependencies=[Depends(verificar_api_key), Depends(dependencia_rate_limit("sensivel"))],
 )
 
 
