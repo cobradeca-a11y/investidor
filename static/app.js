@@ -1,6 +1,13 @@
 /**
  * app.js - FIIA Intelligence Interface
- * Versão 2.1 - Dashboard de Auditoria
+ * Versão 2.2 - UX de Explicabilidade da Decisão
+ *
+ * Regras:
+ * - não recalcula hash no frontend;
+ * - não altera payload da API;
+ * - renderiza campos ausentes sem quebrar;
+ * - mantém cards bloqueados visíveis;
+ * - exibe gates_detalhes quando disponível.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pct_recorrente: 100,
             trilha_gates: ["G0:APROVADO_DADOS", "G1:APROVADO_ELEG", "G2:APROVADO_ESTR", "G3:APROVADO_RENDA", "G4:APROVADO_PRECO"],
             gates_detalhes: {
-                "0": { gate: 0, status: "APROVADO_DADOS", fontes: ["contexto"], metricas: { semaforo: "VERDE" }, motivos: ["Dados mínimos presentes."], penalidades: [] }
+                "0": { gate: 0, status: "APROVADO_DADOS", aprovado: true, fontes: ["contexto"], metricas: { semaforo: "VERDE" }, motivos: ["Dados mínimos presentes."], penalidades: [] }
             },
             payload_hash: "demo-hash",
             contexto_versao: "asset-context-v1.3",
@@ -35,7 +42,9 @@ document.addEventListener('DOMContentLoaded', () => {
         grid.innerHTML = '<div class="loading-simple">⌛ Carregando ativos...</div>';
         
         try {
-            const response = await fetch('/api/carteira/posicoes');
+            const apiKey = localStorage.getItem('fiia_api_key');
+            const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+            const response = await fetch('/api/carteira/posicoes', { headers });
             const data = await response.json();
             
             if (data.status === 'ok' && data.posicoes && data.posicoes.length > 0) {
@@ -171,7 +180,7 @@ document.getElementById('btnRadar').addEventListener('click', async () => {
         renderResults(data.oportunidades || [], 'results');
     } catch (error) {
         console.error(error);
-        alert('Erro ao ligar o radar. Verifique se o servidor está rodando ou se a chave API é válida.');
+        alert('Erro ao ligar o radar. Verifique se o servidor está rodando.');
         loading.classList.add('hidden');
         welcomeView.classList.remove('hidden');
     } finally {
@@ -181,6 +190,15 @@ document.getElementById('btnRadar').addEventListener('click', async () => {
 });
 
 document.getElementById('btnClear').addEventListener('click', () => window.location.reload());
+
+function escapeHtml(valor) {
+    return textoSeguro(valor, '').replace(/[&<>"]/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;'
+    }[char]));
+}
 
 function asArray(valor) {
     if (!valor) return [];
@@ -215,6 +233,23 @@ function textoSeguro(valor, fallback = 'Não informado') {
     return String(valor);
 }
 
+function numeroSeguro(valor, fallback = 0) {
+    const n = Number(valor);
+    return Number.isFinite(n) ? n : fallback;
+}
+
+function moeda(valor) {
+    const n = Number(valor);
+    if (!Number.isFinite(n) || n <= 0) return '---';
+    return `R$ ${n.toFixed(2)}`;
+}
+
+function percentual(valor, casas = 1) {
+    const n = Number(valor);
+    if (!Number.isFinite(n)) return '---';
+    return `${n > 0 ? '+' : ''}${n.toFixed(casas)}%`;
+}
+
 function normalizarClasse(valor) {
     return textoSeguro(valor, 'indefinido').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '_');
 }
@@ -224,16 +259,24 @@ function resumirHash(hash) {
     return h.length > 18 ? `${h.slice(0, 12)}…${h.slice(-6)}` : h;
 }
 
+function renderListaRotulos(itens, classe = 'audit-chip') {
+    const lista = asArray(itens).filter(Boolean).map(item => escapeHtml(textoSeguro(item)));
+    if (!lista.length) return '<span class="audit-muted">Não informado</span>';
+    return lista.map(item => `<span class="${classe}">${item}</span>`).join('');
+}
+
 function normalizarGatesDetalhes(raw) {
     const obj = asObject(raw);
     return Object.keys(obj).sort((a, b) => Number(a) - Number(b)).map((chave) => {
         const gate = obj[chave] || {};
         const metricas = asObject(gate.metricas);
+        const aprovado = gate.aprovado === true || String(gate.status || '').toUpperCase().includes('APROVADO');
+        const eliminado = gate.eliminado === true || String(gate.status || '').toUpperCase().includes('ELIMINADO') || String(gate.status || '').toUpperCase().includes('BLOQUE');
         return {
             gate: gate.gate ?? chave,
             status: textoSeguro(gate.status, 'SEM_STATUS'),
-            aprovado: gate.aprovado === true,
-            eliminado: gate.eliminado === true,
+            aprovado: aprovado,
+            eliminado: eliminado,
             motivos: asArray(gate.motivos || gate.motivo).map(item => textoSeguro(item)),
             fontes: asArray(gate.fontes).map(item => textoSeguro(item)),
             penalidades: asArray(gate.penalidades).map(item => textoSeguro(item)),
@@ -257,6 +300,8 @@ function normalizarAuditoria(fii, v) {
         score_confianca_dados: fii.score_confianca_dados ?? v.score_confianca_dados ?? payload.score_confianca_dados,
         nivel_uso_dados: fii.nivel_uso_dados || v.nivel_uso_dados || payload.nivel_uso_dados,
         permitir_decisao: fii.permitir_decisao ?? v.permitir_decisao ?? payload.permitir_decisao,
+        gate_parada: fii.gate_parada ?? v.gate_parada ?? payload.gate_parada,
+        motivo_bloqueio: fii.motivo_bloqueio || v.motivo_bloqueio || payload.motivo_bloqueio,
         campos_ausentes: asArray(fii.campos_ausentes || v.campos_ausentes || payload.campos_ausentes),
         campos_vencidos: asArray(fii.campos_vencidos || v.campos_vencidos || payload.campos_vencidos),
         fontes_falharam: asArray(fii.fontes_falharam || v.fontes_falharam || payload.fontes_falharam),
@@ -299,23 +344,42 @@ function normalizarFii(fii) {
     };
 }
 
+function renderResumoExplicabilidade(fii) {
+    const auditoria = fii.auditoria;
+    const bloqueado = auditoria.permitir_decisao === false || normalizarClasse(fii.decisao).includes('bloqueado');
+    const gateParada = textoSeguro(auditoria.gate_parada, 'Não informado');
+    const motivoBloqueio = textoSeguro(auditoria.motivo_bloqueio, 'Sem motivo de bloqueio específico informado.');
+    const fonte = textoSeguro(auditoria.fonte_patrimonial, 'Não informada');
+    const scoreDados = textoSeguro(auditoria.score_confianca_dados, 'Não informado');
+    return `
+        <section class="explain-summary ${bloqueado ? 'explain-blocked' : ''}">
+            <div class="explain-item"><span>Status operacional</span><strong>${bloqueado ? 'Bloqueado / cautela' : 'Exibível'}</strong></div>
+            <div class="explain-item"><span>Gate de parada</span><strong>${escapeHtml(gateParada)}</strong></div>
+            <div class="explain-item"><span>Fonte principal</span><strong>${escapeHtml(fonte)}</strong></div>
+            <div class="explain-item"><span>Score dados</span><strong>${escapeHtml(scoreDados)}</strong></div>
+            ${bloqueado ? `<div class="explain-reason"><strong>Motivo:</strong> ${escapeHtml(motivoBloqueio)}</div>` : ''}
+        </section>
+    `;
+}
+
 function renderGateDetalhes(gates) {
     if (!gates || gates.length === 0) {
-        return '<div class="audit-empty">Detalhamento de gates não informado.</div>';
+        return '<div class="audit-empty">Detalhamento de gates não informado. O card permanece visível para auditoria.</div>';
     }
     return gates.map(gate => {
-        const metricas = Object.keys(gate.metricas || {}).slice(0, 4).map(k => `${k}: ${gate.metricas[k]}`).join(' · ');
+        const metricas = Object.keys(gate.metricas || {}).slice(0, 6).map(k => `<span class="audit-metric"><b>${escapeHtml(k)}</b>: ${escapeHtml(gate.metricas[k])}</span>`).join('');
+        const estadoClasse = gate.eliminado ? 'gate-eliminado' : gate.aprovado ? 'gate-aprovado' : 'gate-neutro';
         return `
-            <div class="audit-gate ${gate.eliminado ? 'gate-eliminado' : gate.aprovado ? 'gate-aprovado' : ''}">
+            <div class="audit-gate ${estadoClasse}">
                 <div class="audit-gate-head">
-                    <strong>Gate ${gate.gate}</strong>
-                    <span>${gate.status}</span>
+                    <strong>Gate ${escapeHtml(gate.gate)}</strong>
+                    <span>${escapeHtml(gate.status)}</span>
                 </div>
                 <div class="audit-gate-body">
-                    ${gate.motivos.length ? `<div>Motivos: ${gate.motivos.join(' | ')}</div>` : ''}
-                    ${gate.fontes.length ? `<div>Fontes: ${gate.fontes.join(', ')}</div>` : ''}
-                    ${metricas ? `<div>Métricas: ${metricas}</div>` : ''}
-                    ${gate.penalidades.length ? `<div>Penalidades: ${gate.penalidades.join(', ')}</div>` : ''}
+                    <div><em>Motivos</em>${renderListaRotulos(gate.motivos)}</div>
+                    <div><em>Fontes</em>${renderListaRotulos(gate.fontes)}</div>
+                    ${metricas ? `<div class="audit-metrics"><em>Métricas</em>${metricas}</div>` : '<div><em>Métricas</em><span class="audit-muted">Não informado</span></div>'}
+                    <div><em>Penalidades</em>${renderListaRotulos(gate.penalidades, 'audit-chip penalty')}</div>
                 </div>
             </div>
         `;
@@ -327,18 +391,19 @@ function renderAuditoria(auditoria) {
     const replay = auditoria.replay || {};
     return `
         <details class="audit-panel">
-            <summary>Auditoria da decisão</summary>
+            <summary>Auditoria e explicabilidade</summary>
+            <div class="audit-note">Hash e payload auditável são apenas exibidos. O frontend não recalcula integridade.</div>
             <div class="audit-grid">
-                <div><span>Hash</span><strong title="${textoSeguro(auditoria.payload_hash)}">${resumirHash(auditoria.payload_hash)}</strong></div>
+                <div><span>Hash salvo</span><strong title="${escapeHtml(textoSeguro(auditoria.payload_hash))}">${escapeHtml(resumirHash(auditoria.payload_hash))}</strong></div>
                 <div><span>Hash válido</span><strong>${auditoria.hash_valido === undefined ? 'Não informado' : auditoria.hash_valido ? 'Sim' : 'Não'}</strong></div>
-                <div><span>Contexto</span><strong>${textoSeguro(auditoria.contexto_versao)}</strong></div>
-                <div><span>Motor</span><strong>${textoSeguro(auditoria.versao_motor)}</strong></div>
-                <div><span>Fonte patrimonial</span><strong>${textoSeguro(auditoria.fonte_patrimonial)}</strong></div>
-                <div><span>Confiança dados</span><strong>${textoSeguro(auditoria.score_confianca_dados)} / ${textoSeguro(auditoria.nivel_uso_dados)}</strong></div>
+                <div><span>Contexto</span><strong>${escapeHtml(textoSeguro(auditoria.contexto_versao))}</strong></div>
+                <div><span>Motor</span><strong>${escapeHtml(textoSeguro(auditoria.versao_motor))}</strong></div>
+                <div><span>Fonte patrimonial</span><strong>${escapeHtml(textoSeguro(auditoria.fonte_patrimonial))}</strong></div>
+                <div><span>Confiança dados</span><strong>${escapeHtml(textoSeguro(auditoria.score_confianca_dados))} / ${escapeHtml(textoSeguro(auditoria.nivel_uso_dados))}</strong></div>
                 <div><span>Permitir decisão</span><strong>${auditoria.permitir_decisao === false ? 'Não' : auditoria.permitir_decisao === true ? 'Sim' : 'Não informado'}</strong></div>
                 <div><span>Replay</span><strong>${replay.executado ? (replay.divergencia_replay ? 'Divergente' : 'Conferido') : 'Não executado'}</strong></div>
             </div>
-            ${bloqueios.length ? `<div class="audit-blocks"><strong>Bloqueios/falhas:</strong> ${bloqueios.join(', ')}</div>` : ''}
+            ${bloqueios.length ? `<div class="audit-blocks"><strong>Bloqueios/falhas:</strong><div class="audit-chip-row">${renderListaRotulos(bloqueios, 'audit-chip danger')}</div></div>` : ''}
             <div class="audit-gates-title">gates_detalhes</div>
             <div class="audit-gates-list">${renderGateDetalhes(auditoria.gates_detalhes)}</div>
         </details>
@@ -354,45 +419,47 @@ function renderResults(oportunidades, targetId = 'results', isPortfolio = false)
     }
     oportunidades.forEach((raw) => {
         const fii = normalizarFii(raw || {});
+        const bloqueado = fii.auditoria.permitir_decisao === false || normalizarClasse(fii.decisao).includes('bloqueado');
         const card = document.createElement('div');
-        card.className = `fii-card ${fii.auditoria.permitir_decisao === false ? 'card-bloqueado' : ''}`;
+        card.className = `fii-card ${bloqueado ? 'card-bloqueado' : ''}`;
         card.innerHTML = `
             <div class="card-header">
                 <div class="ticker-box">
-                    <span class="ticker-symbol">${fii.ticker}</span>
-                    <span class="segment-badge">${fii.segmento}</span>
+                    <span class="ticker-symbol">${escapeHtml(fii.ticker)}</span>
+                    <span class="segment-badge">${escapeHtml(fii.segmento)}</span>
                 </div>
-                <div class="decision-badge ${normalizarClasse(fii.decisao)}">${fii.decisao.replace('_', ' ')}</div>
+                <div class="decision-badge ${normalizarClasse(fii.decisao)}">${escapeHtml(fii.decisao.replace('_', ' '))}</div>
             </div>
             <div class="confidence-bar">
                 <span class="label">Confiança:</span>
-                <span class="confidence-value ${normalizarClasse(fii.confianca)}">${fii.confianca}</span>
+                <span class="confidence-value ${normalizarClasse(fii.confianca)}">${escapeHtml(fii.confianca)}</span>
             </div>
+            ${renderResumoExplicabilidade(fii)}
             ${isPortfolio ? `
                 <div class="holding-details-container glass-card">
-                    <div class="holding-metric"><span class="label">Minhas Cotas</span><span class="value">${fii.quantidade}</span></div>
-                    <div class="holding-metric"><span class="label">Preço Médio</span><span class="value">R$ ${fii.preco_medio?.toFixed(2)}</span></div>
-                    <div class="holding-metric highlight"><span class="label">Total Aplicado</span><span class="value">R$ ${fii.custo_total?.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
+                    <div class="holding-metric"><span class="label">Minhas Cotas</span><span class="value">${escapeHtml(fii.quantidade)}</span></div>
+                    <div class="holding-metric"><span class="label">Preço Médio</span><span class="value">${moeda(fii.preco_medio)}</span></div>
+                    <div class="holding-metric highlight"><span class="label">Total Aplicado</span><span class="value">R$ ${numeroSeguro(fii.custo_total).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
                 </div>` : ''}
             <div class="price-grid">
-                <div class="price-item"><span class="label">Preço Atual</span><span class="value">R$ ${fii.preco_atual?.toFixed(2) || '---'}</span></div>
-                <div class="price-item highlight"><span class="label">Preço Justo</span><span class="value">R$ ${fii.preco_justo?.toFixed(2) || '---'}</span></div>
-                <div class="price-item"><span class="label">Entrada Ideal</span><span class="value">R$ ${fii.preco_entrada?.toFixed(2) || '---'}</span></div>
+                <div class="price-item"><span class="label">Preço Atual</span><span class="value">${moeda(fii.preco_atual)}</span></div>
+                <div class="price-item highlight"><span class="label">Preço Justo</span><span class="value">${moeda(fii.preco_justo)}</span></div>
+                <div class="price-item"><span class="label">Entrada Ideal</span><span class="value">${moeda(fii.preco_entrada)}</span></div>
             </div>
             <div class="metrics-grid">
-                <div class="metric"><span class="label">Margem</span><span class="value ${fii.margem > 0 ? 'pos' : 'neg'}">${fii.margem > 0 ? '+' : ''}${fii.margem}%</span></div>
-                <div class="metric"><span class="label">P/VP</span><span class="value">${fii.pvp?.toFixed(2) || '---'}</span></div>
-                <div class="metric"><span class="label">DY 12M</span><span class="value">+${fii.dy_12m_pct?.toFixed(1) || '---'}%</span></div>
-                <div class="metric"><span class="label">Recorrência</span><span class="value">${fii.pct_recorrente || '---'}%</span></div>
+                <div class="metric"><span class="label">Margem</span><span class="value ${numeroSeguro(fii.margem) > 0 ? 'pos' : 'neg'}">${percentual(fii.margem)}</span></div>
+                <div class="metric"><span class="label">P/VP</span><span class="value">${numeroSeguro(fii.pvp, NaN).toFixed ? numeroSeguro(fii.pvp).toFixed(2) : '---'}</span></div>
+                <div class="metric"><span class="label">DY 12M</span><span class="value">${percentual(fii.dy_12m_pct)}</span></div>
+                <div class="metric"><span class="label">Recorrência</span><span class="value">${textoSeguro(fii.pct_recorrente, '---')}%</span></div>
             </div>
-            <div class="gate-trail"><div class="gate-title">Esteira de Qualidade (8 Gates)</div><div class="gates-container">${fii.trilha_gates.map(gate => `<span class="gate-tag">${gate}</span>`).join('')}</div></div>
+            <div class="gate-trail"><div class="gate-title">Esteira de Qualidade (8 Gates)</div><div class="gates-container">${fii.trilha_gates.map(gate => `<span class="gate-tag">${escapeHtml(gate)}</span>`).join('')}</div></div>
             <div class="ai-analysis">
-                <div class="ai-header"><span class="ai-icon">🧠</span><span class="ai-label">Inteligência FIIA</span><span class="ai-score">Score: ${fii.score_ia || '?'}/10</span></div>
-                <div class="ai-content">${fii.motivo || 'Aguardando processamento...'}</div>
+                <div class="ai-header"><span class="ai-icon">🧠</span><span class="ai-label">Inteligência FIIA</span><span class="ai-score">Score: ${escapeHtml(fii.score_ia || '?')}/10</span></div>
+                <div class="ai-content">${escapeHtml(fii.motivo || 'Aguardando processamento...')}</div>
             </div>
-            ${fii.alertas && fii.alertas.length > 0 ? `<div class="alerts-box">${fii.alertas.map(alert => `<div class="alert-item">⚠️ ${alert}</div>`).join('')}</div>` : ''}
+            ${fii.alertas && fii.alertas.length > 0 ? `<div class="alerts-box">${fii.alertas.map(alert => `<div class="alert-item">⚠️ ${escapeHtml(alert)}</div>`).join('')}</div>` : ''}
             ${renderAuditoria(fii.auditoria)}
-            <div class="card-footer"><span class="footer-info">Próxima Revisão: ${fii.revisao}</span></div>
+            <div class="card-footer"><span class="footer-info">Próxima Revisão: ${escapeHtml(fii.revisao)}</span></div>
         `;
         grid.appendChild(card);
     });
