@@ -1,4 +1,3 @@
-from coleta.contexto_ativo import obter_contexto_ativo
 from decisao import decisao_com_confianca
 from decisao.objeto_decisao import (
     CONTRATO_DECISAO_CAMPOS,
@@ -10,6 +9,7 @@ from decisao.objeto_decisao import (
 )
 from decisao.persistencia_decisao import _normalizar_objeto_decisao, _normalizar_veredito
 from teste_proibicao_sqlite import IsolamentoZeroDB
+from teste_regressao_zero_db import contexto_deterministico
 
 
 def _assert_contrato_decisao(payload: dict) -> None:
@@ -37,8 +37,8 @@ def _assert_contrato_decisao(payload: dict) -> None:
 
 
 def test_contrato_final_decisao_com_contexto_zero_db():
-    ticker = "HGLG11"
-    contexto = obter_contexto_ativo(ticker)
+    ticker = "TEST11"
+    contexto = contexto_deterministico()
 
     with IsolamentoZeroDB():
         veredito = decisao_com_confianca.decidir(

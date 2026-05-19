@@ -1,5 +1,5 @@
 from decisao.motor_decisao import _gate_result, _gate0_validacao, _gate6_qualitativo, decidir
-from coleta.contexto_ativo import obter_contexto_ativo
+from teste_regressao_zero_db import contexto_deterministico
 
 def test_contrato_minimo_gates():
     res = _gate_result(0, "APROVADO_DADOS", "Motivo generico")
@@ -26,7 +26,13 @@ def test_contrato_gate_eliminado():
     assert res["eliminado"] is True
 
 def test_contrato_na_pratica_gate0():
-    res = _gate0_validacao("TEST11", {"preco": 100.0, "pvp": 1.0, "liquidez_diaria": 2000000, "vpa": 100.0, "dy_12m": 0.1}, {"segmento": "LOGISTICA"})
+    contexto = contexto_deterministico()
+    res = _gate0_validacao(
+        "TEST11",
+        {"preco": 100.0, "pvp": 1.0, "liquidez_diaria": 2000000, "vpa": 100.0, "dy_12m": 0.1},
+        {"segmento": "LOGISTICA"},
+        contexto=contexto,
+    )
     assert "aprovado" in res
     assert "motivos" in res
     assert "metricas" in res
@@ -39,8 +45,8 @@ def test_veto_qualitativo_semantica_aprovado():
     assert res["eliminado"] is False
 
 def test_decidir_gates_detalhes_contrato_completo():
-    ticker = "HGLG11"
-    contexto = obter_contexto_ativo(ticker)
+    ticker = "TEST11"
+    contexto = contexto_deterministico()
     
     veredito = decidir(ticker, score_ia=8.5, riscos_ia=[], tom_gestor="neutro", ia_status="OK", contexto=contexto)
     
