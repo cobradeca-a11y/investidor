@@ -116,23 +116,41 @@ header { display: flex; justify-content: space-between; align-items: center; pad
 .alert-item { font-size: 0.8rem; color: #ff8888; margin-bottom: 4px; }
 .card-footer { margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-dim); }
 
+.explain-summary { margin: 14px 0 18px; padding: 14px; border-radius: 16px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: rgba(56, 189, 248, 0.055); border: 1px solid rgba(56, 189, 248, 0.14); }
+.explain-summary.explain-blocked { background: rgba(239, 68, 68, 0.095); border-color: rgba(239, 68, 68, 0.22); }
+.explain-item { min-width: 0; }
+.explain-item span { display: block; color: var(--text-dim); font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 4px; }
+.explain-item strong { display: block; font-size: 0.8rem; color: var(--text-main); overflow-wrap: anywhere; }
+.explain-reason { grid-column: 1 / -1; color: #fecaca; font-size: 0.82rem; line-height: 1.45; padding-top: 8px; border-top: 1px solid rgba(239, 68, 68, 0.18); }
+
 .audit-panel { margin-top: 16px; border: 1px solid rgba(56, 189, 248, 0.18); border-radius: 16px; background: rgba(2, 6, 23, 0.28); overflow: hidden; }
 .audit-panel summary { cursor: pointer; padding: 14px 16px; color: var(--primary); font-family: 'Outfit', sans-serif; font-weight: 700; letter-spacing: 0.3px; }
 .audit-panel[open] summary { border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.audit-note { margin: 12px 14px 0; padding: 10px 12px; border-radius: 12px; background: rgba(129, 140, 248, 0.10); color: #c7d2fe; font-size: 0.76rem; border: 1px solid rgba(129, 140, 248, 0.16); }
 .audit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 14px; }
 .audit-grid div { background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 10px; min-width: 0; }
 .audit-grid span { display: block; color: var(--text-dim); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 4px; }
 .audit-grid strong { display: block; color: var(--text-main); font-size: 0.82rem; overflow-wrap: anywhere; }
 .audit-blocks { margin: 0 14px 14px; padding: 10px 12px; border-radius: 12px; background: rgba(239, 68, 68, 0.12); color: #fecaca; font-size: 0.82rem; border: 1px solid rgba(239, 68, 68, 0.22); }
+.audit-chip-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.audit-chip { display: inline-flex; align-items: center; margin: 3px 4px 3px 0; padding: 3px 7px; border-radius: 999px; font-size: 0.68rem; color: #dbeafe; background: rgba(59, 130, 246, 0.14); border: 1px solid rgba(59, 130, 246, 0.20); }
+.audit-chip.danger { color: #fecaca; background: rgba(239, 68, 68, 0.13); border-color: rgba(239, 68, 68, 0.22); }
+.audit-chip.penalty { color: #fde68a; background: rgba(234, 179, 8, 0.13); border-color: rgba(234, 179, 8, 0.22); }
+.audit-muted { color: var(--text-dim); font-size: 0.72rem; }
 .audit-gates-title { padding: 0 14px 8px; color: var(--text-dim); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.8px; }
 .audit-gates-list { display: grid; gap: 8px; padding: 0 14px 14px; }
 .audit-gate { border: 1px solid rgba(255, 255, 255, 0.06); background: rgba(255, 255, 255, 0.035); border-radius: 12px; padding: 10px; }
 .audit-gate.gate-aprovado { border-color: rgba(34, 197, 94, 0.20); }
-.audit-gate.gate-eliminado { border-color: rgba(239, 68, 68, 0.30); }
+.audit-gate.gate-eliminado { border-color: rgba(239, 68, 68, 0.30); background: rgba(239, 68, 68, 0.06); }
+.audit-gate.gate-neutro { border-color: rgba(148, 163, 184, 0.16); }
 .audit-gate-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 6px; }
 .audit-gate-head strong { color: var(--text-main); font-size: 0.82rem; }
 .audit-gate-head span { color: var(--text-dim); font-size: 0.72rem; text-align: right; }
-.audit-gate-body { color: var(--text-dim); font-size: 0.74rem; line-height: 1.45; display: grid; gap: 3px; }
+.audit-gate-body { color: var(--text-dim); font-size: 0.74rem; line-height: 1.45; display: grid; gap: 8px; }
+.audit-gate-body em { display: block; color: #cbd5e1; font-style: normal; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 2px; }
+.audit-metrics { display: flex; flex-wrap: wrap; gap: 4px; }
+.audit-metric { display: inline-flex; padding: 3px 7px; border-radius: 8px; background: rgba(255, 255, 255, 0.045); border: 1px solid rgba(255, 255, 255, 0.06); color: var(--text-dim); }
+.audit-metric b { color: #e2e8f0; margin-right: 4px; }
 .audit-empty { color: var(--text-dim); font-size: 0.8rem; padding: 0 14px 14px; }
 
 footer { text-align: center; padding: 40px 0; margin-top: auto; color: var(--text-dim); font-size: 0.8rem; }
@@ -169,7 +187,7 @@ footer { text-align: center; padding: 40px 0; margin-top: auto; color: var(--tex
 .loading-simple, .error-simple { text-align: center; padding: 40px; color: var(--text-dim); font-size: 0.95rem; }
 
 @media (max-width: 600px) {
-    .price-grid, .metrics-grid, .audit-grid, .holding-details-container { grid-template-columns: 1fr; }
+    .price-grid, .metrics-grid, .audit-grid, .holding-details-container, .explain-summary { grid-template-columns: 1fr; }
     .hero-card h2 { font-size: 1.8rem; }
     header { flex-direction: column; gap: 20px; text-align: center; }
     .audit-gate-head { align-items: flex-start; flex-direction: column; }
