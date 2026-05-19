@@ -302,3 +302,52 @@ CREATE TABLE IF NOT EXISTS governanca_fontes_score_historico (
 
 CREATE INDEX IF NOT EXISTS idx_governanca_fontes_score_historico_fonte_data ON governanca_fontes_score_historico(fonte, data_referencia);
 CREATE INDEX IF NOT EXISTS idx_governanca_fontes_score_historico_ticker_data ON governanca_fontes_score_historico(ticker, data_referencia);
+
+-- ─────────────────────────────────────────
+-- Aprendizado operacional e sugestões controladas
+-- Migração aditiva: não altera decisão, gates nem thresholds.
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS aprendizado_resultados_operacionais (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    simulacao_id            INTEGER,
+    ticker                  TEXT NOT NULL,
+    data_decisao            TEXT NOT NULL,
+    data_avaliacao          TEXT NOT NULL,
+    janela_dias             INTEGER NOT NULL CHECK(janela_dias IN (30, 90, 180, 365)),
+    acao_original           TEXT NOT NULL,
+    preco_entrada           REAL,
+    preco_saida             REAL,
+    retorno_preco_pct       REAL,
+    retorno_dividendos_pct  REAL,
+    retorno_total_pct       REAL,
+    benchmark_pct           REAL,
+    superou_benchmark       INTEGER,
+    resultado               TEXT NOT NULL,
+    falso_positivo          INTEGER NOT NULL DEFAULT 0,
+    falso_negativo          INTEGER NOT NULL DEFAULT 0,
+    evidencia_json          TEXT,
+    criado_em               TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_aprendizado_resultados_operacionais_ticker_janela ON aprendizado_resultados_operacionais(ticker, janela_dias);
+CREATE INDEX IF NOT EXISTS idx_aprendizado_resultados_operacionais_resultado ON aprendizado_resultados_operacionais(resultado);
+
+CREATE TABLE IF NOT EXISTS aprendizado_sugestoes_ajuste_pesos (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    regra                       TEXT NOT NULL,
+    tipo_sugestao               TEXT NOT NULL CHECK(tipo_sugestao IN ('REDUZIR_PESO', 'AUMENTAR_PESO', 'REVISAR_REGRA', 'MANTER_SEM_ALTERACAO')),
+    peso_atual                  REAL,
+    peso_sugerido               REAL,
+    evidencia_json              TEXT NOT NULL,
+    amostra                     INTEGER NOT NULL,
+    periodo_inicio              TEXT,
+    periodo_fim                 TEXT,
+    impacto_estimado            TEXT NOT NULL,
+    motivo                      TEXT NOT NULL,
+    aplicado                    INTEGER NOT NULL DEFAULT 0,
+    requer_aprovacao_humana     INTEGER NOT NULL DEFAULT 1,
+    criado_em                   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_aprendizado_sugestoes_ajuste_pesos_regra ON aprendizado_sugestoes_ajuste_pesos(regra);
+CREATE INDEX IF NOT EXISTS idx_aprendizado_sugestoes_ajuste_pesos_aplicado ON aprendizado_sugestoes_ajuste_pesos(aplicado);
