@@ -6,18 +6,29 @@ Endpoints de auditoria operacional do FIIA.
 from __future__ import annotations
 
 import json
+import secrets
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from banco import db
 from aprendizado.avaliador import taxa_acerto
 from sistema import observabilidade
 from coleta import tabela_mestre_fiis, cvm_informe_mensal, cvm_fnet_documentos
+from config.settings import FIIA_API_KEY
+from decisao.auditoria_decisao import consultar_decisao_auditavel, listar_decisoes_auditaveis
 
 router = APIRouter(prefix="/api/auditoria", tags=["auditoria"])
+
+
+def verificar_api_key(x_api_key: str | None = Header(None)) -> None:
+    """Protege endpoints sensíveis usando a autenticação por API key existente."""
+    if not FIIA_API_KEY:
+        raise HTTPException(status_code=500, detail="FIIA_API_KEY não configurada")
+    if not x_api_key or not secrets.compare_digest(x_api_key, FIIA_API_KEY):
+        raise HTTPException(status_code=401, detail="API Key inválida ou ausente")
 
 
 def _json_para_dict(valor: Any) -> dict[str, Any]:
@@ -50,6 +61,55 @@ def _parse_data_iso(valor: str | None) -> datetime | None:
         return datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+@router.get("/decisoes/auditaveis", dependencies=[Depends(verificar_api_key)])
+def listar_decisoes_auditaveis_api(limite: int = 50) -> dict[str, Any]:
+    """Lista decisões salvas com metadados de auditoria, sem disparar coleta."""
+    try:
+        return listar_decisoes_auditaveis(limite=limite)
+    except Exception as erro:
+        observabilidade.registrar_erro("api.auditoria.decisoes_auditaveis", erro)
+        return {
+            "status": "erro",
+            "mensagem": "Falha controlada ao consultar decisões auditáveis.",
+            "decisoes": [],
+        }
+
+
+@router.get("/decisoes/{decisao_id}/auditavel", dependencies=[Depends(verificar_api_key)])
+def consultar_decisao_auditavel_api(
+    decisao_id: int,
+    incluir_payload: bool = True,
+    replay: bool = False,
+) -> dict[str, Any]:
+    """
+    Consulta decisão salva, payload auditável e replay opcional explícito.
+
+    Não executa scraping, não reavalia ticker e não chama motor decisório.
+    """
+    try:
+        resposta = consultar_decisao_auditavel(
+            decisao_id,
+            incluir_payload=incluir_payload,
+            replay=replay,
+        )
+        if resposta.get("status") == "nao_encontrado":
+            raise HTTPException(status_code=404, detail="Decisão não encontrada")
+        return resposta
+    except HTTPException:
+        raise
+    except Exception as erro:
+        observabilidade.registrar_erro(
+            "api.auditoria.decisao_auditavel",
+            erro,
+            contexto={"decisao_id": decisao_id},
+        )
+        return {
+            "status": "erro",
+            "mensagem": "Falha controlada ao consultar decisão auditável.",
+            "decisao_id": decisao_id,
+        }
 
 
 @router.get("/decisoes")
@@ -147,7 +207,6 @@ def cobertura_fnet(limite: int = 500) -> dict[str, Any]:
     try:
         tabela_mestre_fiis.garantir_tabela()
         cvm_fnet_documentos.garantir_tabela()
-
         base = db.buscar_todos(
             """
             SELECT ticker, cnpj_fundo, cnpj_classe, razao_social, nome_fundo
@@ -157,18 +216,15 @@ def cobertura_fnet(limite: int = 500) -> dict[str, Any]:
             """,
             (limite,),
         )
-
         meta = db.buscar_um(
             f"""
-            SELECT
-                MAX(coletado_em) AS ultima_importacao,
-                COUNT(*) AS total_documentos,
-                COUNT(DISTINCT ticker) AS tickers_com_documentos,
-                COUNT(DISTINCT cnpj_fundo) AS cnpjs_com_documentos
+            SELECT MAX(coletado_em) AS ultima_importacao,
+                   COUNT(*) AS total_documentos,
+                   COUNT(DISTINCT ticker) AS tickers_com_documentos,
+                   COUNT(DISTINCT cnpj_fundo) AS cnpjs_com_documentos
             FROM {cvm_fnet_documentos.TABELA}
             """
         )
-
         arquivos_rows = db.buscar_todos(
             f"""
             SELECT arquivo_origem, MAX(coletado_em) AS ultima_importacao, COUNT(*) AS registros
@@ -178,7 +234,6 @@ def cobertura_fnet(limite: int = 500) -> dict[str, Any]:
             LIMIT 10
             """
         )
-
         ultima_importacao = meta["ultima_importacao"] if meta else None
         dt_ultima = _parse_data_iso(ultima_importacao)
         dias_desde = None
@@ -186,7 +241,6 @@ def cobertura_fnet(limite: int = 500) -> dict[str, Any]:
             if dt_ultima.tzinfo is None:
                 dt_ultima = dt_ultima.replace(tzinfo=timezone.utc)
             dias_desde = (datetime.now(timezone.utc) - dt_ultima).days
-
         ativos = []
         com_fnet = 0
         sem_fnet = 0
@@ -207,11 +261,9 @@ def cobertura_fnet(limite: int = 500) -> dict[str, Any]:
                 "categoria_ultimo_documento": documento.get("categoria") if documento else None,
                 "arquivo_origem_ultimo_documento": documento.get("arquivo_origem") if documento else None,
             })
-
         total_base = len(base)
         pct_com_fnet = round(com_fnet / total_base * 100, 2) if total_base else 0.0
         pct_sem_fnet = round(sem_fnet / total_base * 100, 2) if total_base else 0.0
-
         return {
             "status": "ok",
             "resumo": {
@@ -257,7 +309,6 @@ def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
         com_cnpj = com_cvm = com_fnet = 0
         for row in rows:
             item = dict(row)
-            ticker = item.get("ticker")
             cnpj = item.get("cnpj_fundo")
             informe = cvm_informe_mensal.ultimo_por_cnpj(cnpj) if cnpj else None
             documento = cvm_fnet_documentos.ultimo_documento_por_cnpj(cnpj) if cnpj else None
@@ -268,7 +319,7 @@ def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
             if documento:
                 com_fnet += 1
             ativos.append({
-                "ticker": ticker,
+                "ticker": item.get("ticker"),
                 "cnpj_fundo": cnpj,
                 "cnpj_classe": item.get("cnpj_classe"),
                 "tem_cnpj": bool(cnpj),
@@ -278,10 +329,8 @@ def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
                 "ultimo_documento_fnet": documento.get("data_entrega") if documento else None,
                 "tipo_ultimo_documento": documento.get("tipo_documento") if documento else None,
             })
-
         def pct(valor: int) -> float:
             return round(valor / total * 100, 2) if total else 0.0
-
         return {"status": "ok", "resumo": {"total_tabela_mestre": total, "com_cnpj": com_cnpj, "com_cnpj_pct": pct(com_cnpj), "com_cvm_patrimonial": com_cvm, "com_cvm_patrimonial_pct": pct(com_cvm), "com_fnet_documental": com_fnet, "com_fnet_documental_pct": pct(com_fnet)}, "ativos": ativos}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.cobertura_institucional", erro)
