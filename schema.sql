@@ -260,3 +260,26 @@ CREATE TABLE IF NOT EXISTS decisoes_resultado (
     avaliado_em          TEXT DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (decisao_id) REFERENCES decisoes(id)
 );
+
+-- ─────────────────────────────────────────
+-- Governança de fontes de dados
+-- Migração aditiva: não altera tabelas existentes nem contratos decisórios.
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS governanca_fontes (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    fonte                   TEXT NOT NULL,
+    ticker                  TEXT,
+    data_referencia         TEXT NOT NULL,
+    status                  TEXT NOT NULL CHECK(status IN ('OK', 'VENCIDA', 'DIVERGENTE', 'INDISPONIVEL', 'SUSPEITA')),
+    motivo                  TEXT,
+    idade_dias              INTEGER,
+    max_idade_dias          INTEGER,
+    divergencia_pct         REAL,
+    disponibilidade_pct     REAL,
+    score_confianca_fonte   REAL,
+    payload_json            TEXT,
+    criado_em               TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_governanca_fontes_fonte_data ON governanca_fontes(fonte, data_referencia);
+CREATE INDEX IF NOT EXISTS idx_governanca_fontes_ticker ON governanca_fontes(ticker);
