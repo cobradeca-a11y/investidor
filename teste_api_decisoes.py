@@ -3,7 +3,7 @@ teste_api_decisoes.py
 
 Valida a API de consulta de decisão auditável:
 - endpoints protegidos por API key existente;
-- consulta não dispara scraping nem motor;
+- consulta de histórico não dispara scraping nem motor;
 - replay é opcional e explícito;
 - resposta não expõe stacktrace.
 """
@@ -13,14 +13,20 @@ import pytest
 from fastapi import HTTPException
 
 from api import auditoria as api_auditoria
+from config import settings
 from decisao import auditoria_decisao
 
 
-API_KEY_TESTE = "fiia-teste"
+API_KEY_TESTE = "chave-local-forte-com-mais-de-24-caracteres"
+
+
+def _configurar_api_key(monkeypatch):
+    monkeypatch.setattr(settings, "FIIA_ENV", "dev")
+    monkeypatch.setattr(settings, "FIIA_API_KEY", API_KEY_TESTE)
 
 
 def test_verificar_api_key_rejeita_ausente(monkeypatch):
-    monkeypatch.setattr(api_auditoria, "FIIA_API_KEY", API_KEY_TESTE)
+    _configurar_api_key(monkeypatch)
 
     with pytest.raises(HTTPException) as exc:
         api_auditoria.verificar_api_key(None)
@@ -29,13 +35,30 @@ def test_verificar_api_key_rejeita_ausente(monkeypatch):
 
 
 def test_verificar_api_key_aceita_valida(monkeypatch):
-    monkeypatch.setattr(api_auditoria, "FIIA_API_KEY", API_KEY_TESTE)
+    _configurar_api_key(monkeypatch)
 
     assert api_auditoria.verificar_api_key(API_KEY_TESTE) is None
 
 
+def test_endpoints_auditaveis_preservam_autenticacao():
+    rotas = {
+        rota.path: rota
+        for rota in api_auditoria.router.routes
+        if getattr(rota, "path", "") in {
+            "/api/auditoria/decisoes/auditaveis",
+            "/api/auditoria/decisoes/{decisao_id}/auditavel",
+        }
+    }
+
+    assert "/api/auditoria/decisoes/auditaveis" in rotas
+    assert "/api/auditoria/decisoes/{decisao_id}/auditavel" in rotas
+    for path, rota in rotas.items():
+        dependencias = [dep.dependency for dep in rota.dependencies]
+        assert api_auditoria.verificar_api_key in dependencias, path
+
+
 def test_listar_decisoes_auditaveis_api_protegida_sem_stacktrace(monkeypatch):
-    monkeypatch.setattr(api_auditoria, "FIIA_API_KEY", API_KEY_TESTE)
+    _configurar_api_key(monkeypatch)
     monkeypatch.setattr(
         api_auditoria,
         "listar_decisoes_auditaveis",
