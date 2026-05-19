@@ -6,29 +6,20 @@ Endpoints de auditoria operacional do FIIA.
 from __future__ import annotations
 
 import json
-import secrets
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from acesso.seguranca import verificar_api_key, resposta_erro_segura
 from banco import db
 from aprendizado.avaliador import taxa_acerto
 from sistema import observabilidade
 from coleta import tabela_mestre_fiis, cvm_informe_mensal, cvm_fnet_documentos
-from config.settings import FIIA_API_KEY
 from decisao.auditoria_decisao import consultar_decisao_auditavel, listar_decisoes_auditaveis
 
 router = APIRouter(prefix="/api/auditoria", tags=["auditoria"])
-
-
-def verificar_api_key(x_api_key: str | None = Header(None)) -> None:
-    """Protege endpoints sensíveis usando a autenticação por API key existente."""
-    if not FIIA_API_KEY:
-        raise HTTPException(status_code=500, detail="FIIA_API_KEY não configurada")
-    if not x_api_key or not secrets.compare_digest(x_api_key, FIIA_API_KEY):
-        raise HTTPException(status_code=401, detail="API Key inválida ou ausente")
 
 
 def _json_para_dict(valor: Any) -> dict[str, Any]:
@@ -70,11 +61,7 @@ def listar_decisoes_auditaveis_api(limite: int = 50) -> dict[str, Any]:
         return listar_decisoes_auditaveis(limite=limite)
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.decisoes_auditaveis", erro)
-        return {
-            "status": "erro",
-            "mensagem": "Falha controlada ao consultar decisões auditáveis.",
-            "decisoes": [],
-        }
+        return resposta_erro_segura("Falha controlada ao consultar decisões auditáveis.", decisoes=[])
 
 
 @router.get("/decisoes/{decisao_id}/auditavel", dependencies=[Depends(verificar_api_key)])
@@ -105,11 +92,10 @@ def consultar_decisao_auditavel_api(
             erro,
             contexto={"decisao_id": decisao_id},
         )
-        return {
-            "status": "erro",
-            "mensagem": "Falha controlada ao consultar decisão auditável.",
-            "decisao_id": decisao_id,
-        }
+        return resposta_erro_segura(
+            "Falha controlada ao consultar decisão auditável.",
+            decisao_id=decisao_id,
+        )
 
 
 @router.get("/decisoes")
@@ -139,7 +125,7 @@ def listar_decisoes(limite: int = 50) -> dict[str, Any]:
         return {"status": "ok", "quantidade": len(decisoes), "decisoes": decisoes}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.decisoes", erro)
-        return {"status": "erro", "mensagem": str(erro), "decisoes": []}
+        return resposta_erro_segura("Falha controlada ao listar decisões.", decisoes=[])
 
 
 @router.get("/taxa-acerto")
@@ -148,7 +134,7 @@ def obter_taxa_acerto() -> dict[str, Any]:
         return {"status": "ok", "taxa_acerto_90d": taxa_acerto(90), "taxa_acerto_365d": taxa_acerto(365)}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.taxa_acerto", erro)
-        return {"status": "erro", "mensagem": str(erro)}
+        return resposta_erro_segura("Falha controlada ao calcular taxa de acerto.")
 
 
 @router.get("/fallbacks")
@@ -171,7 +157,7 @@ def listar_fallbacks(limite: int = 100) -> dict[str, Any]:
         return {"status": "ok", "quantidade": len(resultados), "fallbacks": resultados}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.fallbacks", erro)
-        return {"status": "erro", "mensagem": str(erro), "fallbacks": []}
+        return resposta_erro_segura("Falha controlada ao listar fallbacks.", fallbacks=[])
 
 
 @router.get("/gate55")
@@ -198,7 +184,7 @@ def listar_gate55(limite: int = 100) -> dict[str, Any]:
         return {"status": "ok", "resumo": dict(resumo), "quantidade": len(resultados), "gate55": resultados}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.gate55", erro)
-        return {"status": "erro", "mensagem": str(erro), "gate55": []}
+        return resposta_erro_segura("Falha controlada ao listar gate55.", gate55=[])
 
 
 @router.get("/cobertura-fnet")
@@ -285,7 +271,7 @@ def cobertura_fnet(limite: int = 500) -> dict[str, Any]:
         }
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.cobertura_fnet", erro)
-        return {"status": "erro", "mensagem": str(erro), "resumo": {}, "ativos": []}
+        return resposta_erro_segura("Falha controlada ao medir cobertura FNET.", resumo={}, ativos=[])
 
 
 @router.get("/cobertura-institucional")
@@ -334,7 +320,7 @@ def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
         return {"status": "ok", "resumo": {"total_tabela_mestre": total, "com_cnpj": com_cnpj, "com_cnpj_pct": pct(com_cnpj), "com_cvm_patrimonial": com_cvm, "com_cvm_patrimonial_pct": pct(com_cvm), "com_fnet_documental": com_fnet, "com_fnet_documental_pct": pct(com_fnet)}, "ativos": ativos}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.cobertura_institucional", erro)
-        return {"status": "erro", "mensagem": str(erro), "resumo": {}, "ativos": []}
+        return resposta_erro_segura("Falha controlada ao medir cobertura institucional.", resumo={}, ativos=[])
 
 
 @router.get("/ativos-sem-cobertura")
@@ -355,7 +341,7 @@ def ativos_sem_cobertura(limite: int = 500) -> dict[str, Any]:
         return {"status": "ok", "quantidade": len(problemas), "ativos": problemas}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.ativos_sem_cobertura", erro)
-        return {"status": "erro", "mensagem": str(erro), "ativos": []}
+        return resposta_erro_segura("Falha controlada ao listar ativos sem cobertura.", ativos=[])
 
 
 @router.get("/instabilidade")
@@ -387,4 +373,4 @@ def detectar_instabilidade(limite: int = 300) -> dict[str, Any]:
         return {"status": "ok", "quantidade": len(instaveis), "instabilidades": instaveis}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.instabilidade", erro)
-        return {"status": "erro", "mensagem": str(erro), "instabilidades": []}
+        return resposta_erro_segura("Falha controlada ao detectar instabilidade.", instabilidades=[])
