@@ -140,23 +140,68 @@ VERSAO_MODELO = "1.0"
 # ─────────────────────────────────────────
 # Chaves de API (Configuração do Cérebro)
 # ─────────────────────────────────────────
-# Defina GEMINI_API_KEY no arquivo .env na raiz do projeto:
-#   GEMINI_API_KEY=sua_chave_aqui
-# Obtenha sua chave em: https://aistudio.google.com/app/apikey
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 if not GEMINI_API_KEY:
     import warnings
     warnings.warn(
-        "GEMINI_API_KEY não encontrada. Crie um arquivo .env na raiz com GEMINI_API_KEY=sua_chave.",
+        "GEMINI_API_KEY não encontrada. IA qualitativa ficará indisponível até configurar .env/ambiente.",
         stacklevel=2,
     )
 
 # ─────────────────────────────────────────
 # Segurança, CORS e Autenticação da API
 # ─────────────────────────────────────────
-# Chave de acesso para endpoints sensíveis da carteira (compra/venda/politica)
+FIIA_ENV = os.getenv("FIIA_ENV", "dev").strip().lower()
+FIIA_DEBUG = os.getenv("FIIA_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
 FIIA_API_KEY = os.getenv("FIIA_API_KEY", "")
+
+CHAVES_PADRAO_PROIBIDAS = {
+    "",
+    "changeme",
+    "change-me",
+    "default",
+    "password",
+    "123456",
+    "fiia-api-key",
+    "fiia-teste",
+    "ci-fiia-key",
+}
+
+
+def ambiente_producao() -> bool:
+    return FIIA_ENV in {"prod", "producao", "production"}
+
+
+def api_key_padrao_ou_insegura(valor: str | None = None) -> bool:
+    chave = (FIIA_API_KEY if valor is None else valor or "").strip()
+    if not chave:
+        return True
+    if chave.lower() in CHAVES_PADRAO_PROIBIDAS:
+        return True
+    if len(chave) < 24:
+        return True
+    return False
+
+
+def validar_configuracao_seguranca() -> dict:
+    """Valida segurança sem expor segredos."""
+    problemas = []
+    avisos = []
+    if ambiente_producao() and api_key_padrao_ou_insegura():
+        problemas.append("FIIA_API_KEY ausente, curta ou padrão em ambiente de produção.")
+    elif api_key_padrao_ou_insegura():
+        avisos.append("FIIA_API_KEY ausente, curta ou padrão; aceitável apenas em desenvolvimento local controlado.")
+    if ambiente_producao() and FIIA_DEBUG:
+        problemas.append("FIIA_DEBUG não pode ficar ativo em produção.")
+    return {
+        "ambiente": FIIA_ENV,
+        "producao": ambiente_producao(),
+        "debug": FIIA_DEBUG,
+        "seguro": not problemas,
+        "problemas": problemas,
+        "avisos": avisos,
+    }
 
 # Origens permitidas para CORS (configuráveis via .env, padrão local)
 CORS_ALLOWED_ORIGINS_RAW = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000")
@@ -167,4 +212,3 @@ CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS_RAW.sp
 # ─────────────────────────────────────────
 PRECO_MAX_IDADE_HORAS = int(os.getenv("PRECO_MAX_IDADE_HORAS", "24"))
 CVM_MAX_IDADE_MESES = int(os.getenv("CVM_MAX_IDADE_MESES", "3"))
-
