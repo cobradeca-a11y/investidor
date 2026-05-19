@@ -88,7 +88,79 @@ Acesso padrão:
 http://0.0.0.0:8080
 ```
 
-## 5. Rotina antes de operar
+## 5. Healthchecks operacionais
+
+### Healthcheck básico
+
+Endpoint:
+
+```text
+GET /api/auditoria/health
+```
+
+Características:
+
+- não exige API key;
+- não aciona scraping;
+- não consulta fontes externas;
+- não executa Radar;
+- não chama motor decisório;
+- valida apenas API, configuração e observabilidade.
+
+### Healthcheck profundo
+
+Endpoint protegido:
+
+```text
+GET /api/auditoria/health/profundo
+```
+
+Características:
+
+- exige `x-api-key`;
+- é explícito;
+- verifica banco por `SELECT 1`;
+- verifica tabelas mínimas;
+- verifica sinais locais de fontes críticas sem rede;
+- não executa scraping;
+- não chama motor decisório;
+- não executa Radar por padrão.
+
+Para solicitar verificação operacional do Radar sem executor autorizado:
+
+```text
+GET /api/auditoria/health/profundo?incluir_radar=true
+```
+
+Esse modo registra que o Radar exige execução explícita/autorizada, mas não chama o pipeline proibido.
+
+## 6. Jobs operacionais
+
+Endpoint protegido:
+
+```text
+POST /api/auditoria/jobs/verificacao-operacional
+```
+
+Características:
+
+- exige `x-api-key`;
+- executa healthcheck profundo seguro;
+- registra status estruturado via observabilidade;
+- não aciona scraping;
+- não executa motor;
+- não altera decisão.
+
+Status possíveis:
+
+```text
+OK
+ALERTA
+ERRO
+NAO_EXECUTADO
+```
+
+## 7. Rotina antes de operar
 
 ```bash
 git status
@@ -105,7 +177,7 @@ Não operar se:
 - `.env` não estiver configurado;
 - `FIIA_API_KEY` não estiver definida para endpoints protegidos.
 
-## 6. Testes mínimos de operação
+## 8. Testes mínimos de operação
 
 Antes de usar o radar ou publicar release:
 
@@ -117,6 +189,8 @@ pytest teste_proibicao_sqlite.py teste_regressao_zero_db.py teste_contrato_gates
 Testes complementares recomendados:
 
 ```bash
+pytest teste_healthcheck.py
+pytest teste_seguranca_api.py
 pytest teste_comparacao_motores.py
 pytest teste_api_decisoes.py
 pytest teste_backtest_snapshot.py
@@ -125,7 +199,7 @@ pytest teste_observabilidade_performance.py
 pytest teste_frontend_payload.py
 ```
 
-## 7. Operação do radar
+## 9. Operação do radar
 
 O radar pode ser executado por CLI ou API/PWA.
 
@@ -137,7 +211,7 @@ Regras:
 - cards bloqueados são parte correta do sistema, não erro visual;
 - se uma fonte externa falhar, o sistema deve degradar para bloqueio/monitoramento, não inventar dado.
 
-## 8. Auditoria de decisões
+## 10. Auditoria de decisões
 
 Toda decisão persistida deve carregar, quando disponível:
 
@@ -164,7 +238,7 @@ Regras:
 - consulta auditável não deve chamar motor decisório;
 - erro de API não deve expor stacktrace.
 
-## 9. Backtest institucional
+## 11. Backtest institucional
 
 Backtest institucional válido exige snapshot histórico suficiente.
 
@@ -183,7 +257,7 @@ validade_institucional=False
 
 O backtest não pode usar preço atual como se fosse histórico.
 
-## 10. Observabilidade e logs
+## 12. Observabilidade e logs
 
 Logs devem ser estruturados em JSON Lines quando habilitados.
 
@@ -205,7 +279,7 @@ Nunca versionar:
 - `*.jsonl`;
 - `*.log`.
 
-## 11. Banco e migração
+## 13. Banco e migração
 
 Regras:
 
@@ -225,7 +299,7 @@ Arquivos locais proibidos no Git:
 *.db-shm
 ```
 
-## 12. Segurança operacional
+## 14. Segurança operacional
 
 - Endpoints sensíveis devem usar `x-api-key`.
 - `FIIA_API_KEY` deve existir no ambiente operacional.
@@ -234,7 +308,7 @@ Arquivos locais proibidos no Git:
 - Erros de API devem retornar mensagem controlada.
 - Stacktrace deve ficar apenas em observabilidade interna, quando habilitada.
 
-## 13. Rollback operacional
+## 15. Rollback operacional
 
 Antes de cada release, registrar:
 
@@ -263,19 +337,22 @@ Rollback de dados:
 - executar smoke test;
 - registrar motivo do rollback.
 
-## 14. Smoke test após subir
+## 16. Smoke test após subir
 
 Executar:
 
 ```bash
-python -m compileall -q api decisao processamento coleta
-pytest teste_proibicao_sqlite.py teste_contrato_decisao.py teste_auditoria_decisao.py
+python -m compileall -q api sistema operacional config
+pytest teste_healthcheck.py teste_seguranca_api.py
 ```
 
 Verificar manualmente:
 
 ```text
 [ ] API sobe sem erro.
+[ ] GET /api/auditoria/health retorna status operacional.
+[ ] GET /api/auditoria/health/profundo exige autenticação.
+[ ] POST /api/auditoria/jobs/verificacao-operacional exige autenticação.
 [ ] PWA carrega.
 [ ] Carteira abre.
 [ ] Radar executa ou bloqueia com motivo.
@@ -284,7 +361,7 @@ Verificar manualmente:
 [ ] Banco local não aparece no git status.
 ```
 
-## 15. Encerramento da operação
+## 17. Encerramento da operação
 
 Após operação local:
 
@@ -294,11 +371,14 @@ git status --porcelain=v1 -uall
 
 Se aparecerem logs, bancos ou caches, não versionar. Conferir `.gitignore` e limpar apenas artefatos locais, sem apagar código.
 
-## 16. Critérios para considerar operação saudável
+## 18. Critérios para considerar operação saudável
 
 ```text
 [ ] CI verde.
 [ ] Testes críticos verdes.
+[ ] Healthcheck básico saudável.
+[ ] Healthcheck profundo autenticado saudável ou com alerta operacional explicado.
+[ ] Job operacional registra status estruturado.
 [ ] Zero DB preservado.
 [ ] Decisões persistidas com hash.
 [ ] Replay auditável funcionando.
