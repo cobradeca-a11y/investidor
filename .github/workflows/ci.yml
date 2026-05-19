@@ -7,24 +7,51 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  qualidade-tecnica:
+    name: Qualidade técnica e contratos críticos
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      FIIA_OBSERVABILIDADE: "0"
+      FIIA_API_KEY: "ci-fiia-key"
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.13'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        pip install pytest requests yfinance
-        
-    - name: Check Python Syntax (compileall)
-      run: python -m compileall .
-      
-    - name: Run Zero DB Query Mode Tests
-      run: pytest teste_proibicao_sqlite.py teste_comparacao_motores.py teste_contrato_gates.py teste_contrato_decisao.py teste_regressao_zero_db.py teste_auditoria_decisao.py teste_performance_radar.py
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Guardar contra artefatos locais versionados
+        run: |
+          test ! -d logs || (echo "Diretório logs não deve ser versionado" && exit 1)
+          ! git ls-files | grep -E '(^logs/|\.jsonl$|\.db$|\.sqlite$|\.sqlite3$|\.db-wal$|\.db-shm$|^\.venv/|^venv/|__pycache__/)' || (echo "Artefato local versionado encontrado" && git ls-files | grep -E '(^logs/|\.jsonl$|\.db$|\.sqlite$|\.sqlite3$|\.db-wal$|\.db-shm$|^\.venv/|^venv/|__pycache__/)' && exit 1)
+
+      - name: Check Python Syntax
+        run: python -m compileall -q acesso api aprendizado backtest banco cadastro carteira coleta config decisao educacao mercado operacional processamento relatorios servicos sistema validacao app.py main.py
+
+      - name: Testar Zero DB Query Mode
+        run: pytest teste_proibicao_sqlite.py teste_regressao_zero_db.py
+
+      - name: Testar contratos decisórios e gates auditáveis
+        run: pytest teste_contrato_gates.py teste_contrato_decisao.py teste_comparacao_motores.py
+
+      - name: Testar auditoria, replay e hash
+        run: pytest teste_auditoria_decisao.py teste_api_decisoes.py
+
+      - name: Testar backtest institucional com snapshots
+        run: pytest teste_backtest_snapshot.py
+
+      - name: Testar performance e frontend estático
+        run: pytest teste_performance_radar.py teste_observabilidade_performance.py teste_frontend_payload.py
