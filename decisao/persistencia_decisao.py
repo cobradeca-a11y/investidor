@@ -9,6 +9,7 @@ Evolução profissional:
 - grava payload completo em JSON para auditoria e backtesting;
 - grava hash SHA-256 verificável do payload normalizado;
 - persiste versão do contexto e versão do motor;
+- permite replay auditável sem coletar dados novos;
 - auto-migra colunas novas sem apagar histórico.
 """
 
@@ -74,11 +75,9 @@ def _garantir_tabela() -> None:
     colunas = _colunas_decisoes()
 
     if not colunas:
-        # Tabela não existe, cria do zero
         db.executar(_SCHEMA_V2)
         return
 
-    # Se a tabela existe, adiciona dinamicamente colunas que possam estar faltando
     colunas_v2 = {
         "data_decisao": "TEXT",
         "decisao": "TEXT",
@@ -117,7 +116,6 @@ def _garantir_tabela() -> None:
     if migrou:
         print("[decisao] Colunas adicionadas. Atualizando dados legados...")
         try:
-            # Verifica se as colunas de origem existem antes do COALESCE
             colunas_atuais = _colunas_decisoes()
             set_clauses = []
 
@@ -173,6 +171,11 @@ def _contexto_versao(payload: dict[str, Any]) -> str | None:
     return payload.get("contexto_versao") or contexto.get("contexto_versao")
 
 
+def _contexto_do_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    contexto = payload.get("contexto")
+    return contexto if isinstance(contexto, dict) else None
+
+
 def _campos_auditoria(payload: dict[str, Any]) -> dict[str, str | None]:
     """
     Prepara o payload canônico auditável.
@@ -180,7 +183,7 @@ def _campos_auditoria(payload: dict[str, Any]) -> dict[str, str | None]:
     O hash é sempre calculado sobre o payload_json normalizado, com chaves em
     ordem estável. Esses campos permitem reconstruir e validar a decisão salva.
     """
-    payload_normalizado = normalizar_contrato_decisao(payload, payload.get("contexto") if isinstance(payload.get("contexto"), dict) else None)
+    payload_normalizado = normalizar_contrato_decisao(payload, _contexto_do_payload(payload))
     payload_json = _json_normalizado(payload_normalizado)
     return {
         "payload_json": payload_json,
@@ -192,7 +195,7 @@ def _campos_auditoria(payload: dict[str, Any]) -> dict[str, str | None]:
 
 def _normalizar_veredito(veredito: dict[str, Any]) -> dict[str, Any]:
     """Normaliza dict legado do motor_decisao para persistência."""
-    payload = normalizar_contrato_decisao(veredito, veredito.get("contexto") if isinstance(veredito.get("contexto"), dict) else None)
+    payload = normalizar_contrato_decisao(veredito, _contexto_do_payload(veredito))
     auditoria = _campos_auditoria(payload)
     return {
         "ticker": payload.get("ticker"),
@@ -224,6 +227,7 @@ def _normalizar_objeto_decisao(decisao: Any) -> dict[str, Any]:
     riscos = payload.get("riscos", [])
     auditoria = _campos_auditoria(payload)
 
+    contexto = payload.get("contexto") if isinstance(payload.get("contexto"), dict) else {}
     return {
         "ticker": payload.get("ticker"),
         "data_decisao": payload.get("data_analise") or payload.get("criado_em", date.today().isoformat())[:10],
@@ -235,8 +239,8 @@ def _normalizar_objeto_decisao(decisao: Any) -> dict[str, Any]:
         "preco_entrada": payload.get("preco_entrada") or payload.get("preco_teto"),
         "margem": payload.get("margem") or payload.get("margem_seguranca"),
         "score_ia": payload.get("score_ia"),
-        "ia_status": payload.get("contexto", {}).get("ia_status") if isinstance(payload.get("contexto"), dict) else None,
-        "tom_gestor": payload.get("contexto", {}).get("tom_gestor") if isinstance(payload.get("contexto"), dict) else None,
+        "ia_status": contexto.get("ia_status"),
+        "tom_gestor": contexto.get("tom_gestor"),
         "travas": _json_seguro(payload.get("gatilhos_invalidez", [])),
         "riscos_ia": _json_seguro(riscos),
         "versao_modelo": payload.get("versao_modelo", "fiia-decisao-v1"),
@@ -296,6 +300,56 @@ def reconstruir_validar_payload_salvo(decisao_id: int) -> dict[str, Any]:
             "erro": "Decisão não encontrada.",
         }
     return validar_payload_salvo(dict(row))
+
+
+def replay_decisao_salva(decisao_id: int) -> dict[str, Any]:
+    """
+    Reproduz a decisão persistida apenas a partir do payload salvo.
+
+    Não chama motor, não coleta dados, não usa fontes externas e não altera
+    banco. O replay é considerado determinístico quando o payload salvo passa
+    na validação de hash e a normalização atual reproduz o mesmo hash.
+    """
+    _garantir_tabela()
+    row = db.buscar_um("SELECT * FROM decisoes WHERE id = ?", (decisao_id,))
+    if not row:
+        return {
+            "status": "erro",
+            "replay_deterministico": False,
+            "decisao_id": decisao_id,
+            "erro": "Decisão não encontrada.",
+        }
+
+    registro = dict(row)
+    validacao = validar_payload_salvo(registro)
+    if not validacao["valido"]:
+        return {
+            "status": "hash_invalido",
+            "replay_deterministico": False,
+            "decisao_id": decisao_id,
+            "validacao": validacao,
+            "erro": validacao.get("erro") or "Hash do payload salvo não confere.",
+        }
+
+    payload_salvo = validacao["payload"] or {}
+    payload_replay = normalizar_contrato_decisao(payload_salvo, _contexto_do_payload(payload_salvo))
+    payload_replay_json = _json_normalizado(payload_replay)
+    payload_replay_hash = _hash_payload_json(payload_replay_json)
+
+    return {
+        "status": "ok",
+        "replay_deterministico": payload_replay_hash == validacao["payload_hash_salvo"],
+        "decisao_id": decisao_id,
+        "ticker": payload_replay.get("ticker") or registro.get("ticker"),
+        "decisao": payload_replay.get("decisao") or registro.get("decisao"),
+        "data_decisao": registro.get("data_decisao"),
+        "payload_replay": payload_replay,
+        "payload_hash_salvo": validacao["payload_hash_salvo"],
+        "payload_hash_replay": payload_replay_hash,
+        "contexto_versao": validacao.get("contexto_versao"),
+        "versao_motor": validacao.get("versao_motor"),
+        "fonte_replay": "payload_json_persistido",
+    }
 
 
 def gravar(veredito: dict[str, Any]) -> int:
