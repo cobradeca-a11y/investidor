@@ -116,7 +116,7 @@ def comparar(payload: RelatorioRequest) -> dict[str, Any]:
         return resposta_erro_segura("Falha controlada ao comparar ativos.", comparacao=[])
 
 
-@router.get("/exportar", dependencies=[Depends(verificar_api_key)])
+@router.get("/exportar", dependencies=[Depends(verificar_api_key)], response_model=None)
 def exportar_relatorio(
     formato: str = "json",
     secao: str = "decisoes",
