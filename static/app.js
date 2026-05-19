@@ -283,6 +283,7 @@ function renderDetalheHistorico(data, replayExplicito) {
                 <div><span>Ticker</span><strong>${escapeHtml(decisao.ticker || payload.ticker || '---')}</strong></div>
                 <div><span>Decisão</span><strong>${escapeHtml(decisao.decisao || payload.decisao || '---')}</strong></div>
                 <div><span>Hash salvo</span><strong title="${escapeHtml(auditoria.payload_hash_salvo || decisao.payload_hash || '')}">${escapeHtml(resumirHash(auditoria.payload_hash_salvo || decisao.payload_hash))}</strong></div>
+                <div><span>Hash calculado</span><strong title="${escapeHtml(auditoria.payload_hash_calculado || '')}">${escapeHtml(resumirHash(auditoria.payload_hash_calculado))}</strong></div>
                 <div><span>Hash válido</span><strong>${auditoria.hash_valido === true ? 'Sim' : auditoria.hash_valido === false ? 'Não' : 'Não informado'}</strong></div>
                 <div><span>Contexto</span><strong>${escapeHtml(auditoria.contexto_versao || decisao.contexto_versao || 'Não informado')}</strong></div>
                 <div><span>Motor</span><strong>${escapeHtml(auditoria.versao_motor || decisao.versao_motor || 'Não informado')}</strong></div>
