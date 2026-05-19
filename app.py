@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from typing import List, Optional
 import main
+from acesso.autenticacao import verificar_api_key
 from processamento import estrategia
 import banco.db as db
 from servicos import agendador
@@ -46,7 +47,7 @@ def home():
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/web/index.html")
 
-@app.get("/api/radar")
+@app.get("/api/radar", dependencies=[Depends(verificar_api_key)])
 def get_radar():
     try:
         vencedores = estrategia.radar_oportunidades()
@@ -77,6 +78,11 @@ def get_radar():
             "mensagem": "Falha controlada ao executar radar.",
             "detalhe": str(e),
         }
+
+
+@app.get("/api/auditoria/health")
+def health_basico():
+    return {"status": "ok", "servico": "fiia", "modo": "health_basico_sem_scraping"}
 
 @app.get("/api/analisar/{ticker}")
 def analisar_fundo(ticker: str):

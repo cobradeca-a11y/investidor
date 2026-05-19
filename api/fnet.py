@@ -13,14 +13,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from acesso.autenticacao import verificar_api_key
 from pydantic import BaseModel, Field
 
 from coleta import cvm_fnet_documentos
 from processamento.eventos_fnet import analisar_eventos_ticker
 from sistema import observabilidade
 
-router = APIRouter(prefix="/api/fnet", tags=["fnet"])
+router = APIRouter(prefix="/api/fnet", tags=["fnet"], dependencies=[Depends(verificar_api_key)])
 
 
 class ImportarFnetRequest(BaseModel):
