@@ -18,6 +18,41 @@ from validacao.relatorio_confianca import NivelUsoDecisao
 from sistema import observabilidade
 
 
+def _gate_result(
+    gate: int,
+    status: str,
+    motivo: str,
+    *,
+    eliminado: bool = False,
+    metricas: dict[str, Any] | None = None,
+    fontes: list[str] | None = None,
+    penalidades: list[str] | None = None,
+    motivos: list[str] | None = None,
+    extras: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Contrato padrão de saída dos gates.
+
+    Mantém campos legados no mesmo payload para não quebrar consumidores atuais,
+    mas garante a estrutura comum exigida pela Fase 3:
+    gate, status, aprovado, eliminado, motivos, metricas, fontes e penalidades.
+    """
+    resultado = {
+        "gate": gate,
+        "status": status,
+        "aprovado": not eliminado and not status.startswith("VETO"),
+        "eliminado": eliminado,
+        "motivo": motivo,
+        "motivos": motivos or [motivo],
+        "metricas": metricas or {},
+        "fontes": fontes or [],
+        "penalidades": penalidades or [],
+    }
+    if extras:
+        resultado.update(extras)
+    return resultado
+
+
 def _patrimonio_a_partir_contexto(contexto: dict) -> dict[str, Any]:
     """
     Mapeia os atributos patrimoniais resolvidos do contexto em memória para
@@ -44,7 +79,10 @@ def _patrimonio_a_partir_contexto(contexto: dict) -> dict[str, Any]:
 def gate55_confianca_dados(ticker: str, contexto: dict | None = None) -> dict[str, Any]:
     """
     Executa Gate 5.5 com foco inicial em dados patrimoniais críticos.
-    Se o contexto em memória estiver presente, avalia os dados já presentes (Achado 2).
+
+    Se o contexto em memória estiver presente, avalia apenas os dados já
+    normalizados no contexto. Nesse caminho não consulta SQLite/rede e não grava
+    logs em disco, preservando o Zero DB Query Mode.
     """
     ticker_norm = ticker.upper().replace(".SA", "").strip()
 
@@ -53,6 +91,7 @@ def gate55_confianca_dados(ticker: str, contexto: dict | None = None) -> dict[st
             patrimonio = _patrimonio_a_partir_contexto(contexto)
         else:
             patrimonio = resolver_patrimonio(ticker_norm)
+
         relatorio = patrimonio.get("confianca_dados", {}) or {}
         nivel = relatorio.get("nivel_uso", "INSUFICIENTE")
         score = relatorio.get("score_global", 0.0)
@@ -61,7 +100,6 @@ def gate55_confianca_dados(ticker: str, contexto: dict | None = None) -> dict[st
         fonte = patrimonio.get("fonte_patrimonial", "DESCONHECIDA")
 
         penalidades = []
-
         if fallback:
             penalidades.append(
                 "Dados patrimoniais vieram de fallback auxiliar; CVM não disponível para o ticker."
@@ -96,12 +134,14 @@ def gate55_confianca_dados(ticker: str, contexto: dict | None = None) -> dict[st
                 f"Fonte patrimonial: {fonte}. Score: {score}."
             )
 
-        resultado = {
-            "gate": 55,
-            "status": status,
-            "motivo": motivo,
-            "penalidades": penalidades,
-            "eliminado": eliminado,
+        metricas = {
+            "score_confianca_dados": score,
+            "nivel_uso_dados": nivel,
+            "usou_cvm_patrimonial": usou_cvm,
+            "fallback_patrimonial_usado": fallback,
+            "fonte_patrimonial": fonte,
+        }
+        extras = {
             "score_confianca_dados": score,
             "nivel_uso_dados": nivel,
             "usou_cvm_patrimonial": usou_cvm,
@@ -109,37 +149,59 @@ def gate55_confianca_dados(ticker: str, contexto: dict | None = None) -> dict[st
             "fonte_patrimonial": fonte,
             "patrimonio_resolvido": patrimonio,
         }
-
-        observabilidade.registrar_evento(
-            "INFO",
-            "validacao.gate55_confianca_dados",
-            "Gate 5.5 executado",
-            ticker=ticker_norm,
-            contexto={
-                "status": status,
-                "score_confianca_dados": score,
-                "nivel_uso_dados": nivel,
-                "fonte_patrimonial": fonte,
-            },
+        resultado = _gate_result(
+            55,
+            status,
+            motivo,
+            eliminado=eliminado,
+            metricas=metricas,
+            fontes=[fonte],
+            penalidades=penalidades,
+            extras=extras,
         )
+
+        if not contexto:
+            observabilidade.registrar_evento(
+                "INFO",
+                "validacao.gate55_confianca_dados",
+                "Gate 5.5 executado",
+                ticker=ticker_norm,
+                contexto={
+                    "status": status,
+                    "score_confianca_dados": score,
+                    "nivel_uso_dados": nivel,
+                    "fonte_patrimonial": fonte,
+                },
+            )
 
         return resultado
 
     except Exception as erro:
-        observabilidade.registrar_erro(
-            "validacao.gate55_confianca_dados",
-            erro,
-            ticker=ticker_norm,
+        if not contexto:
+            observabilidade.registrar_erro(
+                "validacao.gate55_confianca_dados",
+                erro,
+                ticker=ticker_norm,
+            )
+        return _gate_result(
+            55,
+            "BLOQUEADO_ERRO_CONFIANCA_DADOS",
+            f"Erro ao avaliar confiança estrutural dos dados: {erro}",
+            eliminado=True,
+            metricas={
+                "score_confianca_dados": 0.0,
+                "nivel_uso_dados": "INSUFICIENTE",
+                "usou_cvm_patrimonial": False,
+                "fallback_patrimonial_usado": False,
+                "fonte_patrimonial": "ERRO",
+            },
+            fontes=["ERRO"],
+            penalidades=["Falha no Gate 5.5."],
+            extras={
+                "score_confianca_dados": 0.0,
+                "nivel_uso_dados": "INSUFICIENTE",
+                "usou_cvm_patrimonial": False,
+                "fallback_patrimonial_usado": False,
+                "fonte_patrimonial": "ERRO",
+            },
         )
-        return {
-            "gate": 55,
-            "status": "BLOQUEADO_ERRO_CONFIANCA_DADOS",
-            "motivo": f"Erro ao avaliar confiança estrutural dos dados: {erro}",
-            "penalidades": ["Falha no Gate 5.5."],
-            "eliminado": True,
-            "score_confianca_dados": 0.0,
-            "nivel_uso_dados": "INSUFICIENTE",
-            "usou_cvm_patrimonial": False,
-            "fallback_patrimonial_usado": False,
-            "fonte_patrimonial": "ERRO",
-        }
