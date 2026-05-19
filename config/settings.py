@@ -203,6 +203,13 @@ def validar_configuracao_seguranca() -> dict:
         "avisos": avisos,
     }
 
+# Rate limit operacional. Desligado por padrão para não bloquear dev/testes.
+RATE_LIMIT_ENABLED = os.getenv("FIIA_RATE_LIMIT_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("FIIA_RATE_LIMIT_WINDOW_SECONDS", "60"))
+RATE_LIMIT_DEFAULT_MAX = int(os.getenv("FIIA_RATE_LIMIT_DEFAULT_MAX", "120"))
+RATE_LIMIT_SENSITIVE_MAX = int(os.getenv("FIIA_RATE_LIMIT_SENSITIVE_MAX", "30"))
+RATE_LIMIT_RADAR_MAX = int(os.getenv("FIIA_RATE_LIMIT_RADAR_MAX", "3"))
+
 # Origens permitidas para CORS (configuráveis via .env, padrão local)
 CORS_ALLOWED_ORIGINS_RAW = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000")
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS_RAW.split(",") if origin.strip()]
