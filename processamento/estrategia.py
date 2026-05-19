@@ -52,12 +52,44 @@ def _card_bloqueio_contexto(ticker: str, contexto: dict) -> dict:
     }
 
 
+def _resolver_contextos_ciclo(tickers: list[str]) -> dict[str, dict]:
+    """
+    Resolve contextos para um ciclo de radar com cache local e versionado.
+
+    O cache do ciclo evita chamadas duplicadas para o mesmo ticker e só reutiliza
+    contexto com a VERSAO_CONTEXTO vigente. Contextos vencidos/de versão antiga
+    são obtidos novamente via resolver oficial.
+    """
+    from coleta.contexto_ativo import obter_contexto_ativo, VERSAO_CONTEXTO
+
+    cache_ciclo: dict[str, dict] = {}
+    resultado: dict[str, dict] = {}
+
+    for ticker in tickers:
+        ticker_norm = ticker.upper().replace(".SA", "").strip()
+        if not ticker_norm:
+            continue
+
+        contexto_cache = cache_ciclo.get(ticker_norm)
+        if contexto_cache and contexto_cache.get("contexto_versao") == VERSAO_CONTEXTO:
+            resultado[ticker_norm] = contexto_cache
+            continue
+
+        contexto = obter_contexto_ativo(ticker_norm)
+        if contexto.get("contexto_versao") != VERSAO_CONTEXTO:
+            contexto = obter_contexto_ativo(ticker_norm)
+
+        cache_ciclo[ticker_norm] = contexto
+        resultado[ticker_norm] = contexto
+
+    return resultado
+
+
 def radar_oportunidades() -> list:
     from coleta.api_fundamentus import coletar_mercado_inteiro
     from processamento.analise_qualitativa import analisar_fundo_ia
     from decisao.decisao_com_confianca import decidir
     from decisao.persistencia_decisao import gravar
-    from coleta.contexto_ativo import obter_contextos_ativos_lote
 
     mercado = coletar_mercado_inteiro()
 
@@ -87,25 +119,26 @@ def radar_oportunidades() -> list:
     log_gates = {}
     finalistas = []
 
-    # Resolve contextos em lote para evitar recomputação no mesmo ciclo.
+    # Resolve contextos em lote local para evitar recomputação no mesmo ciclo.
     tickers_radar = sobreviventes_a[:50]
-    contextos = obter_contextos_ativos_lote(tickers_radar)
+    contextos = _resolver_contextos_ciclo(tickers_radar)
 
     for ticker in tickers_radar:
-        contexto = contextos.get(ticker)
+        ticker_norm = ticker.upper().replace(".SA", "").strip()
+        contexto = contextos.get(ticker_norm)
         if not contexto:
             continue
 
         # Se o contexto bloquear a decisão (fail-closed), gera o card de bloqueio imediatamente.
         if not contexto.get("permitir_decisao", True):
-            veredito_bloqueado = _card_bloqueio_contexto(ticker, contexto)
+            veredito_bloqueado = _card_bloqueio_contexto(ticker_norm, contexto)
             gravar(veredito_bloqueado)
-            finalistas.append({"ticker": ticker, "margem": 0.0, "veredito": veredito_bloqueado})
+            finalistas.append({"ticker": ticker_norm, "margem": 0.0, "veredito": veredito_bloqueado})
             continue
 
         # Roda o motor atual uma única vez sem IA. O mesmo veredito é reaproveitado
         # para gate e margem, evitando recalcular contexto/decisão no mesmo ciclo.
-        veredito_pre_ia = decidir(ticker, ia_status="INDISPONIVEL", contexto=contexto)
+        veredito_pre_ia = decidir(ticker_norm, ia_status="INDISPONIVEL", contexto=contexto)
         gate_parada = veredito_pre_ia.get("gate_parada", 0)
 
         log_gates[gate_parada] = log_gates.get(gate_parada, 0) + 1
@@ -116,7 +149,7 @@ def radar_oportunidades() -> list:
         margem = veredito_pre_ia.get("margem")
         if margem is not None and margem > 0:
             candidatos_preco.append({
-                "ticker": ticker,
+                "ticker": ticker_norm,
                 "margem": margem,
                 "contexto": contexto,
                 "veredito_pre_ia": veredito_pre_ia,
