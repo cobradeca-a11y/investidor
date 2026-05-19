@@ -89,12 +89,12 @@ def test_aprovar_sugestao_registra_feedback_sem_alterar_motor(monkeypatch):
     assert eventos
 
 
-def test_rejeitar_sugestao_registra_feedback():
+def test_rejeitar_sugestao_registra_feedback(monkeypatch):
     chamadas = []
-    ajustes_pesos.garantir_tabela_sugestoes_ajuste = lambda: None
-    ajustes_pesos.obter_sugestao = lambda sugestao_id: {"id": sugestao_id, "estado": "PENDENTE"}
-    ajustes_pesos.db.executar = lambda sql, params=(): chamadas.append({"sql": sql, "params": params})
-    ajustes_pesos.observabilidade.registrar_evento = lambda *args, **kwargs: None
+    monkeypatch.setattr(ajustes_pesos, "garantir_tabela_sugestoes_ajuste", lambda: None)
+    monkeypatch.setattr(ajustes_pesos, "obter_sugestao", lambda sugestao_id: {"id": sugestao_id, "estado": "PENDENTE"})
+    monkeypatch.setattr(ajustes_pesos.db, "executar", lambda sql, params=(): chamadas.append({"sql": sql, "params": params}))
+    monkeypatch.setattr(ajustes_pesos.observabilidade, "registrar_evento", lambda *args, **kwargs: None)
 
     resultado = ajustes_pesos.rejeitar_sugestao(2, usuario="andre", origem="TESTE", justificativa="Evidência insuficiente.")
 
@@ -104,12 +104,12 @@ def test_rejeitar_sugestao_registra_feedback():
     assert chamadas[0]["params"][0] == "REJEITADA"
 
 
-def test_expirar_sugestao_registra_feedback():
+def test_expirar_sugestao_registra_feedback(monkeypatch):
     chamadas = []
-    ajustes_pesos.garantir_tabela_sugestoes_ajuste = lambda: None
-    ajustes_pesos.obter_sugestao = lambda sugestao_id: {"id": sugestao_id, "estado": "PENDENTE"}
-    ajustes_pesos.db.executar = lambda sql, params=(): chamadas.append({"sql": sql, "params": params})
-    ajustes_pesos.observabilidade.registrar_evento = lambda *args, **kwargs: None
+    monkeypatch.setattr(ajustes_pesos, "garantir_tabela_sugestoes_ajuste", lambda: None)
+    monkeypatch.setattr(ajustes_pesos, "obter_sugestao", lambda sugestao_id: {"id": sugestao_id, "estado": "PENDENTE"})
+    monkeypatch.setattr(ajustes_pesos.db, "executar", lambda sql, params=(): chamadas.append({"sql": sql, "params": params}))
+    monkeypatch.setattr(ajustes_pesos.observabilidade, "registrar_evento", lambda *args, **kwargs: None)
 
     resultado = ajustes_pesos.expirar_sugestao(3, usuario="sistema", origem="ROTINA", justificativa="Sugestão antiga.")
 
