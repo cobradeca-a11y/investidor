@@ -62,9 +62,9 @@ BCB: 5 dias
 
 Esses limites servem para monitoramento. Eles não alteram thresholds dos gates e não mudam decisão final.
 
-## 5. Persistência
+## 5. Persistência instantânea
 
-A tabela aditiva `governanca_fontes` registra:
+A tabela aditiva `governanca_fontes` registra a leitura pontual da fonte:
 
 - fonte;
 - ticker;
@@ -78,14 +78,49 @@ A tabela aditiva `governanca_fontes` registra:
 - payload estruturado;
 - data de criação.
 
-A migração é aditiva:
+## 6. Score histórico de fonte
 
-- não altera tabelas existentes;
-- não executa `DROP`;
-- não recria tabela decisória;
-- não muda contrato final da decisão.
+A tabela aditiva `governanca_fontes_score_historico` registra a série longitudinal da confiabilidade por fonte.
 
-## 6. Logs estruturados
+Cada registro deve conter:
+
+- `fonte`;
+- `ticker`, quando aplicável;
+- `data_referencia`;
+- `status`;
+- `score_confianca_fonte`;
+- `motivo`;
+- `payload_json`;
+- `criado_em`.
+
+Esse score é apenas insumo auditável. Ele não altera decisão automaticamente, não muda thresholds dos gates e não funciona como regra oculta.
+
+## 7. Auditoria longitudinal
+
+A camada `validacao.score_fontes` permite:
+
+- registrar um ponto histórico com `registrar_score_fonte()`;
+- converter status instantâneo em histórico com `registrar_score_a_partir_status()`;
+- consultar histórico com `consultar_historico_fonte()`;
+- resumir confiabilidade com `resumir_confiabilidade_fonte()`.
+
+O resumo explicita:
+
+```text
+uso = AUDITORIA_APENAS
+altera_decisao_automaticamente = False
+```
+
+## 8. Migração
+
+As migrações de governança são aditivas:
+
+- não alteram tabelas existentes;
+- não executam `DROP`;
+- não recriam tabela decisória;
+- não mudam contrato final da decisão.
+
+## 9. Logs estruturados
 
 Cada status pode gerar evento estruturado via observabilidade:
 
@@ -106,7 +141,7 @@ Cada status pode gerar evento estruturado via observabilidade:
 
 Logs não devem conter segredos, bancos locais ou payloads sensíveis.
 
-## 7. Uso sem rede em testes
+## 10. Uso sem rede em testes
 
 A função `avaliar_fontes_por_payloads()` recebe payloads já fornecidos e não aciona rede.
 
@@ -135,7 +170,7 @@ resultado = avaliar_fontes_por_payloads(
 )
 ```
 
-## 8. Contratos preservados
+## 11. Contratos preservados
 
 A governança de fontes não pode:
 
@@ -144,24 +179,27 @@ A governança de fontes não pode:
 - chamar motor decisório;
 - disparar coleta de rede em testes unitários;
 - versionar logs, bancos, `.venv` ou caches;
-- quebrar Zero DB Query Mode.
+- quebrar Zero DB Query Mode;
+- usar score histórico como decisão automática.
 
-## 9. Testes obrigatórios
+## 12. Testes obrigatórios
 
 Executar:
 
 ```bash
-python -m compileall -q coleta validacao sistema banco config
-pytest teste_governanca_fontes.py teste_regressao_zero_db.py
+python -m compileall -q validacao coleta banco config
+pytest teste_score_fontes.py teste_governanca_fontes.py
 ```
 
-## 10. Checklist operacional
+## 13. Checklist operacional
 
 ```text
 [ ] Todos os status possíveis são cobertos: OK, VENCIDA, DIVERGENTE, INDISPONIVEL, SUSPEITA.
 [ ] Testes unitários não acionam rede.
 [ ] Migração é aditiva.
 [ ] Logs são estruturados.
+[ ] Registros históricos contêm fonte, ticker, data, status, score e motivo.
+[ ] Score histórico está marcado como AUDITORIA_APENAS.
 [ ] Nenhum threshold de gate foi alterado.
 [ ] Decisão final não foi alterada.
 [ ] Zero DB Query Mode preservado.
