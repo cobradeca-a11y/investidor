@@ -6,10 +6,9 @@ services:
     image: fiia-investidor:local
     container_name: fiia-investidor
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
     environment:
+      FIIA_API_KEY: ${FIIA_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       FIIA_ENV: ${FIIA_ENV:-prod}
       FIIA_DEBUG: ${FIIA_DEBUG:-0}
       FIIA_OBSERVABILIDADE: ${FIIA_OBSERVABILIDADE:-1}
