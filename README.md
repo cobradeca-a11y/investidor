@@ -128,7 +128,7 @@ Essa identidade é a base para cruzar dados de CVM, B3/FNET, mercado, rendimento
 - `mercado/`: semáforo macroeconômico e contexto setorial.
 - `aprendizado/`: avaliação das decisões, backtesting operacional e janelas 90/365 dias.
 - `banco/`: persistência SQLite, schema e histórico.
-- `web/` ou `static/`: interface web/PWA.
+- `web` ou `static/`: interface web/PWA.
 - `app.py`: servidor FastAPI.
 - `main.py`: entrada CLI.
 
@@ -158,7 +158,9 @@ pip install -r requirements.txt
 2. Configure o arquivo `.env` na raiz do projeto:
 
 ```env
+FIIA_API_KEY=sua_chave_operacional
 GEMINI_API_KEY=sua_chave_aqui
+FIIA_OBSERVABILIDADE=1
 ```
 
 3. Inicialize o banco:
@@ -184,6 +186,17 @@ A aplicação FastAPI sobe por padrão em:
 ```text
 http://0.0.0.0:8080
 ```
+
+---
+
+## ✅ Produção, operação e release
+
+Antes de tag, deploy ou uso operacional, siga obrigatoriamente:
+
+- [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md): checklist técnico de release, CI, testes, segurança, logs, versionamento, migração e rollback.
+- [`docs/OPERACAO.md`](docs/OPERACAO.md): guia de operação local/operacional, variáveis de ambiente, auditoria, backtest, logs e smoke tests.
+
+Uma release só deve ser considerada pronta com CI verde e testes críticos aprovados.
 
 ---
 
