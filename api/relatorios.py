@@ -8,15 +8,17 @@ Objetivo:
 - expor versão Markdown;
 - permitir análise individual por ticker;
 - permitir comparação entre ativos;
+- exportar CSV/JSON auditável;
 - incluir explicação simples para decisões técnicas.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
+from acesso.seguranca import verificar_api_key, resposta_erro_segura
 from educacao.explicador import explicar_status
 from relatorios.relatorio_completo import (
     gerar_relatorio_completo,
@@ -24,6 +26,7 @@ from relatorios.relatorio_completo import (
     gerar_analise_individual,
     comparar_ativos,
 )
+from relatorios.exportacao_relatorios import gerar_exportacao
 from sistema import observabilidade
 
 router = APIRouter(prefix="/api/relatorios", tags=["relatorios"])
@@ -65,7 +68,7 @@ def _adicionar_explicacao_simples(analise: dict[str, Any]) -> dict[str, Any]:
     return analise
 
 
-@router.post("/completo")
+@router.post("/completo", dependencies=[Depends(verificar_api_key)])
 def relatorio_completo(payload: RelatorioRequest) -> dict[str, Any]:
     try:
         relatorio = gerar_relatorio_completo(payload.tickers)
@@ -74,10 +77,10 @@ def relatorio_completo(payload: RelatorioRequest) -> dict[str, Any]:
         return relatorio
     except Exception as erro:
         observabilidade.registrar_erro("api.relatorios.completo", erro)
-        return {"status": "erro", "mensagem": str(erro)}
+        return resposta_erro_segura("Falha controlada ao gerar relatório completo.")
 
 
-@router.post("/markdown")
+@router.post("/markdown", dependencies=[Depends(verificar_api_key)])
 def relatorio_markdown(payload: RelatorioRequest) -> dict[str, Any]:
     try:
         relatorio = gerar_relatorio_completo(payload.tickers)
@@ -87,10 +90,10 @@ def relatorio_markdown(payload: RelatorioRequest) -> dict[str, Any]:
         return {"status": "ok", "markdown": markdown, "relatorio": relatorio}
     except Exception as erro:
         observabilidade.registrar_erro("api.relatorios.markdown", erro)
-        return {"status": "erro", "mensagem": str(erro), "markdown": ""}
+        return resposta_erro_segura("Falha controlada ao gerar relatório Markdown.", markdown="")
 
 
-@router.get("/ativo/{ticker}")
+@router.get("/ativo/{ticker}", dependencies=[Depends(verificar_api_key)])
 def relatorio_ativo(ticker: str) -> dict[str, Any]:
     ticker_norm = ticker.upper().replace(".SA", "")
     try:
@@ -98,10 +101,10 @@ def relatorio_ativo(ticker: str) -> dict[str, Any]:
         return {"status": "ok", "ativo": _adicionar_explicacao_simples(analise)}
     except Exception as erro:
         observabilidade.registrar_erro("api.relatorios.ativo", erro, ticker=ticker_norm)
-        return {"status": "erro", "ticker": ticker_norm, "mensagem": str(erro)}
+        return resposta_erro_segura("Falha controlada ao gerar relatório do ativo.", ticker=ticker_norm)
 
 
-@router.post("/comparar")
+@router.post("/comparar", dependencies=[Depends(verificar_api_key)])
 def comparar(payload: RelatorioRequest) -> dict[str, Any]:
     try:
         comparacao = comparar_ativos(payload.tickers)
@@ -110,4 +113,34 @@ def comparar(payload: RelatorioRequest) -> dict[str, Any]:
         return {"status": "ok", "quantidade": len(comparacao), "comparacao": comparacao}
     except Exception as erro:
         observabilidade.registrar_erro("api.relatorios.comparar", erro)
-        return {"status": "erro", "mensagem": str(erro), "comparacao": []}
+        return resposta_erro_segura("Falha controlada ao comparar ativos.", comparacao=[])
+
+
+@router.get("/exportar", dependencies=[Depends(verificar_api_key)])
+def exportar_relatorio(
+    formato: str = "json",
+    secao: str = "decisoes",
+    limite: int = 50,
+    incluir_replay: bool = False,
+) -> dict[str, Any] | Response:
+    """Exporta relatórios auditáveis em JSON ou CSV sem alterar dados."""
+    try:
+        exportacao = gerar_exportacao(
+            formato=formato,
+            secao=secao,
+            limite=limite,
+            incluir_replay=incluir_replay,
+        )
+        if exportacao.get("status") != "ok":
+            return exportacao
+        if exportacao.get("formato") == "csv":
+            nome = f"fiia_{exportacao.get('secao', 'relatorio')}.csv"
+            return Response(
+                content=exportacao.get("conteudo", ""),
+                media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f"attachment; filename={nome}"},
+            )
+        return exportacao
+    except Exception as erro:
+        observabilidade.registrar_erro("api.relatorios.exportar", erro)
+        return resposta_erro_segura("Falha controlada ao exportar relatório.")
