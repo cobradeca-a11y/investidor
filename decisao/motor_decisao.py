@@ -72,7 +72,11 @@ _SCORE_IA_VETO                = 4           # score IA <= 4 -> veto qualitativo
 def _gate_result(gate: int, status: str, motivo: str, penalidades: list = None,
                  metricas: dict = None, fontes: list = None, motivos: list = None) -> dict:
     eliminado = status.startswith("BLOQUEADO") or status.startswith("ELIMINADO")
-    aprovado = not eliminado
+    aprovado = not (
+        status.startswith("BLOQUEADO")
+        or status.startswith("ELIMINADO")
+        or status.startswith("VETO")
+    )
     lista_motivos = motivos or [motivo]
 
     return {
@@ -864,7 +868,7 @@ def _montar_retorno(
 
         # Gates detalhados (debug + UI)
         "gates_detalhes": {
-            str(n): {"status": g["status"], "motivo": g["motivo"]}
+            str(n): g
             for n, g in sorted(gates.items())
         },
 
