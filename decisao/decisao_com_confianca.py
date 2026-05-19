@@ -10,6 +10,7 @@ from typing import Any
 
 from banco import db
 from decisao import motor_decisao_cvm_first
+from decisao.objeto_decisao import normalizar_contrato_decisao
 from processamento.eventos_fnet import (
     analisar_eventos_ticker,
     aplicar_eventos_na_decisao,
@@ -123,7 +124,7 @@ def decidir(
         )
 
         if veredito.get("decisao") == "BLOQUEADO_CONTEXTO_INCOMPLETO":
-            return veredito
+            return normalizar_contrato_decisao(veredito, contexto)
 
         campos = _montar_campos_confianca(ticker, veredito, contexto)
         relatorio = gerar_relatorio_confianca(
@@ -182,7 +183,7 @@ def decidir(
             },
         )
 
-        return veredito
+        return normalizar_contrato_decisao(veredito, contexto)
 
     except Exception as erro:
         observabilidade.registrar_erro(
@@ -190,7 +191,7 @@ def decidir(
             erro,
             ticker=ticker,
         )
-        return {
+        return normalizar_contrato_decisao({
             "ticker": ticker,
             "decisao": "MONITORAR",
             "status": "ERRO_DECISAO_COM_CONFIANCA",
@@ -199,4 +200,4 @@ def decidir(
             "nivel_uso_dados": "INSUFICIENTE",
             "usou_cvm_patrimonial": False,
             "risco_documental_fnet": "ERRO",
-        }
+        }, contexto)

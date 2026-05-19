@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from decisao import motor_decisao
+from decisao.objeto_decisao import normalizar_contrato_decisao
 from servicos.resolvedor_patrimonial import resolver_patrimonio
 from sistema import observabilidade
 from validacao.gate_confianca_dados import gate55_confianca_dados
@@ -113,7 +114,7 @@ def decidir(
         )
 
         if veredito.get("decisao") == "BLOQUEADO_CONTEXTO_INCOMPLETO":
-            return veredito
+            return normalizar_contrato_decisao(veredito, contexto)
 
         if contexto:
 
@@ -164,11 +165,11 @@ def decidir(
             },
         )
 
-        return veredito
+        return normalizar_contrato_decisao(veredito, contexto)
 
     except Exception as erro:
         observabilidade.registrar_erro("decisao.motor_cvm_first", erro, ticker=ticker_norm)
-        return {
+        return normalizar_contrato_decisao({
             "ticker": ticker_norm,
             "decisao": "MONITORAR",
             "status": "ERRO_MOTOR_CVM_FIRST",
@@ -178,4 +179,4 @@ def decidir(
             "gates_detalhes": {"55": {"status": "BLOQUEADO_ERRO_CONFIANCA_DADOS", "motivo": str(erro), "eliminado": True}},
             "usou_cvm_patrimonial": False,
             "fallback_patrimonial_usado": False,
-        }
+        }, contexto)

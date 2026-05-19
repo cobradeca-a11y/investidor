@@ -151,7 +151,7 @@ def _normalizar_veredito(veredito: dict[str, Any]) -> dict[str, Any]:
         "versao_modelo": veredito.get("versao_modelo", "2.0"),
         "risco": veredito.get("risco"),
         "score_final": veredito.get("score_final"),
-        "preco_teto": veredito.get("preco_teto"),
+        "preco_teto": veredito.get("preco_teto") or veredito.get("preco_entrada"),
         "payload_json": _json_seguro(veredito),
     }
 
@@ -159,7 +159,7 @@ def _normalizar_veredito(veredito: dict[str, Any]) -> dict[str, Any]:
 def _normalizar_objeto_decisao(decisao: Any) -> dict[str, Any]:
     """Normaliza DecisaoFIIA para persistência."""
     payload = decisao.to_dict()
-    motivo = "; ".join(payload.get("justificativas", []))
+    motivo = payload.get("motivo") or "; ".join(payload.get("justificativas", []))
     riscos = payload.get("riscos", [])
 
     return {
@@ -170,8 +170,8 @@ def _normalizar_objeto_decisao(decisao: Any) -> dict[str, Any]:
         "confianca": payload.get("confianca"),
         "preco_na_decisao": payload.get("preco_atual"),
         "preco_justo": payload.get("preco_justo"),
-        "preco_entrada": payload.get("preco_teto"),
-        "margem": payload.get("margem_seguranca"),
+        "preco_entrada": payload.get("preco_entrada") or payload.get("preco_teto"),
+        "margem": payload.get("margem") or payload.get("margem_seguranca"),
         "score_ia": None,
         "ia_status": payload.get("contexto", {}).get("ia_status"),
         "tom_gestor": payload.get("contexto", {}).get("tom_gestor"),

@@ -27,4 +27,4 @@ jobs:
       run: python -m compileall .
       
     - name: Run Zero DB Query Mode Tests
-      run: pytest teste_proibicao_sqlite.py teste_comparacao_motores.py teste_contrato_gates.py
+      run: pytest teste_proibicao_sqlite.py teste_comparacao_motores.py teste_contrato_gates.py teste_contrato_decisao.py
