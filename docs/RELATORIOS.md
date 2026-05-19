@@ -8,22 +8,25 @@ Gerar relatórios técnicos exportáveis de:
 
 - carteira;
 - decisões;
+- histórico;
 - bloqueios;
 - fontes;
+- métricas;
 - gates;
 - replay/auditoria.
 
-A geração de relatório é somente leitura.
+A geração e exportação de relatório é somente leitura.
 
 ## 2. Contratos obrigatórios
 
-Relatórios auditáveis não podem:
+Relatórios e exportações auditáveis não podem:
 
 - alterar decisão;
 - chamar motor decisório;
 - acionar scraping;
 - alterar banco;
 - recalcular decisão;
+- exportar segredos;
 - quebrar replay/auditoria existente.
 
 Todo relatório deve indicar:
@@ -47,7 +50,9 @@ não disponível
 ```text
 relatorios/relatorios_auditaveis.py
 relatorios/relatorio_completo.py
+relatorios/exportacao_relatorios.py
 teste_relatorios_auditaveis.py
+teste_exportacao_relatorios.py
 docs/RELATORIOS.md
 ```
 
@@ -129,7 +134,69 @@ Exporta:
 - bloqueios/falhas;
 - replay.
 
-## 8. Compatibilidade com API existente
+## 8. Exportação CSV/JSON
+
+Arquivo:
+
+```text
+relatorios/exportacao_relatorios.py
+```
+
+Funções:
+
+```python
+gerar_exportacao_json(secao="decisoes", limite=50, incluir_replay=False)
+gerar_exportacao_csv(secao="decisoes", limite=50, incluir_replay=False)
+gerar_exportacao(formato="json", secao="decisoes", limite=50, incluir_replay=False)
+```
+
+Seções exportáveis:
+
+```text
+decisoes
+fontes
+bloqueios
+replay
+metricas
+```
+
+Formatos suportados:
+
+```text
+json
+csv
+```
+
+Campos estáveis por seção:
+
+- `decisoes`: `id`, `ticker`, `data_decisao`, `decisao`, `motivo`, `confianca`, `risco`, `score_final`, `contexto_versao`, `versao_motor`, `payload_hash`, `hash_valido`.
+- `fontes`: `ticker`, `fonte_patrimonial`, `nivel_uso_dados`, `score_confianca_dados`, `contexto_versao`, `versao_motor`, `payload_hash`.
+- `bloqueios`: `ticker`, `tipo`, `decisao`, `gate_parada`, `motivo`.
+- `replay`: `decisao_id`, `ticker`, `solicitado`, `executado`, `status`, `replay_deterministico`, `divergencia_replay`, `payload_hash_salvo`, `payload_hash_replay`, `fonte_replay`.
+- `metricas`: `quantidade_decisoes`, `quantidade_bloqueios`, `quantidade_fontes`, `quantidade_gates`, `quantidade_replays`, `quantidade_posicoes`, `sem_scraping`, `executou_motor`, `alterou_decisao`.
+
+A exportação remove chaves sensíveis como `api_key`, `token`, `secret`, `authorization`, `cookie`, `senha` e equivalentes.
+
+## 9. Endpoints de exportação
+
+Todos os endpoints de relatório em `api/relatorios.py` exigem autenticação por API key.
+
+Endpoint de exportação:
+
+```text
+GET /api/relatorios/exportar?formato=json&secao=decisoes&limite=50&incluir_replay=false
+GET /api/relatorios/exportar?formato=csv&secao=decisoes&limite=50&incluir_replay=false
+```
+
+Regras:
+
+- JSON retorna payload estruturado.
+- CSV retorna `Response` com `Content-Disposition: attachment`.
+- Replay só é incluído quando `incluir_replay=true`.
+- A exportação não aciona motor nem scraping.
+- A exportação não altera dados.
+
+## 10. Compatibilidade com API existente
 
 O arquivo `relatorios/relatorio_completo.py` mantém compatibilidade com `api/relatorios.py`, expondo:
 
@@ -142,21 +209,33 @@ comparar_ativos()
 
 Essas funções agora usam a camada auditável e não chamam motor ou scraping.
 
-## 9. Testes
+## 11. Testes
 
 Executar:
 
 ```bash
-python -m compileall -q relatorios decisao banco config
+python -m compileall -q relatorios api decisao banco config
+pytest teste_exportacao_relatorios.py teste_seguranca_api.py
+```
+
+Para a camada auditável base:
+
+```bash
 pytest teste_relatorios_auditaveis.py teste_replay_decisao.py
 ```
 
-## 10. Checklist de homologação
+## 12. Checklist de homologação
 
 ```text
 [ ] Relatório não altera decisão.
 [ ] Relatório não aciona scraping.
 [ ] Relatório não chama motor.
+[ ] Exportação não altera dados.
+[ ] Exportação usa campos estáveis.
+[ ] Exportação JSON funciona.
+[ ] Exportação CSV funciona.
+[ ] Endpoints exigem autenticação.
+[ ] Dados sensíveis não são exportados.
 [ ] Relatório indica data de geração.
 [ ] Relatório indica versão do motor quando disponível.
 [ ] Relatório indica versão do contexto quando disponível.
