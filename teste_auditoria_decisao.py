@@ -5,7 +5,8 @@ Valida a persistência auditável da decisão:
 - payload_json normalizado;
 - payload_hash SHA-256 estável;
 - contexto_versao e versao_motor persistidos;
-- reconstrução/validação sem coleta externa.
+- reconstrução/validação sem coleta externa;
+- replay auditável apenas a partir do payload salvo.
 """
 from __future__ import annotations
 
@@ -99,6 +100,57 @@ def test_validar_payload_salvo_detecta_adulteracao():
 
     assert resultado["valido"] is False
     assert resultado["payload_hash_salvo"] != resultado["payload_hash_calculado"]
+
+
+def test_replay_decisao_salva_reconstroi_payload_sem_motor(monkeypatch):
+    dados = persistencia._normalizar_veredito(_payload_base())
+    registro = {"id": 123, **dados}
+
+    monkeypatch.setattr(persistencia, "_garantir_tabela", lambda: None)
+    monkeypatch.setattr(
+        persistencia.db,
+        "buscar_um",
+        lambda sql, params=(): registro if params == (123,) else None,
+    )
+
+    replay = persistencia.replay_decisao_salva(123)
+
+    assert replay["status"] == "ok"
+    assert replay["replay_deterministico"] is True
+    assert replay["decisao_id"] == 123
+    assert replay["ticker"] == "HGLG11"
+    assert replay["decisao"] == "MONITORAR"
+    assert replay["payload_hash_salvo"] == dados["payload_hash"]
+    assert replay["payload_hash_replay"] == dados["payload_hash"]
+    assert replay["contexto_versao"] == "asset-context-v1.3"
+    assert replay["versao_motor"] == "2.1"
+    assert replay["fonte_replay"] == "payload_json_persistido"
+
+
+def test_replay_decisao_salva_bloqueia_hash_invalido(monkeypatch):
+    dados = persistencia._normalizar_veredito(_payload_base())
+    dados["payload_hash"] = "hash_invalido"
+    registro = {"id": 123, **dados}
+
+    monkeypatch.setattr(persistencia, "_garantir_tabela", lambda: None)
+    monkeypatch.setattr(persistencia.db, "buscar_um", lambda sql, params=(): registro)
+
+    replay = persistencia.replay_decisao_salva(123)
+
+    assert replay["status"] == "hash_invalido"
+    assert replay["replay_deterministico"] is False
+    assert "validacao" in replay
+
+
+def test_replay_decisao_salva_retorna_erro_quando_nao_encontra(monkeypatch):
+    monkeypatch.setattr(persistencia, "_garantir_tabela", lambda: None)
+    monkeypatch.setattr(persistencia.db, "buscar_um", lambda sql, params=(): None)
+
+    replay = persistencia.replay_decisao_salva(999)
+
+    assert replay["status"] == "erro"
+    assert replay["replay_deterministico"] is False
+    assert replay["decisao_id"] == 999
 
 
 def test_garantir_tabela_migracao_aditiva_inclui_colunas_auditoria(monkeypatch):
