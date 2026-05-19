@@ -17,6 +17,7 @@ from acesso.seguranca import verificar_api_key, resposta_erro_segura
 from banco import db
 from aprendizado.avaliador import taxa_acerto
 from sistema import observabilidade
+from operacional import healthcheck as health_operacional
 from coleta import tabela_mestre_fiis, cvm_informe_mensal, cvm_fnet_documentos
 from decisao.auditoria_decisao import consultar_decisao_auditavel, listar_decisoes_auditaveis
 
@@ -53,6 +54,42 @@ def _parse_data_iso(valor: str | None) -> datetime | None:
         return datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+@router.get("/health")
+def health_basico() -> dict[str, Any]:
+    """Healthcheck básico. Não aciona scraping, banco profundo, Radar ou motor."""
+    try:
+        return health_operacional.healthcheck_basico()
+    except Exception as erro:
+        observabilidade.registrar_erro("api.auditoria.health", erro)
+        return resposta_erro_segura("Falha controlada no healthcheck básico.", componentes=[])
+
+
+@router.get(
+    "/health/profundo",
+    dependencies=[Depends(verificar_api_key), Depends(dependencia_rate_limit("sensivel"))],
+)
+def health_profundo(incluir_radar: bool = False) -> dict[str, Any]:
+    """Healthcheck profundo explícito. Não executa scraping; Radar não roda sem executor autorizado."""
+    try:
+        return health_operacional.healthcheck_profundo(incluir_radar=incluir_radar)
+    except Exception as erro:
+        observabilidade.registrar_erro("api.auditoria.health_profundo", erro)
+        return resposta_erro_segura("Falha controlada no healthcheck profundo.", componentes=[])
+
+
+@router.post(
+    "/jobs/verificacao-operacional",
+    dependencies=[Depends(verificar_api_key), Depends(dependencia_rate_limit("sensivel"))],
+)
+def job_verificacao_operacional() -> dict[str, Any]:
+    """Executa job operacional seguro sem scraping e sem motor decisório."""
+    try:
+        return {"status": "ok", "job": health_operacional.job_verificacao_operacional()}
+    except Exception as erro:
+        observabilidade.registrar_erro("api.auditoria.job_verificacao_operacional", erro)
+        return resposta_erro_segura("Falha controlada ao executar job operacional.")
 
 
 @router.get(
@@ -257,25 +294,7 @@ def cobertura_fnet(limite: int = 500) -> dict[str, Any]:
         total_base = len(base)
         pct_com_fnet = round(com_fnet / total_base * 100, 2) if total_base else 0.0
         pct_sem_fnet = round(sem_fnet / total_base * 100, 2) if total_base else 0.0
-        return {
-            "status": "ok",
-            "resumo": {
-                "total_tabela_mestre": total_base,
-                "total_documentos_fnet": meta["total_documentos"] if meta else 0,
-                "tickers_com_documentos_no_banco": meta["tickers_com_documentos"] if meta else 0,
-                "cnpjs_com_documentos_no_banco": meta["cnpjs_com_documentos"] if meta else 0,
-                "ativos_com_fnet": com_fnet,
-                "ativos_com_fnet_pct": pct_com_fnet,
-                "ativos_sem_fnet": sem_fnet,
-                "ativos_sem_fnet_pct": pct_sem_fnet,
-                "ultima_importacao": ultima_importacao,
-                "dias_desde_ultima_importacao": dias_desde,
-                "base_fnet_vazia": not bool(meta and meta["total_documentos"]),
-            },
-            "arquivos_importados_recentes": [dict(row) for row in arquivos_rows],
-            "ativos": ativos,
-            "ativos_sem_fnet": [item for item in ativos if not item.get("tem_fnet_documental")],
-        }
+        return {"status": "ok", "resumo": {"total_tabela_mestre": total_base, "total_documentos_fnet": meta["total_documentos"] if meta else 0, "tickers_com_documentos_no_banco": meta["tickers_com_documentos"] if meta else 0, "cnpjs_com_documentos_no_banco": meta["cnpjs_com_documentos"] if meta else 0, "ativos_com_fnet": com_fnet, "ativos_com_fnet_pct": pct_com_fnet, "ativos_sem_fnet": sem_fnet, "ativos_sem_fnet_pct": pct_sem_fnet, "ultima_importacao": ultima_importacao, "dias_desde_ultima_importacao": dias_desde, "base_fnet_vazia": not bool(meta and meta["total_documentos"])}, "arquivos_importados_recentes": [dict(row) for row in arquivos_rows], "ativos": ativos, "ativos_sem_fnet": [item for item in ativos if not item.get("tem_fnet_documental")]}
     except Exception as erro:
         observabilidade.registrar_erro("api.auditoria.cobertura_fnet", erro)
         return resposta_erro_segura("Falha controlada ao medir cobertura FNET.", resumo={}, ativos=[])
@@ -288,15 +307,12 @@ def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
         tabela_mestre_fiis.garantir_tabela()
         cvm_informe_mensal.garantir_tabela()
         cvm_fnet_documentos.garantir_tabela()
-        rows = db.buscar_todos(
-            """
+        rows = db.buscar_todos("""
             SELECT ticker, cnpj_fundo, cnpj_classe, razao_social, nome_fundo
             FROM fiia_tabela_mestre_fiis
             ORDER BY ticker
             LIMIT ?
-            """,
-            (limite,),
-        )
+            """, (limite,))
         ativos = []
         total = len(rows)
         com_cnpj = com_cvm = com_fnet = 0
@@ -311,17 +327,7 @@ def cobertura_institucional(limite: int = 500) -> dict[str, Any]:
                 com_cvm += 1
             if documento:
                 com_fnet += 1
-            ativos.append({
-                "ticker": item.get("ticker"),
-                "cnpj_fundo": cnpj,
-                "cnpj_classe": item.get("cnpj_classe"),
-                "tem_cnpj": bool(cnpj),
-                "tem_cvm_patrimonial": bool(informe),
-                "competencia_cvm": informe.get("competencia") if informe else None,
-                "tem_fnet_documental": bool(documento),
-                "ultimo_documento_fnet": documento.get("data_entrega") if documento else None,
-                "tipo_ultimo_documento": documento.get("tipo_documento") if documento else None,
-            })
+            ativos.append({"ticker": item.get("ticker"), "cnpj_fundo": cnpj, "cnpj_classe": item.get("cnpj_classe"), "tem_cnpj": bool(cnpj), "tem_cvm_patrimonial": bool(informe), "competencia_cvm": informe.get("competencia") if informe else None, "tem_fnet_documental": bool(documento), "ultimo_documento_fnet": documento.get("data_entrega") if documento else None, "tipo_ultimo_documento": documento.get("tipo_documento") if documento else None})
         def pct(valor: int) -> float:
             return round(valor / total * 100, 2) if total else 0.0
         return {"status": "ok", "resumo": {"total_tabela_mestre": total, "com_cnpj": com_cnpj, "com_cnpj_pct": pct(com_cnpj), "com_cvm_patrimonial": com_cvm, "com_cvm_patrimonial_pct": pct(com_cvm), "com_fnet_documental": com_fnet, "com_fnet_documental_pct": pct(com_fnet)}, "ativos": ativos}
