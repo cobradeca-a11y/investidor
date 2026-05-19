@@ -283,3 +283,22 @@ CREATE TABLE IF NOT EXISTS governanca_fontes (
 
 CREATE INDEX IF NOT EXISTS idx_governanca_fontes_fonte_data ON governanca_fontes(fonte, data_referencia);
 CREATE INDEX IF NOT EXISTS idx_governanca_fontes_ticker ON governanca_fontes(ticker);
+
+-- ─────────────────────────────────────────
+-- Score histórico de fontes
+-- Migração aditiva: insumo auditável, sem efeito automático na decisão.
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS governanca_fontes_score_historico (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    fonte                   TEXT NOT NULL,
+    ticker                  TEXT,
+    data_referencia         TEXT NOT NULL,
+    status                  TEXT NOT NULL CHECK(status IN ('OK', 'VENCIDA', 'DIVERGENTE', 'INDISPONIVEL', 'SUSPEITA')),
+    score_confianca_fonte   REAL NOT NULL,
+    motivo                  TEXT,
+    payload_json            TEXT,
+    criado_em               TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_governanca_fontes_score_historico_fonte_data ON governanca_fontes_score_historico(fonte, data_referencia);
+CREATE INDEX IF NOT EXISTS idx_governanca_fontes_score_historico_ticker_data ON governanca_fontes_score_historico(ticker, data_referencia);
