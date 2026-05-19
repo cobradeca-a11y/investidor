@@ -109,9 +109,9 @@ PESOS_SCORE_SEGMENTADO = {
 
 # ─────────────────────────────────────────
 # Janelas de avaliação do paper trading
-# 180 dias removido até existir suporte completo no avaliador.
+# Aprendizado operacional deve suportar 30, 90, 180 e 365 dias.
 # ─────────────────────────────────────────
-JANELAS_AVALIACAO_DIAS = [90, 365]
+JANELAS_AVALIACAO_DIAS = [30, 90, 180, 365]
 
 # ─────────────────────────────────────────
 # Governança do aprendizado adaptativo
@@ -119,6 +119,7 @@ JANELAS_AVALIACAO_DIAS = [90, 365]
 APRENDIZADO_AMOSTRAS_MINIMAS = 50
 APRENDIZADO_DIFERENCA_CDI_MINIMA = 8.0     # % abaixo do CDI para considerar erro
 APRENDIZADO_SEGMENTOS_MINIMOS = 3          # consistência entre segmentos
+APRENDIZADO_APLICAR_AJUSTES_AUTOMATICAMENTE = False
 
 # ─────────────────────────────────────────
 # URLs das fontes de dados
