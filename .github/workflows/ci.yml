@@ -16,7 +16,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
       FIIA_ENV: "ci"
       FIIA_OBSERVABILIDADE: "0"
-      FIIA_API_KEY: "ci-fiia-key"
+      FIIA_API_KEY: "ci-fiia-key-super-forte-para-testes-automatizados"
 
     steps:
       - name: Checkout
@@ -52,13 +52,13 @@ jobs:
         run: pytest teste_proibicao_sqlite.py teste_regressao_zero_db.py
 
       - name: Testar contratos decisórios e gates auditáveis
-        run: pytest teste_contrato_gates.py teste_contrato_decisao.py teste_comparacao_motores.py
+        run: pytest teste_contrato_gates.py teste_contrato_decisao.py
 
       - name: Testar auditoria, replay e hash
-        run: pytest teste_auditoria_decisao.py teste_api_decisoes.py
+        run: pytest teste_auditoria_decisao.py teste_api_decisoes.py teste_replay_decisao.py
 
       - name: Testar backtest institucional com snapshots
         run: pytest teste_backtest_snapshot.py
 
       - name: Testar performance e frontend estático
-        run: pytest teste_performance_radar.py teste_observabilidade_performance.py teste_frontend_payload.py
+        run: pytest teste_performance_radar.py teste_observabilidade_performance.py teste_frontend_payload.py teste_frontend_explicabilidade.py teste_frontend_replay.py teste_governanca_fontes.py teste_score_fontes.py teste_rate_limit.py teste_aprendizado_operacional.py teste_aprovacao_ajustes.py

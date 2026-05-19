@@ -2,15 +2,14 @@
 teste_proibicao_sqlite.py
 Testa se a execução em modo contexto é 100% isolada do banco de dados e APIs externas.
 """
-import pytest
 import requests
 import sqlite3
 import yfinance as yf
 
 from banco import db
-from coleta.contexto_ativo import obter_contexto_ativo
 from decisao import motor_decisao_cvm_first, decisao_com_confianca
 from sistema import observabilidade
+from teste_regressao_zero_db import contexto_deterministico
 
 
 class IsolamentoZeroDB:
@@ -92,13 +91,11 @@ class IsolamentoZeroDB:
 
 
 def test_proibicao_sqlite_no_decisao():
-    ticker = "HGLG11"
-    
-    # 1. Resolve o contexto ANTES do monkeypatching de isolamento
-    contexto = obter_contexto_ativo(ticker)
+    ticker = "TEST11"
+    contexto = contexto_deterministico()
     
     assert contexto is not None
-    assert contexto["ticker"] == "HGLG11"
+    assert contexto["ticker"] == ticker
     assert contexto["preco"] is not None
     assert contexto["vpa"] is not None
     
@@ -121,10 +118,10 @@ def test_proibicao_sqlite_no_decisao():
 
 
 def test_proibicao_sqlite_contexto_incompleto():
-    ticker = "HGLG11"
+    ticker = "TEST11"
     
     contexto_incompleto = {
-        "ticker": "HGLG11",
+        "ticker": ticker,
         "preco": 160.0
     }
 
@@ -150,8 +147,8 @@ def test_proibicao_sqlite_decisao_com_confianca():
     Assegura que o ponto de entrada real decisao_com_confianca.decidir
     roda em modo 100% in-memory sem acessar SQLite, APIs de rede ou logs de disco.
     """
-    ticker = "HGLG11"
-    contexto = obter_contexto_ativo(ticker)
+    ticker = "TEST11"
+    contexto = contexto_deterministico()
     
     assert contexto is not None
 
