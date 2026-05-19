@@ -50,6 +50,7 @@ def _aplicar_gate55_na_decisao(acao: str, gate55: dict[str, Any]) -> str:
 
 
 def _registrar_gate55(veredito: dict[str, Any], gate55: dict[str, Any]) -> None:
+    """Inclui o Gate 5.5 na trilha preservando o contrato padronizado."""
     status = gate55.get("status", "NAO_REGISTRADO")
     trilha = veredito.setdefault("trilha_gates", [])
     marcador = f"G5.5:{status}"
@@ -58,12 +59,23 @@ def _registrar_gate55(veredito: dict[str, Any], gate55: dict[str, Any]) -> None:
 
     detalhes = veredito.setdefault("gates_detalhes", {})
     detalhes["55"] = {
+        "gate": gate55.get("gate", 55),
         "status": status,
+        "aprovado": gate55.get("aprovado", not gate55.get("eliminado", False)),
+        "eliminado": gate55.get("eliminado", False),
         "motivo": gate55.get("motivo"),
+        "motivos": gate55.get("motivos") or [gate55.get("motivo")],
+        "metricas": gate55.get("metricas") or {
+            "score_confianca_dados": gate55.get("score_confianca_dados"),
+            "nivel_uso_dados": gate55.get("nivel_uso_dados"),
+            "fonte_patrimonial": gate55.get("fonte_patrimonial"),
+        },
+        "fontes": gate55.get("fontes") or [gate55.get("fonte_patrimonial")],
+        "penalidades": gate55.get("penalidades") or [],
+        # Campos legados preservados para consumidores existentes.
         "score_confianca_dados": gate55.get("score_confianca_dados"),
         "nivel_uso_dados": gate55.get("nivel_uso_dados"),
         "fonte_patrimonial": gate55.get("fonte_patrimonial"),
-        "eliminado": gate55.get("eliminado", False),
     }
 
     if gate55.get("eliminado"):
@@ -117,10 +129,10 @@ def decidir(
             return normalizar_contrato_decisao(veredito, contexto)
 
         if contexto:
-
             patrimonio = _patrimonio_a_partir_contexto(contexto)
         else:
             patrimonio = resolver_patrimonio(ticker_norm)
+
         gate55 = gate55_confianca_dados(ticker_norm, contexto=contexto)
         _registrar_gate55(veredito, gate55)
 
@@ -153,22 +165,24 @@ def decidir(
             veredito["decisao"] = decisao_final
             veredito["motivo"] = f"{veredito.get('motivo', '')} {' '.join(motivos_extra)}".strip()
 
-        observabilidade.registrar_evento(
-            "INFO",
-            "decisao.motor_cvm_first",
-            "Decisão processada com CVM-first e Gate 5.5",
-            ticker=ticker_norm,
-            contexto={
-                "decisao": veredito.get("decisao"),
-                "fonte_patrimonial": veredito.get("fonte_patrimonial"),
-                "gate55_status": gate55.get("status"),
-            },
-        )
+        if not contexto:
+            observabilidade.registrar_evento(
+                "INFO",
+                "decisao.motor_cvm_first",
+                "Decisão processada com CVM-first e Gate 5.5",
+                ticker=ticker_norm,
+                contexto={
+                    "decisao": veredito.get("decisao"),
+                    "fonte_patrimonial": veredito.get("fonte_patrimonial"),
+                    "gate55_status": gate55.get("status"),
+                },
+            )
 
         return normalizar_contrato_decisao(veredito, contexto)
 
     except Exception as erro:
-        observabilidade.registrar_erro("decisao.motor_cvm_first", erro, ticker=ticker_norm)
+        if not contexto:
+            observabilidade.registrar_erro("decisao.motor_cvm_first", erro, ticker=ticker_norm)
         return normalizar_contrato_decisao({
             "ticker": ticker_norm,
             "decisao": "MONITORAR",
@@ -176,7 +190,19 @@ def decidir(
             "motivo": f"Falha controlada no motor CVM-first: {erro}",
             "gate_parada": 55,
             "trilha_gates": ["G5.5:BLOQUEADO_ERRO_CONFIANCA_DADOS"],
-            "gates_detalhes": {"55": {"status": "BLOQUEADO_ERRO_CONFIANCA_DADOS", "motivo": str(erro), "eliminado": True}},
+            "gates_detalhes": {
+                "55": {
+                    "gate": 55,
+                    "status": "BLOQUEADO_ERRO_CONFIANCA_DADOS",
+                    "aprovado": False,
+                    "eliminado": True,
+                    "motivo": str(erro),
+                    "motivos": [str(erro)],
+                    "metricas": {},
+                    "fontes": ["ERRO"],
+                    "penalidades": ["Falha no adaptador CVM-first."],
+                }
+            },
             "usou_cvm_patrimonial": False,
             "fallback_patrimonial_usado": False,
         }, contexto)
