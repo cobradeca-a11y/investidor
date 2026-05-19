@@ -30,7 +30,15 @@ document.getElementById('btnRadar')?.addEventListener('click', async () => {
     btnRadar.innerHTML = '<span class="icon">⌛</span> Processando...';
 
     try {
-        const response = await fetch('/api/radar');
+        const apiKey = obterApiKey();
+        if (!apiKey) {
+            alert('Configure sua chave de API (fiia_api_key) no localStorage antes de ligar o radar.');
+            return;
+        }
+        const response = await fetch('/api/radar', { headers: headersAutenticados() });
+        if (!response.ok) {
+            throw new Error(`Radar retornou HTTP ${response.status}`);
+        }
         const data = await response.json();
         loading?.classList.add('hidden');
         resultsGrid?.classList.remove('hidden');
