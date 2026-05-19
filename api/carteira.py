@@ -12,31 +12,22 @@ Objetivo:
 """
 from __future__ import annotations
 
-import secrets
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from acesso.seguranca import verificar_api_key, resposta_erro_segura
 from carteira import repositorio_carteira
 from carteira.politica_carteira import avaliar_alocacao_sugerida
 from decisao.decisao_com_confianca import decidir
 from sistema import observabilidade
-from config.settings import FIIA_API_KEY
 
 router = APIRouter(
     prefix="/api/carteira",
     tags=["carteira"],
     dependencies=[Depends(verificar_api_key)],
 )
-
-
-def verificar_api_key(x_api_key: str | None = Header(None)) -> None:
-    """Verifica se a chave fornecida coincide com a configurada (FIIA_API_KEY)."""
-    if not FIIA_API_KEY:
-        raise HTTPException(status_code=500, detail="FIIA_API_KEY não configurada")
-    if not x_api_key or not secrets.compare_digest(x_api_key, FIIA_API_KEY):
-        raise HTTPException(status_code=401, detail="API Key inválida ou ausente")
 
 
 class OperacaoCarteira(BaseModel):
@@ -64,7 +55,7 @@ def resumo() -> dict[str, Any]:
         return {"status": "ok", "carteira": repositorio_carteira.resumo_carteira()}
     except Exception as erro:
         observabilidade.registrar_erro("api.carteira.resumo", erro)
-        return {"status": "erro", "mensagem": str(erro)}
+        return resposta_erro_segura("Falha controlada ao consultar resumo da carteira.", carteira={})
 
 
 @router.get("/posicoes")
@@ -78,38 +69,26 @@ def posicoes() -> dict[str, Any]:
         posicoes_enriquecidas = []
         for pos in itens:
             ticker = pos["ticker"]
-            
-            # 1. Obter última decisão salva ou gerar na hora (sem IA por performance)
             dec = ultima_decisao(ticker)
             if not dec:
                 try:
                     dec = decidir(ticker, ia_status="INDISPONIVEL")
                 except Exception:
                     dec = {}
-            
-            # 2. Obter últimos indicadores do banco
             ind = db.buscar_um(
                 "SELECT * FROM indicadores WHERE ticker = ? ORDER BY data DESC LIMIT 1",
                 (ticker,)
             )
             ind_dict = dict(ind) if ind else {}
-            
-            # 3. Construir item enriquecido
             acao_decisao = dec.get("decisao") or dec.get("status") or dec.get("acao") or "MONITORAR"
             confianca_val = dec.get("confianca") or "MEDIA"
-            
             preco_atual = ind_dict.get("preco") or dec.get("preco_na_decisao") or pos.get("preco_medio") or 0.0
             preco_justo = dec.get("preco_justo") or ind_dict.get("vpa") or 0.0
             preco_entrada = dec.get("preco_entrada") or dec.get("preco_teto") or 0.0
             margem = dec.get("margem") or dec.get("margem_seguranca") or 0.0
-            
             pvp_val = ind_dict.get("pvp") or dec.get("pvp") or 1.0
             dy_val = ind_dict.get("dy_12m") or 0.0
-            if dy_val < 1.0:
-                dy_val_pct = dy_val * 100
-            else:
-                dy_val_pct = dy_val
-            
+            dy_val_pct = dy_val * 100 if dy_val < 1.0 else dy_val
             trilha_gates = []
             travas_raw = dec.get("travas") or dec.get("gatilhos_invalidez") or "[]"
             if isinstance(travas_raw, str):
@@ -119,16 +98,12 @@ def posicoes() -> dict[str, Any]:
                     trilha_gates = [travas_raw] if travas_raw else []
             elif isinstance(travas_raw, list):
                 trilha_gates = travas_raw
-            
             if not trilha_gates:
                 trilha_gates = ["G0:ATIVADO", "G1:ELEGIVEL", "G2:PATRIMONIO_OK"]
-                
             score_ia = dec.get("score_ia") or 7.0
-            
             motivo = dec.get("motivo") or "Ativo em monitoramento de carteira."
             if isinstance(motivo, list):
                 motivo = "; ".join(motivo)
-                
             alertas = []
             alertas_raw = dec.get("alertas") or "[]"
             if isinstance(alertas_raw, str):
@@ -160,12 +135,10 @@ def posicoes() -> dict[str, Any]:
                 "custo_total": pos.get("custo_total", 0),
             }
             posicoes_enriquecidas.append(item)
-            
         return {"status": "ok", "quantidade": len(posicoes_enriquecidas), "posicoes": posicoes_enriquecidas}
     except Exception as erro:
         observabilidade.registrar_erro("api.carteira.posicoes", erro)
-        return {"status": "erro", "mensagem": str(erro), "posicoes": []}
-
+        return resposta_erro_segura("Falha controlada ao consultar posições.", posicoes=[])
 
 
 @router.get("/posicoes/{ticker}")
@@ -175,7 +148,7 @@ def posicao(ticker: str) -> dict[str, Any]:
         return {"status": "ok", "ticker": ticker.upper().replace(".SA", ""), "posicao": item}
     except Exception as erro:
         observabilidade.registrar_erro("api.carteira.posicao", erro, ticker=ticker)
-        return {"status": "erro", "ticker": ticker, "mensagem": str(erro)}
+        return resposta_erro_segura("Falha controlada ao consultar posição.", ticker=ticker, posicao=None)
 
 
 @router.post("/compra")
@@ -194,7 +167,7 @@ def registrar_compra(payload: OperacaoCarteira) -> dict[str, Any]:
         return {"status": "ok", "posicao": resultado}
     except Exception as erro:
         observabilidade.registrar_erro("api.carteira.compra", erro, ticker=payload.ticker)
-        return {"status": "erro", "mensagem": str(erro)}
+        return resposta_erro_segura("Falha controlada ao registrar compra.")
 
 
 @router.post("/venda")
@@ -212,7 +185,7 @@ def registrar_venda(payload: OperacaoCarteira) -> dict[str, Any]:
         return {"status": "ok", "posicao": resultado}
     except Exception as erro:
         observabilidade.registrar_erro("api.carteira.venda", erro, ticker=payload.ticker)
-        return {"status": "erro", "mensagem": str(erro)}
+        return resposta_erro_segura("Falha controlada ao registrar venda.")
 
 
 @router.post("/politica")
@@ -237,4 +210,4 @@ def politica(payload: PoliticaRequest) -> dict[str, Any]:
         return {"status": "ok", "ticker": ticker, "veredito": veredito, "politica": resultado.to_dict()}
     except Exception as erro:
         observabilidade.registrar_erro("api.carteira.politica", erro, ticker=ticker)
-        return {"status": "erro", "ticker": ticker, "mensagem": str(erro)}
+        return resposta_erro_segura("Falha controlada ao avaliar política de carteira.", ticker=ticker)
