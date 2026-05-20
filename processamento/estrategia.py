@@ -91,11 +91,17 @@ def _card_bloqueio_contexto(ticker: str, contexto: dict) -> dict:
 
 
 def _atualizar_permissao_contexto(contexto: dict) -> dict:
-    campos_ausentes = list(dict.fromkeys(contexto.get("campos_ausentes", [])))
+    permitir_original = contexto.get("permitir_decisao", True)
+    campos_ausentes_originais = list(dict.fromkeys(contexto.get("campos_ausentes", [])))
+    campos_ausentes = list(campos_ausentes_originais)
     if contexto.get("liquidez_diaria") and contexto.get("liquidez_diaria") >= settings.LIQUIDEZ_MINIMA_DIARIA:
         campos_ausentes = [campo for campo in campos_ausentes if campo != "liquidez"]
 
     contexto["campos_ausentes"] = campos_ausentes
+    if permitir_original is True and not campos_ausentes_originais:
+        contexto["permitir_decisao"] = True
+        return contexto
+
     contexto["permitir_decisao"] = (
         not campos_ausentes
         and contexto.get("preco") is not None
