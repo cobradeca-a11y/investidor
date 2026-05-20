@@ -75,7 +75,7 @@ Verificacao:
 - `[UVICORN: necessario]` smoke visual PWA.
 
 Status:
-- Pendente.
+- Implementado neste ciclo como API paralela. O endpoint sincrono `/api/radar` foi preservado.
 
 ## Bloco P5 - Cobertura documental FNET operacional
 

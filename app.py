@@ -2,6 +2,10 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from threading import Lock
+from uuid import uuid4
 import main
 from acesso.autenticacao import verificar_api_key
 from processamento import estrategia
@@ -16,6 +20,58 @@ from api.fnet import router as fnet_router
 from api.setup_cvm import router as setup_cvm_router
 
 app = FastAPI(title="FIIA API", version="1.0")
+
+_RADAR_EXECUTOR = ThreadPoolExecutor(max_workers=1)
+_RADAR_JOBS: dict[str, dict] = {}
+_RADAR_LOCK = Lock()
+_ULTIMO_RADAR: dict | None = None
+
+
+def _agora_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _salvar_job(job_id: str, dados: dict) -> None:
+    with _RADAR_LOCK:
+        atual = dict(_RADAR_JOBS.get(job_id, {}))
+        atual.update(dados)
+        _RADAR_JOBS[job_id] = atual
+
+
+def _executar_radar_job(job_id: str) -> None:
+    global _ULTIMO_RADAR
+    _salvar_job(job_id, {"status": "rodando", "iniciado_em": _agora_iso()})
+    try:
+        vencedores = estrategia.radar_oportunidades()
+        resultado = {
+            "status": "ok",
+            "oportunidades": vencedores,
+            "quantidade": len(vencedores),
+            "finalizado_em": _agora_iso(),
+        }
+        _ULTIMO_RADAR = resultado
+        _salvar_job(job_id, {"status": "concluido", "resultado": resultado, "finalizado_em": resultado["finalizado_em"]})
+        observabilidade.registrar_evento(
+            "INFO",
+            "api.radar.jobs",
+            "Radar assincrono concluido",
+            contexto={"job_id": job_id, "quantidade_oportunidades": len(vencedores)},
+        )
+    except Exception as erro:
+        observabilidade.registrar_erro(
+            "api.radar.jobs",
+            erro,
+            contexto={"job_id": job_id},
+        )
+        _salvar_job(
+            job_id,
+            {
+                "status": "erro",
+                "mensagem": "Falha controlada ao executar radar assincrono.",
+                "detalhe": str(erro),
+                "finalizado_em": _agora_iso(),
+            },
+        )
 
 # Iniciar o Funcionário Digital (Rotinas em Segundo Plano) no evento de startup controladamente
 @app.on_event("startup")
@@ -80,6 +136,30 @@ def get_radar():
             "mensagem": "Falha controlada ao executar radar.",
             "detalhe": str(e),
         }
+
+
+@app.post("/api/radar/jobs", dependencies=[Depends(verificar_api_key)])
+def iniciar_radar_job():
+    job_id = uuid4().hex
+    _salvar_job(job_id, {"job_id": job_id, "status": "pendente", "criado_em": _agora_iso()})
+    _RADAR_EXECUTOR.submit(_executar_radar_job, job_id)
+    return {"status": "ok", "job_id": job_id, "job_status": "pendente"}
+
+
+@app.get("/api/radar/jobs/{job_id}", dependencies=[Depends(verificar_api_key)])
+def consultar_radar_job(job_id: str):
+    with _RADAR_LOCK:
+        job = dict(_RADAR_JOBS.get(job_id, {}))
+    if not job:
+        raise HTTPException(status_code=404, detail="Job de radar nao encontrado.")
+    return {"status": "ok", "job": job}
+
+
+@app.get("/api/radar/ultimo", dependencies=[Depends(verificar_api_key)])
+def ultimo_radar():
+    if not _ULTIMO_RADAR:
+        return {"status": "vazio", "mensagem": "Nenhum radar concluido nesta instancia."}
+    return _ULTIMO_RADAR
 
 
 @app.get("/api/auditoria/health")
