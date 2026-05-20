@@ -59,6 +59,15 @@ def test_frontend_mantem_cards_bloqueados_e_gates_visiveis():
     assert "Não informado" in conteudo
 
 
+def test_frontend_tem_fluxo_guiado_para_api_key():
+    conteudo = APP_JS.read_text(encoding="utf-8")
+
+    assert "function obterOuSolicitarApiKey" in conteudo
+    assert "localStorage.setItem('fiia_api_key'" in conteudo
+    assert "Configurar chave" in conteudo
+    assert "obterOuSolicitarApiKey('ligar o radar')" in conteudo
+
+
 def test_css_contem_classes_do_dashboard_de_auditoria():
     conteudo = STYLE_CSS.read_text(encoding="utf-8")
 

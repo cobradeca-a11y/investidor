@@ -19,6 +19,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.getElementById('btnRadar')?.addEventListener('click', async () => {
+    const apiKey = obterOuSolicitarApiKey('ligar o radar');
+    if (!apiKey) return;
+
     const welcomeView = document.getElementById('welcomeView');
     const loading = document.getElementById('loading');
     const resultsGrid = document.getElementById('results');
@@ -30,11 +33,6 @@ document.getElementById('btnRadar')?.addEventListener('click', async () => {
     btnRadar.innerHTML = '<span class="icon">⌛</span> Processando...';
 
     try {
-        const apiKey = obterApiKey();
-        if (!apiKey) {
-            alert('Configure sua chave de API (fiia_api_key) no localStorage antes de ligar o radar.');
-            return;
-        }
         // Contrato de payload: a origem permanece fetch('/api/radar'), apenas com headers autenticados.
         const response = await fetch('/api/radar', { headers: headersAutenticados() });
         if (!response.ok) {
@@ -59,6 +57,20 @@ document.getElementById('btnClear')?.addEventListener('click', () => window.loca
 
 function obterApiKey() {
     return localStorage.getItem('fiia_api_key') || '';
+}
+
+function salvarApiKey(valor) {
+    const apiKey = (valor || '').trim();
+    if (!apiKey) return '';
+    localStorage.setItem('fiia_api_key', apiKey);
+    return apiKey;
+}
+
+function obterOuSolicitarApiKey(acao = 'continuar') {
+    const apiKey = obterApiKey();
+    if (apiKey) return apiKey;
+    const informada = window.prompt(`Configure sua chave de API (fiia_api_key) para ${acao}.\n\nCole a FIIA_API_KEY do seu .env:`);
+    return salvarApiKey(informada);
 }
 
 function headersAutenticados(extra = {}) {
@@ -110,7 +122,7 @@ function inicializarTransacoes() {
 
     transactionForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const apiKey = obterApiKey();
+        const apiKey = obterOuSolicitarApiKey('registrar operacoes');
         if (!apiKey) {
             alert('Configure sua chave de API (fiia_api_key) no localStorage antes de registrar operações.');
             return;
@@ -154,6 +166,21 @@ function inicializarTransacoes() {
 async function carregarCarteira() {
     const grid = document.getElementById('portfolioGrid');
     if (!grid) return;
+    if (!obterApiKey()) {
+        grid.innerHTML = `
+            <div class="empty-state-container glass-card">
+                <h3>Chave de API necessaria</h3>
+                <p>Informe sua <strong>fiia_api_key</strong> para carregar carteira, Radar e historico.</p>
+                <button id="btnConfigApiKeyCarteira" class="btn-transaction">Configurar chave</button>
+            </div>
+            <div id="demoGrid" class="results-grid"></div>
+        `;
+        document.getElementById('btnConfigApiKeyCarteira')?.addEventListener('click', () => {
+            if (obterOuSolicitarApiKey('carregar a carteira')) carregarCarteira();
+        });
+        renderResults([mockAtivo()], 'demoGrid', false);
+        return;
+    }
     grid.innerHTML = '<div class="loading-simple">⌛ Carregando ativos...</div>';
 
     try {
@@ -208,7 +235,15 @@ async function carregarHistoricoDecisoes() {
     if (!lista) return;
     const apiKey = obterApiKey();
     if (!apiKey) {
-        lista.innerHTML = '<div class="audit-blocks">Configure <strong>fiia_api_key</strong> no localStorage para consultar histórico auditável.</div>';
+        lista.innerHTML = `
+            <div class="audit-blocks">
+                Configure <strong>fiia_api_key</strong> no localStorage para consultar historico auditavel.
+                <button id="btnConfigApiKeyHistorico" class="btn-mini">Configurar chave</button>
+            </div>
+        `;
+        document.getElementById('btnConfigApiKeyHistorico')?.addEventListener('click', () => {
+            if (obterOuSolicitarApiKey('consultar historico auditavel')) carregarHistoricoDecisoes();
+        });
         return;
     }
     lista.innerHTML = '<div class="loading-simple">⌛ Consultando histórico sem replay...</div>';
