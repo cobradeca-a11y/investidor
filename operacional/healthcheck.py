@@ -226,6 +226,69 @@ def verificar_radar_operacional(*, executar: bool = False, executor: Callable[[]
         }
 
 
+def executar_precoleta_operacional(
+    *,
+    executar: bool = False,
+    tickers: list[str] | None = None,
+    executor: Callable[[list[str]], Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Executa pre-coleta operacional somente quando chamada de forma explicita.
+
+    Por contrato, esta funcao nao faz scraping, nao chama rede e nao altera decisoes
+    quando `executar=False`. A camada chamadora deve fornecer um executor autorizado
+    para qualquer coleta real.
+    """
+    tickers_norm = [str(ticker).upper().strip() for ticker in (tickers or []) if str(ticker).strip()]
+    if not executar:
+        return {
+            "job": "precoleta_operacional",
+            "status": STATUS_NAO_EXECUTADO,
+            "motivo": "Pre-coleta nao executada. Execucao exige chamada explicita.",
+            "tickers_solicitados": tickers_norm,
+            "execucao_explicita_requerida": True,
+            "sem_scraping": True,
+            "executou_motor": False,
+            "alterou_decisao": False,
+        }
+    if executor is None:
+        return {
+            "job": "precoleta_operacional",
+            "status": STATUS_ALERTA,
+            "motivo": "Execucao explicita solicitada, mas nenhum executor autorizado foi fornecido.",
+            "tickers_solicitados": tickers_norm,
+            "execucao_explicita_requerida": True,
+            "sem_scraping": True,
+            "executou_motor": False,
+            "alterou_decisao": False,
+        }
+    try:
+        resultado = executor(tickers_norm)
+        itens = resultado if isinstance(resultado, list) else []
+        return {
+            "job": "precoleta_operacional",
+            "status": STATUS_OK,
+            "motivo": "Pre-coleta operacional executada por executor explicito autorizado.",
+            "tickers_solicitados": tickers_norm,
+            "tickers_processados": len(itens),
+            "resultados": itens,
+            "sem_scraping": False,
+            "executou_motor": False,
+            "alterou_decisao": False,
+        }
+    except Exception as erro:
+        return {
+            "job": "precoleta_operacional",
+            "status": STATUS_ERRO,
+            "motivo": "Falha controlada ao executar pre-coleta operacional.",
+            "tickers_solicitados": tickers_norm,
+            "tipo_erro": type(erro).__name__,
+            "sem_scraping": False,
+            "executou_motor": False,
+            "alterou_decisao": False,
+        }
+
+
 def healthcheck_basico() -> dict[str, Any]:
     componentes = [verificar_api_basica(), verificar_configuracao(), verificar_observabilidade()]
     resposta = _resposta("healthcheck_basico", componentes, profundo=False)

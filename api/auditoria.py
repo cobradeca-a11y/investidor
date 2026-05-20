@@ -92,6 +92,46 @@ def job_verificacao_operacional() -> dict[str, Any]:
         return resposta_erro_segura("Falha controlada ao executar job operacional.")
 
 
+@router.post(
+    "/jobs/precoleta-operacional",
+    dependencies=[Depends(verificar_api_key), Depends(dependencia_rate_limit("sensivel"))],
+)
+def job_precoleta_operacional(executar: bool = False, tickers: str = "") -> dict[str, Any]:
+    """
+    Prepara contextos antes do Radar apenas por chamada explicita.
+
+    Sem `executar=true`, nao faz scraping nem chamadas externas. Com execucao
+    explicita, usa o coletor de contexto como executor autorizado.
+    """
+    try:
+        tickers_lista = [ticker.strip() for ticker in tickers.split(",") if ticker.strip()]
+
+        def executor(tickers_autorizados: list[str]) -> list[dict[str, Any]]:
+            from coleta.contexto_ativo import coletar_contexto_ativo
+
+            resultados = []
+            for ticker in tickers_autorizados:
+                contexto = coletar_contexto_ativo(ticker, forcar=False)
+                resultados.append({
+                    "ticker": ticker,
+                    "permitir_decisao": contexto.get("permitir_decisao"),
+                    "contexto_versao": contexto.get("contexto_versao") or contexto.get("versao_contexto"),
+                    "campos_ausentes": contexto.get("campos_ausentes", []),
+                    "fontes_falharam": contexto.get("fontes_falharam", []),
+                })
+            return resultados
+
+        resposta = health_operacional.executar_precoleta_operacional(
+            executar=executar,
+            tickers=tickers_lista,
+            executor=executor if executar else None,
+        )
+        return {"status": "ok", "job": resposta}
+    except Exception as erro:
+        observabilidade.registrar_erro("api.auditoria.job_precoleta_operacional", erro)
+        return resposta_erro_segura("Falha controlada ao executar pre-coleta operacional.")
+
+
 @router.get(
     "/decisoes/auditaveis",
     dependencies=[Depends(verificar_api_key), Depends(dependencia_rate_limit("sensivel"))],
