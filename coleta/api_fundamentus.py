@@ -8,6 +8,8 @@ Uso operacional:
 """
 from datetime import date
 from typing import Optional, List
+import re
+import unicodedata
 
 import requests
 from bs4 import BeautifulSoup
@@ -30,6 +32,28 @@ def _limpar_valor(texto: str) -> Optional[float]:
         return float(t)
     except ValueError:
         return None
+
+
+def _normalizar_chave(texto: str) -> str:
+    """Normaliza rotulos do Fundamentus, inclusive quando chegam com mojibake."""
+    if texto is None:
+        return ""
+    valor = str(texto).strip()
+    try:
+        valor = valor.encode("latin1").decode("utf-8")
+    except Exception:
+        pass
+    valor = unicodedata.normalize("NFKD", valor).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-zA-Z0-9$()]+", " ", valor).strip().lower()
+
+
+def _campo_bruto(dados: dict, *candidatos: str) -> Optional[str]:
+    """Busca campo por rotulos normalizados para resistir a acentos/encoding."""
+    desejados = {_normalizar_chave(candidato) for candidato in candidatos}
+    for chave, valor in dados.items():
+        if _normalizar_chave(chave) in desejados:
+            return valor
+    return None
 
 
 def _taxa_none(dados: dict, campos: list[str]) -> float:
@@ -172,6 +196,10 @@ def coletar_fii(ticker: str) -> Optional[dict]:
     vpa = _limpar_valor(dados_brutos.get("VP/Cota"))
     pvp = _limpar_valor(dados_brutos.get("P/VP"))
     dy_12m = _limpar_valor(dados_brutos.get("Div. Yield"))
+    preco = _limpar_valor(_campo_bruto(dados_brutos, "Cotacao", "Cotao")) or preco
+    vpa = _limpar_valor(_campo_bruto(dados_brutos, "VP/Cota")) or vpa
+    pvp = _limpar_valor(_campo_bruto(dados_brutos, "P/VP")) or pvp
+    dy_12m = _limpar_valor(_campo_bruto(dados_brutos, "Div. Yield")) or dy_12m
     if dy_12m is not None:
         dy_12m = dy_12m / 100.0
 
@@ -179,6 +207,11 @@ def coletar_fii(ticker: str) -> Optional[dict]:
     patrimonio = _limpar_valor(dados_brutos.get("Patrim Líquido")) or _limpar_valor(dados_brutos.get("Patrim Lquido"))
     vacancia = _limpar_valor(dados_brutos.get("Vacância Média")) or _limpar_valor(dados_brutos.get("Vacncia Mdia"))
     qtd_ativos = _limpar_valor(dados_brutos.get("Qtd imóveis")) or _limpar_valor(dados_brutos.get("Qtd imveis"))
+
+    liquidez_fii = _limpar_valor(_campo_bruto(dados_brutos, "Vol $ med (2m)", "Vol $ md (2m)", "Vol $ medio (2m)")) or liquidez_fii
+    patrimonio = _limpar_valor(_campo_bruto(dados_brutos, "Patrim Liquido", "Patrim Lquido", "Patrimonio Liquido")) or patrimonio
+    vacancia = _limpar_valor(_campo_bruto(dados_brutos, "Vacancia Media", "Vacncia Mdia")) or vacancia
+    qtd_ativos = _limpar_valor(_campo_bruto(dados_brutos, "Qtd imoveis", "Qtd imveis")) or qtd_ativos
 
     dados_finais = {
         "ticker": ticker,

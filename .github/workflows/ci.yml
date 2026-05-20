@@ -61,4 +61,4 @@ jobs:
         run: pytest teste_backtest_snapshot.py
 
       - name: Testar performance e frontend estático
-        run: pytest teste_performance_radar.py teste_observabilidade_performance.py teste_frontend_payload.py teste_frontend_explicabilidade.py teste_frontend_replay.py teste_governanca_fontes.py teste_score_fontes.py teste_rate_limit.py teste_aprendizado_operacional.py teste_aprovacao_ajustes.py
+        run: pytest teste_performance_radar.py teste_diagnostico_bloqueios_radar.py teste_observabilidade_performance.py teste_frontend_payload.py teste_frontend_explicabilidade.py teste_frontend_replay.py teste_governanca_fontes.py teste_score_fontes.py teste_rate_limit.py teste_aprendizado_operacional.py teste_aprovacao_ajustes.py

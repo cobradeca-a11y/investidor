@@ -6,6 +6,31 @@ Radar principal do FIIA.
 import time
 from typing import Tuple, List
 from banco import db
+from config import settings
+
+
+def _gate0_bloqueio_contexto(contexto: dict) -> dict:
+    campos_ausentes = contexto.get("campos_ausentes", [])
+    campos_vencidos = contexto.get("campos_vencidos", [])
+    return {
+        "gate": 0,
+        "status": "BLOQUEADO_DADOS_INSUFICIENTES",
+        "aprovado": False,
+        "eliminado": True,
+        "motivo": "Dados insuficientes para decisao forte.",
+        "motivos": [
+            f"Campos ausentes: {', '.join(campos_ausentes)}.",
+            f"Campos vencidos: {', '.join(campos_vencidos)}.",
+        ],
+        "metricas": {
+            "campos_ausentes": campos_ausentes,
+            "campos_vencidos": campos_vencidos,
+            "score_confianca": contexto.get("score_confianca"),
+            "liquidez_diaria": contexto.get("liquidez_diaria"),
+        },
+        "fontes": ["contexto_ativo"],
+        "penalidades": campos_ausentes + campos_vencidos,
+    }
 
 
 def aplicar_filtros_sobrevivencia(ticker: str) -> Tuple[bool, List[str]]:
@@ -25,16 +50,28 @@ def aplicar_filtros_sobrevivencia(ticker: str) -> Tuple[bool, List[str]]:
 
 def _card_bloqueio_contexto(ticker: str, contexto: dict) -> dict:
     """Monta card de bloqueio mantendo o contrato atual do Radar."""
+    gate0 = _gate0_bloqueio_contexto(contexto)
+    score_confianca = contexto.get("score_confianca", 0.0)
+    nivel_uso = contexto.get("nivel_uso_dados", "INSUFICIENTE")
     return {
         "ticker": ticker,
-        "decisao": f"BLOQUEADO_DADOS_{contexto.get('nivel_uso_dados', 'INSUFICIENTE')}",
+        "decisao": f"BLOQUEADO_DADOS_{nivel_uso}",
         "motivo": f"Campos ausentes: {', '.join(contexto.get('campos_ausentes', []))}. Campos vencidos: {', '.join(contexto.get('campos_vencidos', []))}.",
         "permitir_decisao": False,
+        "contexto_versao": contexto.get("contexto_versao"),
+        "versao_modelo": "2.1",
+        "versao_motor": "2.1",
+        "segmento": contexto.get("segmento"),
+        "fonte_patrimonial": contexto.get("patrimonio_fonte"),
+        "patrimonio_fonte": contexto.get("patrimonio_fonte"),
         "campos_ausentes": contexto.get("campos_ausentes", []),
         "campos_vencidos": contexto.get("campos_vencidos", []),
         "fontes_falharam": contexto.get("fontes_falharam", []),
-        "score_confianca_dados_consolidado": contexto.get("score_confianca", 0.0),
-        "nivel_uso_dados_consolidado": contexto.get("nivel_uso_dados", "INSUFICIENTE"),
+        "score_confianca_dados": score_confianca,
+        "score_confianca_dados_consolidado": score_confianca,
+        "nivel_uso_dados": nivel_uso,
+        "nivel_uso_dados_consolidado": nivel_uso,
+        "confianca_dados": {"score_global": score_confianca, "nivel_uso": nivel_uso},
         "preco": contexto.get("preco") or 0.0,
         "preco_atual": contexto.get("preco") or 0.0,
         "preco_justo": None,
@@ -46,10 +83,52 @@ def _card_bloqueio_contexto(ticker: str, contexto: dict) -> dict:
         "dy_12m_pct": (contexto.get("dy_12m") or 0.0) * 100,
         "gate_parada": 0,
         "trilha_gates": ["Gate 0: BLOQUEADO_DADOS_INSUFICIENTES"],
+        "gates_detalhes": {"0": gate0},
         "confianca": "BAIXA",
         "alertas": [f"Fontes falharam: {', '.join(contexto.get('fontes_falharam', []))}"] if contexto.get("fontes_falharam") else [],
         "score_ia": 0.0,
     }
+
+
+def _atualizar_permissao_contexto(contexto: dict) -> dict:
+    campos_ausentes = list(dict.fromkeys(contexto.get("campos_ausentes", [])))
+    if contexto.get("liquidez_diaria") and contexto.get("liquidez_diaria") >= settings.LIQUIDEZ_MINIMA_DIARIA:
+        campos_ausentes = [campo for campo in campos_ausentes if campo != "liquidez"]
+
+    contexto["campos_ausentes"] = campos_ausentes
+    contexto["permitir_decisao"] = (
+        not campos_ausentes
+        and contexto.get("preco") is not None
+        and contexto.get("vpa") is not None
+        and (contexto.get("score_confianca") or 0) >= settings.CONFIABILIDADE_MINIMA
+    )
+    return contexto
+
+
+def _aplicar_hint_mercado_contexto(contexto: dict, hint: dict | None) -> dict:
+    """Complementa contexto com dados ja coletados no mercado inteiro do Fundamentus."""
+    if not hint:
+        return contexto
+
+    contexto = dict(contexto)
+    liquidez_hint = hint.get("liquidez")
+    if liquidez_hint and not contexto.get("liquidez_diaria"):
+        contexto["liquidez_diaria"] = liquidez_hint
+        contexto["liquidez_fonte"] = "FundamentusMercado"
+
+    for campo_ctx, campo_hint in {
+        "segmento": "segmento",
+        "preco": "preco",
+        "pvp": "pvp",
+        "dy_12m": "dy_12m",
+        "qtd_ativos": "qtd_ativos",
+        "vacancia_fisica": "vacancia_media",
+    }.items():
+        valor = hint.get(campo_hint)
+        if valor is not None and contexto.get(campo_ctx) in (None, "", 0, 0.0, "INDEFINIDO"):
+            contexto[campo_ctx] = valor
+
+    return _atualizar_permissao_contexto(contexto)
 
 
 def _somar_falhas_por_fonte(destino: dict[str, int], fontes: list[str] | None) -> None:
@@ -57,7 +136,7 @@ def _somar_falhas_por_fonte(destino: dict[str, int], fontes: list[str] | None) -
         destino[fonte] = destino.get(fonte, 0) + 1
 
 
-def _resolver_contextos_ciclo(tickers: list[str], metricas: dict | None = None) -> dict[str, dict]:
+def _resolver_contextos_ciclo(tickers: list[str], metricas: dict | None = None, hints_mercado: dict[str, dict] | None = None) -> dict[str, dict]:
     """
     Resolve contextos para um ciclo de radar com cache local e versionado.
 
@@ -91,6 +170,7 @@ def _resolver_contextos_ciclo(tickers: list[str], metricas: dict | None = None) 
             metricas["contextos_regenerados"] += 1
             contexto = obter_contexto_ativo(ticker_norm)
 
+        contexto = _aplicar_hint_mercado_contexto(contexto, (hints_mercado or {}).get(ticker_norm))
         cache_ciclo[ticker_norm] = contexto
         resultado[ticker_norm] = contexto
 
@@ -155,8 +235,9 @@ def radar_oportunidades() -> list:
     finalistas = []
 
     tickers_radar = sobreviventes_a[:50]
+    hints_mercado = {fii["ticker"].upper().replace(".SA", "").strip(): fii for fii in mercado if fii.get("ticker")}
     inicio_contextos = time.perf_counter()
-    contextos = _resolver_contextos_ciclo(tickers_radar, metricas=metricas_radar)
+    contextos = _resolver_contextos_ciclo(tickers_radar, metricas=metricas_radar, hints_mercado=hints_mercado)
     metricas_radar["tempo_coleta_ms"] += round((time.perf_counter() - inicio_contextos) * 1000, 2)
 
     for ticker in tickers_radar:
