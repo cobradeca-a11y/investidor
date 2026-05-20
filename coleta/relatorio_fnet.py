@@ -45,6 +45,7 @@ _TIMEOUT      = (5, 20)
 _MAX_CHARS    = 12_000
 _CACHE_HORAS  = 24
 _SIMILARIDADE = 0.50
+_PDF_MIN_BYTES = 200
 
 
 def _criar_sessao() -> requests.Session:
@@ -165,6 +166,13 @@ def _extrair_pdf(doc_id: str) -> str | None:
     except Exception as e:
         print(f"[fnet] Erro ao baixar PDF id={doc_id}: {e}")
         return None
+
+    content_type = (r.headers.get("Content-Type") or "").lower()
+    if not _parece_pdf(pdf_bytes, content_type):
+        motivo = _motivo_resposta_nao_pdf(pdf_bytes, content_type)
+        print(f"[fnet] Documento id={doc_id} ignorado: {motivo}.")
+        return None
+
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             paginas = []
@@ -187,6 +195,26 @@ def _extrair_pdf(doc_id: str) -> str | None:
     except Exception as e:
         print(f"[fnet] Erro ao extrair PDF: {e}")
         return None
+
+
+def _parece_pdf(conteudo: bytes, content_type: str = "") -> bool:
+    if not conteudo or len(conteudo) < _PDF_MIN_BYTES:
+        return False
+    inicio = conteudo[:1024].lstrip()
+    return inicio.startswith(b"%PDF")
+
+
+def _motivo_resposta_nao_pdf(conteudo: bytes, content_type: str = "") -> str:
+    if not conteudo:
+        return "resposta vazia"
+    if len(conteudo) < _PDF_MIN_BYTES:
+        return f"resposta curta ({len(conteudo)} bytes)"
+    inicio = conteudo[:80].lstrip().lower()
+    if inicio.startswith(b"<!doctype") or inicio.startswith(b"<html"):
+        return f"html recebido ({content_type or 'sem content-type'})"
+    if inicio.startswith(b"{") or inicio.startswith(b"["):
+        return f"json recebido ({content_type or 'sem content-type'})"
+    return f"conteudo nao PDF ({content_type or 'sem content-type'})"
 
 
 # ── Interface pública ─────────────────────────────────────────────────────────

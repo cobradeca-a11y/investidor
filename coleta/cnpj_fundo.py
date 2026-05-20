@@ -7,13 +7,15 @@ com fallback para informe mensal CVM.
 """
 import io, csv, re, zipfile, requests
 from datetime import date
+from pathlib import Path
 import banco.db as db
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 _TIMEOUT  = 30
 
 # CSV da tabela mestre (gerado pelo usuario a partir do cruzamento B3/CVM)
-_TABELA_MESTRE_PATH = "tabela_mestre_fiia_fiis_b3_cvm.csv"
+_RAIZ_PROJETO = Path(__file__).resolve().parents[1]
+_TABELA_MESTRE_PATH = _RAIZ_PROJETO / "tabela_mestre_fiia_fiis_b3_cvm.csv"
 
 # Fallback: informe mensal CVM
 _BASE_CVM = "https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS"
@@ -21,18 +23,25 @@ _BASE_CVM = "https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS"
 _cache: dict[str, str] = {}
 
 
+def _ticker_linha_mestre(row: dict[str, str]) -> str:
+    ticker = (row.get("ticker_b3_11") or row.get("ticker") or "").strip().upper()
+    if ticker:
+        return ticker
+    base = (row.get("ticker_base") or "").strip().upper()
+    return f"{base}11" if base else ""
+
+
 def _carregar_tabela_mestre() -> dict[str, str]:
     """Carrega CNPJ da tabela mestre local se existir."""
-    import os
-    for path in [_TABELA_MESTRE_PATH, f"../{_TABELA_MESTRE_PATH}"]:
-        if not os.path.exists(path):
+    for path in [_TABELA_MESTRE_PATH, Path("tabela_mestre_fiia_fiis_b3_cvm.csv")]:
+        if not path.exists():
             continue
         mapa = {}
         try:
             with open(path, encoding='utf-8-sig') as f:
                 for row in csv.DictReader(f, delimiter=';'):
-                    ticker = row.get('ticker_b3_11', '').strip().upper()
-                    cnpj   = row.get('cnpj_fundo', '').strip()
+                    ticker = _ticker_linha_mestre(row)
+                    cnpj = (row.get('cnpj_fundo') or row.get('cnpj') or '').strip()
                     if ticker and cnpj:
                         mapa[ticker] = cnpj
             print(f"[cnpj] Tabela mestre carregada: {len(mapa)} tickers.")
@@ -40,6 +49,16 @@ def _carregar_tabela_mestre() -> dict[str, str]:
         except Exception as e:
             print(f"[cnpj] Erro ao carregar tabela mestre: {e}")
     return {}
+
+
+def _row_get(row, chave: str, padrao=None):
+    if not row:
+        return padrao
+    if isinstance(row, dict):
+        return row.get(chave, padrao)
+    if hasattr(row, "keys") and chave in row.keys():
+        return row[chave]
+    return padrao
 
 
 def _ticker_do_isin(isin: str) -> str | None:
@@ -93,10 +112,22 @@ def _carregar_cache() -> dict[str, str]:
 
 def obter_cnpj(ticker: str) -> str | None:
     ticker = ticker.upper().strip()
+
+    try:
+        from coleta import tabela_mestre_fiis
+
+        item = tabela_mestre_fiis.obter_por_ticker(ticker)
+        cnpj = item.get("cnpj_fundo") if item else None
+        if cnpj:
+            return cnpj
+    except Exception:
+        pass
+
     try:
         row = db.buscar_um("SELECT cnpj FROM fiis WHERE ticker = ?", (ticker,))
-        if row and row.get("cnpj"):
-            return row["cnpj"]
+        cnpj = _row_get(row, "cnpj")
+        if cnpj:
+            return cnpj
     except Exception:
         pass
     cnpj = _carregar_cache().get(ticker)

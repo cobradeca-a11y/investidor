@@ -15,6 +15,8 @@ Regra central:
 import json
 import re
 import time
+import hashlib
+from datetime import datetime, timedelta, timezone
 
 from google import genai
 
@@ -37,6 +39,18 @@ _CAMPOS_OBRIGATORIOS = {
 }
 
 _LIQUIDEZ_MINIMA = 1_000.0
+_CACHE_HORAS = 24
+_SQL_CACHE_IA = """
+CREATE TABLE IF NOT EXISTS analise_qualitativa_cache (
+    ticker TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    fonte_qualitativa TEXT,
+    score REAL,
+    criado_em TEXT NOT NULL,
+    PRIMARY KEY (ticker, fingerprint)
+)
+"""
 
 
 def _resposta_bloqueada(campos_faltando: list[str]) -> dict:
@@ -52,6 +66,81 @@ def _resposta_bloqueada(campos_faltando: list[str]) -> dict:
         ],
         "fonte_qualitativa": None,
     }
+
+
+def _garantir_cache_ia() -> None:
+    db.executar(_SQL_CACHE_IA)
+
+
+def _fingerprint_analise(ticker: str, dados_banco: dict, fii_info: dict, ctx_trimestral: str | None) -> str:
+    base = {
+        "ticker": ticker.upper().strip(),
+        "indicadores": {
+            "pvp": dados_banco.get("pvp"),
+            "dy_12m": dados_banco.get("dy_12m"),
+            "vacancia_fisica": dados_banco.get("vacancia_fisica"),
+            "liquidez_diaria": dados_banco.get("liquidez_diaria"),
+            "vpa": dados_banco.get("vpa"),
+            "preco": dados_banco.get("preco"),
+            "qtd_ativos": dados_banco.get("qtd_ativos"),
+        },
+        "fii": {
+            "segmento": fii_info.get("segmento"),
+            "nome": fii_info.get("nome"),
+        },
+        "trimestral_hash": hashlib.sha256((ctx_trimestral or "").encode("utf-8")).hexdigest(),
+    }
+    texto = json.dumps(base, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
+def _ler_cache_ia(ticker: str, fingerprint: str) -> dict | None:
+    try:
+        _garantir_cache_ia()
+        row = db.buscar_um(
+            """
+            SELECT payload_json, criado_em
+            FROM analise_qualitativa_cache
+            WHERE ticker = ? AND fingerprint = ?
+            """,
+            (ticker.upper().strip(), fingerprint),
+        )
+        if not row:
+            return None
+        criado_em = datetime.fromisoformat(row["criado_em"]).replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - criado_em > timedelta(hours=_CACHE_HORAS):
+            return None
+        payload = json.loads(row["payload_json"])
+        payload["cache_qualitativo"] = True
+        return payload
+    except Exception:
+        return None
+
+
+def _salvar_cache_ia(ticker: str, fingerprint: str, resultado: dict) -> None:
+    if resultado.get("status") != "OK":
+        return
+    try:
+        _garantir_cache_ia()
+        payload = dict(resultado)
+        payload.pop("cache_qualitativo", None)
+        db.executar(
+            """
+            INSERT OR REPLACE INTO analise_qualitativa_cache
+                (ticker, fingerprint, payload_json, fonte_qualitativa, score, criado_em)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ticker.upper().strip(),
+                fingerprint,
+                json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str),
+                payload.get("fonte_qualitativa"),
+                payload.get("score"),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+    except Exception:
+        return
 
 
 def _validar_dados(dados_banco: dict, fii_info: dict) -> list[str]:
@@ -148,6 +237,11 @@ Qtd. Imóveis   : {qtd_ativos or 'Não informado'}
 
     # ── 5a. Contexto trimestral CVM (vacância e contratos oficiais) ────────
     ctx_trimestral = contexto_trimestral(ticker)
+    fingerprint = _fingerprint_analise(ticker, dados_banco, fii_info, ctx_trimestral)
+    cached = _ler_cache_ia(ticker, fingerprint)
+    if cached:
+        print(f"[ia] CACHE {ticker} - reutilizando analise qualitativa.")
+        return cached
 
     # ── 5b. Tenta relatório gerencial FNET (fonte primária) ───────────────
     texto_relatorio   = obter_relatorio(ticker)
@@ -289,6 +383,8 @@ Responda APENAS em JSON puro, sem markdown, sem texto fora do JSON:
 
         data["status"]            = "OK"
         data["fonte_qualitativa"] = fonte_qualitativa
+        data["cache_qualitativo"] = False
+        _salvar_cache_ia(ticker, fingerprint, data)
 
         print(
             f"[ia] OK {ticker} - Score: {data['score']}/10 | "
