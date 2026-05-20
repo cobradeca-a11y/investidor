@@ -93,7 +93,8 @@ Verificacao:
 - `[UVICORN: necessario]` `curl -H "x-api-key: ..." http://127.0.0.1:8080/api/auditoria/cobertura/fnet`
 
 Status:
-- Pendente operacional.
+- Implementado parcialmente neste ciclo: metadados FNET consultados ao vivo passam a ser persistidos localmente, e consultas futuras tentam usar documento local antes do download/busca ao vivo.
+- Continua pendente a rotina operacional de carga ampla para elevar cobertura historica.
 
 ## Bloco P6 - Homologacao final
 

@@ -26,6 +26,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 import banco.db as db
+from coleta import cvm_fnet_documentos
 from coleta.cnpj_fundo import obter_cnpj
 
 _FNET_GRID = "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados"
@@ -100,6 +101,32 @@ def _cnpj_limpo(cnpj: str) -> str:
 def _similaridade(a: str, b: str) -> float:
     return SequenceMatcher(None, a.upper(), b.upper()).ratio()
 
+
+def _doc_id_persistido(documento: dict | None) -> str | None:
+    if not documento:
+        return None
+    protocolo = documento.get("protocolo")
+    if protocolo:
+        return str(protocolo)
+    url = documento.get("url_documento") or ""
+    match = re.search(r"[?&]id=(\d+)", str(url))
+    return match.group(1) if match else None
+
+
+def _registrar_doc_fnet(ticker: str, cnpj: str, doc: dict) -> None:
+    try:
+        cvm_fnet_documentos.registrar_documento(
+            {
+                **doc,
+                "ticker": ticker,
+                "cnpj_fundo": cnpj,
+                "url_documento": _FNET_PDF.format(doc_id=doc.get("id")) if doc.get("id") else None,
+            },
+            arquivo_origem="FNET_API_RELATORIO",
+        )
+    except Exception:
+        return
+
 def _buscar_doc_id(ticker: str, cnpj: str, nome_fundo: str) -> tuple[str, str] | tuple[None, None]:
     """Busca por CNPJ primeiro; fallback por nome."""
     cnpj_num = _cnpj_limpo(cnpj)
@@ -127,10 +154,12 @@ def _buscar_doc_id(ticker: str, cnpj: str, nome_fundo: str) -> tuple[str, str] |
                     if _similaridade(nome_fundo, desc) >= _SIMILARIDADE or cnpj_num in desc.replace('.','').replace('/','').replace('-',''):
                         doc_id   = str(doc.get("id", ""))
                         data_ref = doc.get("dataReferencia", "")
+                        _registrar_doc_fnet(ticker, cnpj, doc)
                         print(f"[fnet] {ticker} — doc_id={doc_id} | '{desc[:50]}'")
                         return doc_id, data_ref
                 # Sem match de nome — usa o primeiro mesmo assim
                 doc = docs[0]
+                _registrar_doc_fnet(ticker, cnpj, doc)
                 return str(doc.get("id", "")), doc.get("dataReferencia", "")
         except Exception as e:
             print(f"[fnet] Erro na busca ({params.get('cnpj','')}): {e}")
@@ -147,6 +176,7 @@ def _buscar_doc_id(ticker: str, cnpj: str, nome_fundo: str) -> tuple[str, str] |
                 desc = doc.get("descricaoFundo", "") or ""
                 if _similaridade(nome_fundo, desc) >= _SIMILARIDADE:
                     doc_id = str(doc.get("id", ""))
+                    _registrar_doc_fnet(ticker, cnpj, doc)
                     print(f"[fnet] {ticker} — fallback nome | doc_id={doc_id}")
                     return doc_id, doc.get("dataReferencia", "")
     except Exception as e:
@@ -251,7 +281,13 @@ def obter_relatorio(ticker: str) -> str:
         pass  # nome do Fundamentus ja deve estar no banco
 
     print(f"[fnet] {ticker} — buscando relatorio (CNPJ={cnpj})...")
-    doc_id, data_ref = _buscar_doc_id(ticker, cnpj, nome.upper())
+    doc_local = cvm_fnet_documentos.ultimo_documento_por_cnpj(cnpj)
+    doc_id = _doc_id_persistido(doc_local)
+    data_ref = doc_local.get("data_referencia") if doc_local else None
+    if doc_id:
+        print(f"[fnet] {ticker} — usando documento FNET local id={doc_id}.")
+    else:
+        doc_id, data_ref = _buscar_doc_id(ticker, cnpj, nome.upper())
     if not doc_id:
         print(f"[fnet] {ticker} — nenhum documento encontrado.")
         return ""

@@ -112,6 +112,72 @@ def _limpar_ticker(valor: Any) -> str | None:
     return texto.upper().replace(".SA", "") if texto else None
 
 
+def _normalizar_documento(dados: dict[str, Any], arquivo_origem: str, coletado_em: str | None = None) -> dict[str, Any]:
+    coletado = coletado_em or _agora_iso()
+    normalizado = {
+        "ticker": _limpar_ticker(dados.get("ticker") or dados.get("codSegNegociacao") or dados.get("nomePregao")),
+        "cnpj_fundo": _limpar(dados.get("cnpj_fundo") or dados.get("cnpjFundo") or dados.get("cnpj")),
+        "cnpj_classe": _limpar(dados.get("cnpj_classe") or dados.get("cnpjClasse")),
+        "categoria": _limpar(dados.get("categoria") or dados.get("categoriaDocumento")),
+        "tipo_documento": _limpar(dados.get("tipo_documento") or dados.get("tipoDocumento") or dados.get("tipo")),
+        "data_referencia": _limpar(dados.get("data_referencia") or dados.get("dataReferencia")),
+        "data_entrega": _limpar(dados.get("data_entrega") or dados.get("dataEntrega")),
+        "url_documento": _limpar(dados.get("url_documento") or dados.get("url") or dados.get("urlDownload")),
+        "protocolo": _limpar(dados.get("protocolo") or dados.get("idDocumento") or dados.get("id")),
+        "assunto": _limpar(dados.get("assunto") or dados.get("descricao") or dados.get("descricaoFundo")),
+        "fonte": "CVM_FNET",
+        "arquivo_origem": arquivo_origem,
+        "coletado_em": coletado,
+        "payload_json": json.dumps(dados, ensure_ascii=False, default=str),
+    }
+    normalizado["dedupe_key"] = _dedupe_key(normalizado)
+    return normalizado
+
+
+def registrar_documento(dados: dict[str, Any], arquivo_origem: str = "FNET_API") -> dict[str, Any]:
+    """Persiste um metadado FNET ja normalizado ou retornado pela API FNET."""
+    garantir_tabela()
+    registro = _normalizar_documento(dados, arquivo_origem=arquivo_origem)
+    if not registro.get("cnpj_fundo") and not registro.get("ticker"):
+        return {"status": "ignorado", "motivo": "documento sem ticker nem CNPJ"}
+
+    colunas_sql = ", ".join(registro.keys())
+    placeholders = ", ".join("?" for _ in registro)
+    updates = ", ".join(
+        f"{col}=excluded.{col}"
+        for col in registro
+        if col not in {"dedupe_key"}
+    )
+    sql = f"""
+    INSERT INTO {TABELA} ({colunas_sql})
+    VALUES ({placeholders})
+    ON CONFLICT(dedupe_key)
+    DO UPDATE SET {updates}
+    """
+    db.executar(sql, tuple(registro.values()))
+    return {"status": "ok", "dedupe_key": registro["dedupe_key"], "ticker": registro.get("ticker"), "cnpj_fundo": registro.get("cnpj_fundo")}
+
+
+def importar_registros(registros: list[dict[str, Any]], arquivo_origem: str = "FNET_API") -> dict[str, Any]:
+    total = 0
+    ignorados = 0
+    for item in registros:
+        resultado = registrar_documento(item, arquivo_origem=arquivo_origem)
+        if resultado.get("status") == "ok":
+            total += 1
+        else:
+            ignorados += 1
+    resumo = {"origem": arquivo_origem, "registros": total, "ignorados": ignorados}
+    observabilidade.registrar_evento(
+        "INFO",
+        "coleta.cvm_fnet_documentos",
+        "Metadados FNET registrados",
+        fonte="CVM_FNET",
+        contexto=resumo,
+    )
+    return resumo
+
+
 def _dedupe_key(dados: dict[str, Any]) -> str:
     """
     Gera chave determinística para deduplicar documentos FNET.
@@ -168,23 +234,23 @@ def importar_arquivo(caminho_arquivo: str | Path) -> dict[str, Any]:
                 ignorados += 1
                 continue
 
-            dados = {
-                "ticker": ticker,
-                "cnpj_fundo": cnpj,
-                "cnpj_classe": _limpar(row.get(colunas["cnpj_classe"])) if colunas.get("cnpj_classe") else None,
-                "categoria": _limpar(row.get(colunas["categoria"])) if colunas.get("categoria") else None,
-                "tipo_documento": _limpar(row.get(colunas["tipo_documento"])) if colunas.get("tipo_documento") else None,
-                "data_referencia": _limpar(row.get(colunas["data_referencia"])) if colunas.get("data_referencia") else None,
-                "data_entrega": _limpar(row.get(colunas["data_entrega"])) if colunas.get("data_entrega") else None,
-                "url_documento": _limpar(row.get(colunas["url_documento"])) if colunas.get("url_documento") else None,
-                "protocolo": _limpar(row.get(colunas["protocolo"])) if colunas.get("protocolo") else None,
-                "assunto": _limpar(row.get(colunas["assunto"])) if colunas.get("assunto") else None,
-                "fonte": "CVM_FNET",
-                "arquivo_origem": str(caminho),
-                "coletado_em": coletado_em,
-                "payload_json": row.to_json(force_ascii=False),
-            }
-            dados["dedupe_key"] = _dedupe_key(dados)
+            dados = _normalizar_documento(
+                {
+                    "ticker": ticker,
+                    "cnpj_fundo": cnpj,
+                    "cnpj_classe": _limpar(row.get(colunas["cnpj_classe"])) if colunas.get("cnpj_classe") else None,
+                    "categoria": _limpar(row.get(colunas["categoria"])) if colunas.get("categoria") else None,
+                    "tipo_documento": _limpar(row.get(colunas["tipo_documento"])) if colunas.get("tipo_documento") else None,
+                    "data_referencia": _limpar(row.get(colunas["data_referencia"])) if colunas.get("data_referencia") else None,
+                    "data_entrega": _limpar(row.get(colunas["data_entrega"])) if colunas.get("data_entrega") else None,
+                    "url_documento": _limpar(row.get(colunas["url_documento"])) if colunas.get("url_documento") else None,
+                    "protocolo": _limpar(row.get(colunas["protocolo"])) if colunas.get("protocolo") else None,
+                    "assunto": _limpar(row.get(colunas["assunto"])) if colunas.get("assunto") else None,
+                    "payload": row.to_dict(),
+                },
+                arquivo_origem=str(caminho),
+                coletado_em=coletado_em,
+            )
 
             colunas_sql = ", ".join(dados.keys())
             placeholders = ", ".join("?" for _ in dados)
@@ -234,7 +300,18 @@ def listar_por_ticker(ticker: str, limite: int = 50) -> list[dict[str, Any]]:
         """,
         (ticker_norm, limite),
     )
-    return [dict(row) for row in rows]
+    docs = [dict(row) for row in rows]
+    if docs:
+        return docs
+
+    try:
+        from coleta import tabela_mestre_fiis
+
+        identidade = tabela_mestre_fiis.obter_por_ticker(ticker_norm)
+        cnpj = identidade.get("cnpj_fundo") if identidade else None
+        return listar_por_cnpj(cnpj, limite=limite) if cnpj else []
+    except Exception:
+        return []
 
 
 def listar_por_cnpj(cnpj_fundo: str, limite: int = 50) -> list[dict[str, Any]]:
