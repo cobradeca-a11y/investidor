@@ -33,12 +33,7 @@ document.getElementById('btnRadar')?.addEventListener('click', async () => {
     btnRadar.innerHTML = '<span class="icon">⌛</span> Processando...';
 
     try {
-        // Contrato de payload: a origem permanece fetch('/api/radar'), apenas com headers autenticados.
-        const response = await fetch('/api/radar', { headers: headersAutenticados() });
-        if (!response.ok) {
-            throw new Error(`Radar retornou HTTP ${response.status}`);
-        }
-        const data = await response.json();
+        const data = await executarRadarAssincrono();
         loading?.classList.add('hidden');
         resultsGrid?.classList.remove('hidden');
         renderResults(data.oportunidades || [], 'results');
@@ -76,6 +71,83 @@ function obterOuSolicitarApiKey(acao = 'continuar') {
 function headersAutenticados(extra = {}) {
     const apiKey = obterApiKey();
     return apiKey ? { ...extra, 'X-API-Key': apiKey } : extra;
+}
+
+const RADAR_POLL_MS = 2000;
+const RADAR_TIMEOUT_MS = 180000;
+
+function esperar(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function atualizarStatusRadar(texto) {
+    const loading = document.getElementById('loading');
+    const subtitulo = loading?.querySelector('p');
+    if (subtitulo && texto) subtitulo.textContent = texto;
+}
+
+async function fetchRadarSincronoFallback() {
+    // Compatibilidade: o contrato antigo permanece fetch('/api/radar') para ambientes sem job async.
+    const response = await fetch('/api/radar', { headers: headersAutenticados() });
+    if (!response.ok) {
+        throw new Error(`Radar retornou HTTP ${response.status}`);
+    }
+    return response.json();
+}
+
+async function executarRadarAssincrono() {
+    atualizarStatusRadar('Iniciando job do Radar...');
+
+    let inicio;
+    try {
+        inicio = await fetch('/api/radar/jobs', {
+            method: 'POST',
+            headers: headersAutenticados()
+        });
+    } catch (error) {
+        atualizarStatusRadar('Job assíncrono indisponível. Usando execução direta...');
+        return fetchRadarSincronoFallback();
+    }
+
+    if (inicio.status === 404 || inicio.status === 405) {
+        atualizarStatusRadar('Job assíncrono indisponível. Usando execução direta...');
+        return fetchRadarSincronoFallback();
+    }
+
+    if (!inicio.ok) {
+        throw new Error(`Radar job retornou HTTP ${inicio.status}`);
+    }
+
+    const payload = await inicio.json();
+    const jobId = payload.job_id;
+    if (!jobId) {
+        throw new Error('Radar job sem identificador.');
+    }
+
+    const inicioTempo = Date.now();
+    while (Date.now() - inicioTempo < RADAR_TIMEOUT_MS) {
+        await esperar(RADAR_POLL_MS);
+        atualizarStatusRadar('Radar em execução. Consultando progresso...');
+
+        const consulta = await fetch(`/api/radar/jobs/${encodeURIComponent(jobId)}`, {
+            headers: headersAutenticados()
+        });
+        if (!consulta.ok) {
+            throw new Error(`Consulta do Radar job retornou HTTP ${consulta.status}`);
+        }
+
+        const statusPayload = await consulta.json();
+        const job = statusPayload.job || {};
+        if (job.status === 'concluido') {
+            atualizarStatusRadar('Radar concluído. Renderizando oportunidades...');
+            return job.resultado || { status: 'ok', oportunidades: [], quantidade: 0 };
+        }
+        if (job.status === 'erro') {
+            throw new Error(job.mensagem || 'Radar job falhou.');
+        }
+    }
+
+    throw new Error('Tempo limite ao aguardar Radar job.');
 }
 
 function inicializarNavegacao() {

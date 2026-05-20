@@ -76,6 +76,7 @@ Verificacao:
 
 Status:
 - Implementado neste ciclo como API paralela. O endpoint sincrono `/api/radar` foi preservado.
+- PWA migrada para `POST /api/radar/jobs` + polling em `GET /api/radar/jobs/{id}`, com fallback para `/api/radar`.
 
 ## Bloco P5 - Cobertura documental FNET operacional
 

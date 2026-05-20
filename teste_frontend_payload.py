@@ -68,6 +68,16 @@ def test_frontend_tem_fluxo_guiado_para_api_key():
     assert "obterOuSolicitarApiKey('ligar o radar')" in conteudo
 
 
+def test_frontend_usa_radar_assincrono_com_fallback_sincrono():
+    conteudo = APP_JS.read_text(encoding="utf-8")
+
+    assert "function executarRadarAssincrono" in conteudo
+    assert "fetch('/api/radar/jobs'" in conteudo
+    assert "fetch(`/api/radar/jobs/${encodeURIComponent(jobId)}`" in conteudo
+    assert "function fetchRadarSincronoFallback" in conteudo
+    assert "fetch('/api/radar')" in conteudo
+
+
 def test_css_contem_classes_do_dashboard_de_auditoria():
     conteudo = STYLE_CSS.read_text(encoding="utf-8")
 
