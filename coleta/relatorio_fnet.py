@@ -191,6 +191,16 @@ def _extrair_pdf(doc_id: str) -> str | None:
 
 # ── Interface pública ─────────────────────────────────────────────────────────
 
+def _valor_row(row, chave: str, padrao=None):
+    if not row:
+        return padrao
+    if isinstance(row, dict):
+        return row.get(chave, padrao)
+    if hasattr(row, "keys") and chave in row.keys():
+        return row[chave]
+    return padrao
+
+
 def obter_relatorio(ticker: str) -> str:
     ticker = ticker.upper().strip()
 
@@ -206,7 +216,7 @@ def obter_relatorio(ticker: str) -> str:
 
     # Nome do fundo para filtro de similaridade
     row = db.buscar_um("SELECT nome FROM fiis WHERE ticker = ?", (ticker,))
-    nome = (row.get("nome","") or ticker) if row else ticker
+    nome = (_valor_row(row, "nome", "") or ticker) if row else ticker
     if nome == ticker:
         # Tenta pegar da tabela mestre via razao_social
         from coleta.cnpj_fundo import _carregar_cache as _mapa
