@@ -13,6 +13,7 @@ from api.carteira import router as carteira_router
 from api.aprendizado import router as aprendizado_router
 from api.relatorios import router as relatorios_router
 from api.fnet import router as fnet_router
+from api.setup_cvm import router as setup_cvm_router
 
 app = FastAPI(title="FIIA API", version="1.0")
 
@@ -27,6 +28,7 @@ app.include_router(carteira_router)
 app.include_router(aprendizado_router)
 app.include_router(relatorios_router)
 app.include_router(fnet_router)
+app.include_router(setup_cvm_router)
 
 # Servir a interface web
 app.mount("/web", StaticFiles(directory="static"), name="static")

@@ -23,7 +23,7 @@ from sistema import observabilidade
 TABELA = "fiia_tabela_mestre_fiis"
 
 _ALIASES = {
-    "ticker": ["ticker", "codigo", "código", "cod_negociacao", "codneg", "Código"],
+    "ticker": ["ticker", "ticker_base", "ticker_b3_11", "codigo", "código", "cod_negociacao", "codneg", "Código"],
     "cnpj_fundo": ["cnpj_fundo", "cnpj fundo", "cnpj", "CNPJ_Fundo", "CNPJ FUNDO"],
     "cnpj_classe": ["cnpj_classe", "cnpj classe", "CNPJ_Classe", "CNPJ CLASSE"],
     "razao_social": ["razao_social", "razão social", "razao social", "Razão Social"],

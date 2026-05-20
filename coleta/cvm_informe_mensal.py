@@ -34,9 +34,9 @@ _MAPEAMENTO_COLUNAS = {
     "cnpj_fundo": ["CNPJ_FUNDO", "CNPJ_FUNDO_CLASSE", "CNPJ", "CNPJ_FII"],
     "competencia": ["DT_COMPTC", "DT_REFER", "DATA_REFERENCIA", "COMPETENCIA"],
     "patrimonio_liquido": ["VL_PATRIM_LIQ", "VL_PATRIMONIO_LIQUIDO", "PATRIMONIO_LIQUIDO"],
-    "valor_patrimonial_cota": ["VL_PATRIM_COTA", "VL_QUOTA", "VL_COTA", "VALOR_PATRIMONIAL_COTA"],
-    "num_cotistas": ["NR_COTST", "NR_COTISTAS", "NUM_COTISTAS"],
-    "num_cotas": ["QT_COTAS", "QT_COTA", "QUANTIDADE_COTAS"],
+    "valor_patrimonial_cota": ["VL_PATRIM_COTA", "VL_QUOTA", "VL_COTA", "VALOR_PATRIMONIAL_COTA", "VALOR_PATRIMONIAL_COTAS"],
+    "num_cotistas": ["NR_COTST", "NR_COTISTAS", "NUM_COTISTAS", "TOTAL_NUMERO_COTISTAS"],
+    "num_cotas": ["QT_COTAS", "QT_COTA", "QUANTIDADE_COTAS", "COTAS_EMITIDAS"],
 }
 
 _CAMPOS_VERSIONADOS = (
@@ -117,7 +117,9 @@ def _to_float(valor: Any) -> float | None:
         return None
     try:
         if isinstance(valor, str):
-            valor = valor.replace(".", "").replace(",", ".")
+            valor = valor.strip()
+            if "," in valor:
+                valor = valor.replace(".", "").replace(",", ".")
         return float(valor)
     except Exception:
         return None
@@ -318,7 +320,11 @@ def ultimo_por_cnpj(cnpj_fundo: str) -> dict[str, Any] | None:
         f"""
         SELECT * FROM {TABELA}
         WHERE cnpj_fundo = ?
-        ORDER BY competencia DESC, versao DESC
+        ORDER BY
+            competencia DESC,
+            CASE WHEN valor_patrimonial_cota IS NOT NULL THEN 0 ELSE 1 END,
+            CASE WHEN patrimonio_liquido IS NOT NULL THEN 0 ELSE 1 END,
+            versao DESC
         LIMIT 1
         """,
         (cnpj_fundo,),
