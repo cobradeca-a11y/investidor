@@ -111,10 +111,10 @@ def rodar_radar():
             print(f"  {i+1:2}.   {op['ticker']:<8} Margem: {margem_val:+.1f}%")
 
     print("\n" + "="*50)
-    print("      ANÁLISE DETALHADA — TOP 3")
+    print("      ANÁLISE DETALHADA — TOP 5")
     print("="*50)
 
-    for i, op in enumerate(oportunidades[:3]):
+    for i, op in enumerate(oportunidades[:5]):
         veredito = op.get("veredito")
         if veredito:
             print(formatar_veredito(veredito))
