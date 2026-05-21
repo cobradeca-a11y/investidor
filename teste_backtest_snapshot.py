@@ -94,6 +94,56 @@ def test_backtest_invalida_sem_snapshot_e_nao_chama_motor(monkeypatch):
     assert chamadas_motor == []
 
 
+def test_backtest_data_exata_usa_horizonte_em_dias(monkeypatch):
+    monkeypatch.setattr(
+        maquina_tempo,
+        "buscar_snapshot_historico",
+        lambda ticker, data_referencia, max_defasagem_dias=45: _snapshot_valido(preco=100.0),
+    )
+    monkeypatch.setattr(maquina_tempo, "pegar_preco_historico", lambda ticker, data: 125.0)
+    monkeypatch.setattr(maquina_tempo, "_somar_dividendos", lambda ticker, inicio, fim: 5.0)
+    monkeypatch.setattr(maquina_tempo, "_cdi_periodo", lambda inicio, fim: 0.10)
+    monkeypatch.setattr(
+        maquina_tempo,
+        "decidir",
+        lambda ticker, contexto=None: {"ticker": ticker, "decisao": "COMPRAR_PARCIAL", "margem": 0.2, "gate_parada": 7},
+    )
+
+    resultado = maquina_tempo.executar_backtest_data("HGLG11", "2022-05-20", horizonte_dias=365)
+
+    assert resultado["data_decisao"] == "2022-05-20"
+    assert resultado["data_avaliacao"] == "2023-05-20"
+    assert resultado["validade_institucional"] is True
+    assert resultado["resultado"]["decisao"] == "COMPRAR_PARCIAL"
+    assert resultado["resultado"]["rentabilidade_total_pct"] == 30.0
+
+
+def test_backtest_radar_monta_top_por_snapshot_sem_olhar_futuro(monkeypatch):
+    monkeypatch.setattr(maquina_tempo, "_listar_tickers_com_snapshot_ate", lambda data_referencia, limite_base=500: ["AAA11", "BBB11"])
+    monkeypatch.setattr(
+        maquina_tempo,
+        "buscar_snapshot_historico",
+        lambda ticker, data_referencia, max_defasagem_dias=45: _snapshot_valido(preco=100.0) | {"ticker": ticker},
+    )
+    monkeypatch.setattr(maquina_tempo, "contexto_decisao_de_snapshot", snapshots.contexto_decisao_de_snapshot)
+    monkeypatch.setattr(maquina_tempo, "pegar_preco_historico", lambda ticker, data: 110.0)
+    monkeypatch.setattr(maquina_tempo, "_somar_dividendos", lambda ticker, inicio, fim: 0.0)
+    monkeypatch.setattr(maquina_tempo, "_cdi_periodo", lambda inicio, fim: 0.05)
+
+    def fake_decidir(ticker, contexto=None):
+        margem = 0.30 if ticker == "BBB11" else 0.10
+        return {"ticker": ticker, "decisao": "COMPRAR_PARCIAL", "margem": margem, "gate_parada": 7}
+
+    monkeypatch.setattr(maquina_tempo, "decidir", fake_decidir)
+
+    resultado = maquina_tempo.executar_backtest_radar("2022-05-20", top=1, horizonte_dias=365)
+
+    assert resultado["top"] == 1
+    assert resultado["ranking"][0]["ticker"] == "BBB11"
+    assert resultado["ranking"][0]["margem"] == 0.30
+    assert resultado["avaliaveis"] == 1
+
+
 def test_backtest_usa_preco_do_snapshot_como_entrada(monkeypatch):
     contextos_recebidos = []
 
