@@ -14,6 +14,7 @@ from servicos.agendador_avaliador import executar_avaliador_temporal
 from aprendizado.snapshots import criar_snapshots_diarios
 from aprendizado.paper_trading import executar_paper_trading_diario
 from operacional.saude_fontes import gerar_relatorio_saude_fontes
+from servicos.assistente_financeiro import gerar_alertas
 
 
 def rotina_diaria_abertura():
@@ -83,6 +84,13 @@ def rotina_saude_fontes():
     print(f"[agendador] Saúde das fontes concluída: {resultado.get('cobertura')}")
 
 
+def rotina_alertas_assistente():
+    """Executada diariamente - Persiste alertas operacionais para a PWA."""
+    print(f"[{datetime.now()}] Iniciando Alertas do Assistente...")
+    resultado = gerar_alertas()
+    print(f"[agendador] Alertas do assistente concluidos: {resultado.get('quantidade', 0)} alerta(s).")
+
+
 def rotina_oportunidades_mercado():
     """Executada às 11:00 - Busca oportunidades com a bolsa aberta."""
     print(f"[{datetime.now()}] Iniciando Radar de Oportunidades...")
@@ -113,6 +121,7 @@ schedule.every().day.at("08:00").do(rotina_snapshots_diarios)
 schedule.every().day.at("09:00").do(rotina_diaria_abertura)
 schedule.every().day.at("10:00").do(rotina_paper_trading_diario)
 schedule.every().day.at("10:45").do(rotina_oportunidades_mercado)
+schedule.every().day.at("11:30").do(rotina_alertas_assistente)
 schedule.every().day.at("20:00").do(rotina_noturna_radar)
 schedule.every().day.at("22:30").do(lambda: rotina_cvm_mensal() if datetime.now().day == 1 else None)
 schedule.every().day.at("22:45").do(lambda: rotina_cvm_anual() if datetime.now().month in [3, 4] and datetime.now().day == 1 else None)

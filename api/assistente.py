@@ -49,6 +49,15 @@ def alertas(tickers: str | None = None) -> dict[str, Any]:
         return resposta_erro_segura("Falha controlada ao gerar alertas.", alertas=[])
 
 
+@router.get("/alertas/novos")
+def alertas_novos(desde_id: int = 0, limite: int = 20) -> dict[str, Any]:
+    try:
+        return assistente_financeiro.listar_alertas_novos(desde_id=desde_id, limite=limite)
+    except Exception as erro:
+        observabilidade.registrar_erro("api.assistente.alertas_novos", erro)
+        return resposta_erro_segura("Falha controlada ao consultar alertas novos.", alertas=[])
+
+
 @router.get("/rebalanceamento")
 def rebalanceamento() -> dict[str, Any]:
     try:
@@ -62,7 +71,7 @@ def rebalanceamento() -> dict[str, Any]:
 def exportar_fundo(ticker: str, formato: str = "txt") -> dict[str, Any] | Response:
     try:
         exportacao = assistente_financeiro.relatorio_offline(ticker, formato=formato)
-        if formato.lower() in {"txt", "md", "markdown"}:
+        if formato.lower() in {"txt", "md", "markdown", "pdf"}:
             nome = f"fiia_{exportacao['ticker']}.{exportacao['formato']}"
             return Response(
                 content=exportacao["conteudo"],
@@ -73,4 +82,3 @@ def exportar_fundo(ticker: str, formato: str = "txt") -> dict[str, Any] | Respon
     except Exception as erro:
         observabilidade.registrar_erro("api.assistente.exportar_fundo", erro, ticker=ticker)
         return resposta_erro_segura("Falha controlada ao exportar relatorio do fundo.", ticker=ticker)
-

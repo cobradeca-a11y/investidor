@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inicializarTransacoes();
     criarPainelHistorico();
     criarPainelAssistente();
+    iniciarPollingAlertasNovos();
     carregarCarteira();
 });
 
@@ -318,6 +319,7 @@ function criarPainelAssistente() {
                 <p>Alertas, evolucao, rebalanceamento e detalhe por fundo sem acionar scraping.</p>
             </div>
             <div class="assist-actions">
+                <span id="alertasNovosBadge" class="assist-badge hidden">0</span>
                 <button id="btnAssistenteAlertas" class="btn-transaction">Ver alertas</button>
                 <button id="btnAssistenteRebalance" class="btn-transaction secondary">Rebalancear</button>
             </div>
@@ -330,6 +332,47 @@ function criarPainelAssistente() {
     container.appendChild(section);
     document.getElementById('btnAssistenteAlertas')?.addEventListener('click', carregarAlertasAssistente);
     document.getElementById('btnAssistenteRebalance')?.addEventListener('click', carregarRebalanceamento);
+}
+
+function iniciarPollingAlertasNovos() {
+    consultarAlertasNovos();
+    setInterval(consultarAlertasNovos, 60000);
+}
+
+async function consultarAlertasNovos() {
+    const apiKey = obterApiKey();
+    if (!apiKey) return;
+    const cursor = Number(localStorage.getItem('fiia_alertas_ultimo_id') || '0');
+    try {
+        const response = await fetch(`/api/assistente/alertas/novos?desde_id=${encodeURIComponent(cursor)}`, { headers: headersAutenticados() });
+        if (!response.ok) return;
+        const data = await response.json();
+        const alertas = data.alertas || [];
+        if (!alertas.length) return;
+        const ultimoId = Math.max(cursor, ...alertas.map(alerta => Number(alerta.id || 0)));
+        localStorage.setItem('fiia_alertas_ultimo_id', String(ultimoId));
+        const badge = document.getElementById('alertasNovosBadge');
+        if (badge) {
+            badge.textContent = String(alertas.length);
+            badge.classList.remove('hidden');
+        }
+        mostrarToastAlerta(alertas[alertas.length - 1]);
+    } catch (error) {
+        console.error('Erro ao consultar alertas novos:', error);
+    }
+}
+
+function mostrarToastAlerta(alerta) {
+    let toast = document.getElementById('assistenteToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'assistenteToast';
+        toast.className = 'assist-toast hidden';
+        document.body.appendChild(toast);
+    }
+    toast.innerHTML = `<strong>${escapeHtml(alerta.ticker || 'FIIA')}</strong><span>${escapeHtml(alerta.mensagem || 'Novo alerta operacional.')}</span>`;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 7000);
 }
 
 async function carregarAlertasAssistente() {
@@ -426,6 +469,7 @@ function renderDetalheFundo(data, evolucao) {
     const dec = data.decisao || {};
     const ticker = data.ticker || ind.ticker || dec.ticker || '---';
     const exportUrl = `/api/assistente/fundos/${encodeURIComponent(ticker)}/exportar?formato=txt`;
+    const exportPdfUrl = `/api/assistente/fundos/${encodeURIComponent(ticker)}/exportar?formato=pdf`;
     return `
         <details class="audit-panel history-detail-panel" open>
             <summary>Detalhe diario - ${escapeHtml(ticker)}</summary>
@@ -443,6 +487,7 @@ function renderDetalheFundo(data, evolucao) {
             <div class="audit-blocks"><strong>Motivo:</strong> ${escapeHtml(dec.motivo || 'Nao informado')}</div>
             <div class="history-actions">
                 <a class="btn-mini" href="${escapeHtml(exportUrl)}" target="_blank" rel="noopener">Exportar texto</a>
+                <a class="btn-mini" href="${escapeHtml(exportPdfUrl)}" target="_blank" rel="noopener">Exportar PDF</a>
             </div>
         </details>
     `;

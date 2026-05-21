@@ -6,7 +6,7 @@ Camada de uso diario do FIIA:
 - alertas operacionais;
 - evolucao entre snapshots/decisoes;
 - sugestao de rebalanceamento;
-- exportacao offline em texto.
+- exportacao offline em texto/PDF.
 
 As consultas sao auditaveis e nao executam scraping nem motor de decisao.
 """
@@ -188,6 +188,43 @@ def _salvar_alerta(alerta: dict[str, Any]) -> None:
     )
 
 
+def listar_alertas_novos(desde_id: int = 0, limite: int = 20) -> dict[str, Any]:
+    """
+    Consulta alertas ja persistidos sem gerar novos registros.
+
+    Usado pela PWA para polling leve. Nao chama gerar_alertas(), nao executa
+    motor e nao aciona scraping.
+    """
+    _garantir_tabela_alertas()
+    desde = max(0, int(desde_id or 0))
+    limite_seguro = min(max(int(limite or 20), 1), 100)
+    rows = db.buscar_todos(
+        """
+        SELECT id, ticker, tipo, severidade, mensagem, data_referencia, payload_json, criado_em
+        FROM assistente_alertas
+        WHERE id > ?
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (desde, limite_seguro),
+    )
+    alertas = []
+    for row in rows:
+        item = dict(row)
+        item["payload"] = _json(item.pop("payload_json", None), {})
+        alertas.append(item)
+    ultimo_id = max([desde] + [int(a["id"]) for a in alertas])
+    return {
+        "status": "ok",
+        "quantidade": len(alertas),
+        "ultimo_id": ultimo_id,
+        "alertas": alertas,
+        "sem_scraping": True,
+        "executou_motor": False,
+        "gerou_alertas": False,
+    }
+
+
 def gerar_alertas(tickers: list[str] | None = None) -> dict[str, Any]:
     if tickers:
         universo = [_ticker(t) for t in tickers if _ticker(t)]
@@ -249,6 +286,54 @@ def gerar_alertas(tickers: list[str] | None = None) -> dict[str, Any]:
         _salvar_alerta(alerta)
 
     return {"status": "ok", "quantidade": len(alertas), "alertas": alertas, "sem_scraping": True, "executou_motor": False}
+
+
+def gerar_pdf_simples(texto: str) -> bytes:
+    """Gera um PDF simples sem dependencia externa."""
+    linhas = []
+    for linha in str(texto or "").splitlines():
+        restante = linha
+        while len(restante) > 92:
+            linhas.append(restante[:92])
+            restante = restante[92:]
+        linhas.append(restante)
+    linhas = linhas[:52]
+
+    def esc(valor: str) -> str:
+        return valor.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    comandos = ["BT", "/F1 9 Tf", "50 790 Td", "12 TL"]
+    for linha in linhas:
+        comandos.append(f"({esc(linha)}) Tj")
+        comandos.append("T*")
+    comandos.append("ET")
+    stream = "\n".join(comandos).encode("latin-1", errors="replace")
+
+    objetos = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+    pdf = b"%PDF-1.4\n"
+    offsets = [0]
+    for indice, objeto in enumerate(objetos, start=1):
+        offsets.append(len(pdf))
+        pdf += f"{indice} 0 obj\n".encode("ascii") + objeto + b"\nendobj\n"
+    xref = len(pdf)
+    pdf += f"xref\n0 {len(objetos) + 1}\n".encode("ascii")
+    pdf += b"0000000000 65535 f \n"
+    for offset in offsets[1:]:
+        pdf += f"{offset:010d} 00000 n \n".encode("ascii")
+    pdf += (
+        b"trailer\n"
+        + f"<< /Size {len(objetos) + 1} /Root 1 0 R >>\n".encode("ascii")
+        + b"startxref\n"
+        + str(xref).encode("ascii")
+        + b"\n%%EOF\n"
+    )
+    return pdf
 
 
 def _delta(atual: Any, anterior: Any) -> dict[str, Any]:
@@ -390,6 +475,17 @@ def relatorio_offline(ticker: str, formato: str = "txt") -> dict[str, Any]:
 
     conteudo = "\n".join(linhas)
     formato_norm = str(formato or "txt").lower()
+    if formato_norm == "pdf":
+        return {
+            "status": "ok",
+            "ticker": detalhe["ticker"],
+            "formato": "pdf",
+            "conteudo": gerar_pdf_simples(conteudo),
+            "content_type": "application/pdf",
+            "sem_scraping": True,
+            "executou_motor": False,
+        }
+
     return {
         "status": "ok",
         "ticker": detalhe["ticker"],
@@ -399,4 +495,3 @@ def relatorio_offline(ticker: str, formato: str = "txt") -> dict[str, Any]:
         "sem_scraping": True,
         "executou_motor": False,
     }
-
