@@ -11,7 +11,7 @@ Correcoes aplicadas com base no teste_fnet_cnpj.py v3:
 
 Estrategia:
   1. Busca por CNPJ do fundo (tabela mestre ou CVM)
-  2. Filtra pelo documento mais recente (idTipoDocumento=40 = Informe Mensal)
+  2. Tenta documentos por prioridade: mensal, trimestral e anual
   3. Baixa PDF e extrai texto com pdfplumber
   4. Cacheia no SQLite por 24h
 """
@@ -47,6 +47,12 @@ _MAX_CHARS    = 12_000
 _CACHE_HORAS  = 24
 _SIMILARIDADE = 0.50
 _PDF_MIN_BYTES = 200
+_TIPOS_FNET_PRIORITARIOS = [
+    {"id": "40", "nome": "INFORME_MENSAL", "descricao": "Informe Mensal"},
+    {"id": "41", "nome": "INFORME_TRIMESTRAL", "descricao": "Informe Trimestral"},
+    {"id": "44", "nome": "INFORME_ANUAL", "descricao": "Informe Anual"},
+]
+_ORDEM_TIPO_LOCAL = {tipo["nome"]: indice for indice, tipo in enumerate(_TIPOS_FNET_PRIORITARIOS)}
 
 
 def _criar_sessao() -> requests.Session:
@@ -120,6 +126,8 @@ def _registrar_doc_fnet(ticker: str, cnpj: str, doc: dict) -> None:
                 **doc,
                 "ticker": ticker,
                 "cnpj_fundo": cnpj,
+                "tipo_documento": doc.get("_tipo_documento_fiia") or doc.get("tipoDocumento"),
+                "categoria": doc.get("_categoria_fiia") or doc.get("categoriaDocumento"),
                 "url_documento": _FNET_PDF.format(doc_id=doc.get("id")) if doc.get("id") else None,
             },
             arquivo_origem="FNET_API_RELATORIO",
@@ -127,63 +135,110 @@ def _registrar_doc_fnet(ticker: str, cnpj: str, doc: dict) -> None:
     except Exception:
         return
 
+def _params_fnet(cnpj_valor: str | None, id_tipo: str, limite: int = 20) -> dict:
+    params = {
+        "d": 1,
+        "s": 0,
+        "l": limite,
+        "tipoFundo": "1",
+        "idCategoriaDocumento": "6",
+        "idTipoDocumento": id_tipo,
+        "idEspecieDocumento": "0",
+        "paginaCertificados": "false",
+    }
+    if cnpj_valor:
+        params["cnpj"] = cnpj_valor
+    return params
+
+
+def _doc_match(doc: dict, nome_fundo: str, cnpj_num: str) -> bool:
+    desc = doc.get("descricaoFundo", "") or ""
+    return _similaridade(nome_fundo, desc) >= _SIMILARIDADE or cnpj_num in desc.replace('.', '').replace('/', '').replace('-', '')
+
+
+def _preparar_doc(doc: dict, tipo: dict) -> dict:
+    return {
+        **doc,
+        "_tipo_documento_fiia": tipo["nome"],
+        "_categoria_fiia": tipo["descricao"],
+    }
+
+
 def _buscar_doc_id(ticker: str, cnpj: str, nome_fundo: str) -> tuple[str, str] | tuple[None, None]:
     """Busca por CNPJ primeiro; fallback por nome."""
     cnpj_num = _cnpj_limpo(cnpj)
 
-    # Tentativas: com CNPJ limpo, com CNPJ formatado, sem CNPJ (filtro local por nome)
-    variantes = [
-        {"d":1,"s":0,"l":20,"tipoFundo":"1","cnpj":cnpj_num,
-         "idCategoriaDocumento":"6","idTipoDocumento":"40","idEspecieDocumento":"0","paginaCertificados":"false"},
-        {"d":1,"s":0,"l":20,"tipoFundo":"1","cnpj":cnpj,
-         "idCategoriaDocumento":"6","idTipoDocumento":"40","idEspecieDocumento":"0","paginaCertificados":"false"},
-    ]
+    for tipo in _TIPOS_FNET_PRIORITARIOS:
+        variantes = [
+            _params_fnet(cnpj_num, tipo["id"]),
+            _params_fnet(cnpj, tipo["id"]),
+        ]
 
-    for params in variantes:
+        for params in variantes:
+            try:
+                r = _session.get(_FNET_GRID, params=params, headers=_HEADERS, timeout=_TIMEOUT)
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                docs = data.get("data", [])
+                total = data.get("recordsTotal", 0)
+                if docs and total > 0:
+                    for doc in docs:
+                        if _doc_match(doc, nome_fundo, cnpj_num):
+                            doc = _preparar_doc(doc, tipo)
+                            doc_id = str(doc.get("id", ""))
+                            data_ref = doc.get("dataReferencia", "")
+                            _registrar_doc_fnet(ticker, cnpj, doc)
+                            desc = doc.get("descricaoFundo", "") or ""
+                            print(f"[fnet] {ticker} - {tipo['nome']} doc_id={doc_id} | '{desc[:50]}'")
+                            return doc_id, data_ref
+                    doc = _preparar_doc(docs[0], tipo)
+                    _registrar_doc_fnet(ticker, cnpj, doc)
+                    return str(doc.get("id", "")), doc.get("dataReferencia", "")
+            except Exception as e:
+                print(f"[fnet] Erro na busca {tipo['nome']} ({params.get('cnpj','')}): {e}")
+            time.sleep(0.5)
+
+    for tipo in _TIPOS_FNET_PRIORITARIOS:
         try:
+            params = _params_fnet(None, tipo["id"], limite=100)
             r = _session.get(_FNET_GRID, params=params, headers=_HEADERS, timeout=_TIMEOUT)
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            docs = data.get("data", [])
-            total = data.get("recordsTotal", 0)
-            if docs and total > 0:
-                # Filtra pelo mais recente com nome similar
+            if r.status_code == 200:
+                docs = r.json().get("data", [])
                 for doc in docs:
                     desc = doc.get("descricaoFundo", "") or ""
-                    if _similaridade(nome_fundo, desc) >= _SIMILARIDADE or cnpj_num in desc.replace('.','').replace('/','').replace('-',''):
-                        doc_id   = str(doc.get("id", ""))
-                        data_ref = doc.get("dataReferencia", "")
+                    if _similaridade(nome_fundo, desc) >= _SIMILARIDADE:
+                        doc = _preparar_doc(doc, tipo)
+                        doc_id = str(doc.get("id", ""))
                         _registrar_doc_fnet(ticker, cnpj, doc)
-                        print(f"[fnet] {ticker} — doc_id={doc_id} | '{desc[:50]}'")
-                        return doc_id, data_ref
-                # Sem match de nome — usa o primeiro mesmo assim
-                doc = docs[0]
-                _registrar_doc_fnet(ticker, cnpj, doc)
-                return str(doc.get("id", "")), doc.get("dataReferencia", "")
+                        print(f"[fnet] {ticker} - fallback nome {tipo['nome']} | doc_id={doc_id}")
+                        return doc_id, doc.get("dataReferencia", "")
         except Exception as e:
-            print(f"[fnet] Erro na busca ({params.get('cnpj','')}): {e}")
-        time.sleep(0.5)
-
-    # Fallback: sem CNPJ, busca geral + filtro local por nome
-    try:
-        params = {"d":1,"s":0,"l":100,"tipoFundo":"1","idCategoriaDocumento":"6",
-                  "idTipoDocumento":"40","idEspecieDocumento":"0","paginaCertificados":"false"}
-        r = _session.get(_FNET_GRID, params=params, headers=_HEADERS, timeout=_TIMEOUT)
-        if r.status_code == 200:
-            docs = r.json().get("data", [])
-            for doc in docs:
-                desc = doc.get("descricaoFundo", "") or ""
-                if _similaridade(nome_fundo, desc) >= _SIMILARIDADE:
-                    doc_id = str(doc.get("id", ""))
-                    _registrar_doc_fnet(ticker, cnpj, doc)
-                    print(f"[fnet] {ticker} — fallback nome | doc_id={doc_id}")
-                    return doc_id, doc.get("dataReferencia", "")
-    except Exception as e:
-        print(f"[fnet] Erro no fallback: {e}")
+            print(f"[fnet] Erro no fallback {tipo['nome']}: {e}")
 
     return None, None
 
+
+def _prioridade_doc_local(documento: dict) -> tuple[int, str]:
+    tipo = str(documento.get("tipo_documento") or "").upper()
+    categoria = str(documento.get("categoria") or "").upper()
+    texto = f"{tipo} {categoria}"
+    if "TRIMESTRAL" in texto:
+        chave = "INFORME_TRIMESTRAL"
+    elif "ANUAL" in texto:
+        chave = "INFORME_ANUAL"
+    else:
+        chave = "INFORME_MENSAL"
+    data = documento.get("data_entrega") or documento.get("data_referencia") or ""
+    return (_ORDEM_TIPO_LOCAL.get(chave, 99), str(data))
+
+
+def _documento_local_prioritario(cnpj: str) -> dict | None:
+    docs = cvm_fnet_documentos.listar_por_cnpj(cnpj, limite=50)
+    docs_com_id = [doc for doc in docs if _doc_id_persistido(doc)]
+    if not docs_com_id:
+        return None
+    return sorted(docs_com_id, key=_prioridade_doc_local)[0]
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
 
@@ -281,7 +336,7 @@ def obter_relatorio(ticker: str) -> str:
         pass  # nome do Fundamentus ja deve estar no banco
 
     print(f"[fnet] {ticker} — buscando relatorio (CNPJ={cnpj})...")
-    doc_local = cvm_fnet_documentos.ultimo_documento_por_cnpj(cnpj)
+    doc_local = _documento_local_prioritario(cnpj)
     doc_id = _doc_id_persistido(doc_local)
     data_ref = doc_local.get("data_referencia") if doc_local else None
     if doc_id:

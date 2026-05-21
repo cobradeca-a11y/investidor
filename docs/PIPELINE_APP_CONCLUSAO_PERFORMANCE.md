@@ -94,6 +94,7 @@ Verificacao:
 
 Status:
 - Implementado parcialmente neste ciclo: metadados FNET consultados ao vivo passam a ser persistidos localmente, e consultas futuras tentam usar documento local antes do download/busca ao vivo.
+- Busca FNET ao vivo ampliada para prioridade `INFORME_MENSAL` -> `INFORME_TRIMESTRAL` -> `INFORME_ANUAL`.
 - Continua pendente a rotina operacional de carga ampla para elevar cobertura historica.
 
 ## Bloco P6 - Homologacao final
