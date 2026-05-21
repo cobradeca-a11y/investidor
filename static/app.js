@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inicializarTransacoes();
     criarPainelHistorico();
     criarPainelAssistente();
+    iniciarMonitorAlertasAssistente();
     carregarCarteira();
 });
 
@@ -318,7 +319,7 @@ function criarPainelAssistente() {
                 <p>Alertas, evolucao, rebalanceamento e detalhe por fundo sem acionar scraping.</p>
             </div>
             <div class="assist-actions">
-                <button id="btnAssistenteAlertas" class="btn-transaction">Ver alertas</button>
+                <button id="btnAssistenteAlertas" class="btn-transaction">Ver alertas <span id="assistenteAlertasBadge" class="alert-badge hidden">0</span></button>
                 <button id="btnAssistenteRebalance" class="btn-transaction secondary">Rebalancear</button>
             </div>
         </div>
@@ -330,6 +331,84 @@ function criarPainelAssistente() {
     container.appendChild(section);
     document.getElementById('btnAssistenteAlertas')?.addEventListener('click', carregarAlertasAssistente);
     document.getElementById('btnAssistenteRebalance')?.addEventListener('click', carregarRebalanceamento);
+}
+
+const ASSISTENTE_ALERTAS_POLL_MS = 60000;
+
+function ultimoAlertaAssistenteId() {
+    return parseInt(localStorage.getItem('fiia_ultimo_alerta_id') || '0', 10) || 0;
+}
+
+function salvarUltimoAlertaAssistenteId(id) {
+    if (!id) return;
+    localStorage.setItem('fiia_ultimo_alerta_id', String(id));
+}
+
+function atualizarBadgeAlertas(qtd) {
+    const badge = document.getElementById('assistenteAlertasBadge');
+    if (!badge) return;
+    const atual = parseInt(badge.textContent || '0', 10) || 0;
+    const total = Math.min(99, atual + Math.max(0, qtd || 0));
+    badge.textContent = String(total);
+    badge.classList.toggle('hidden', total === 0);
+}
+
+function exibirToastAlerta(alerta) {
+    let container = document.getElementById('toastAlertasAssistente');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastAlertasAssistente';
+        container.className = 'toast-stack';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('button');
+    toast.type = 'button';
+    toast.className = 'alert-toast';
+    toast.innerHTML = `<strong>${escapeHtml(alerta.ticker || 'FIIA')}</strong><span>${escapeHtml(alerta.mensagem || alerta.tipo || 'Novo alerta')}</span>`;
+    toast.addEventListener('click', () => {
+        carregarAlertasAssistente();
+        toast.remove();
+    });
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 9000);
+}
+
+async function consultarNovosAlertasAssistente() {
+    if (!obterApiKey()) return;
+    try {
+        const desdeId = ultimoAlertaAssistenteId();
+        const response = await fetch(`/api/assistente/alertas/novos?desde_id=${encodeURIComponent(desdeId)}`, { headers: headersAutenticados() });
+        if (!response.ok) return;
+        const data = await response.json();
+        const alertas = data.alertas || [];
+        if (!alertas.length) {
+            salvarUltimoAlertaAssistenteId(data.ultimo_id || desdeId);
+            return;
+        }
+        alertas.slice(-3).forEach(exibirToastAlerta);
+        atualizarBadgeAlertas(alertas.length);
+        salvarUltimoAlertaAssistenteId(data.ultimo_id || alertas[alertas.length - 1]?.id);
+    } catch (error) {
+        console.error('Erro ao consultar novos alertas:', error);
+    }
+}
+
+async function marcarAlertasAssistenteComoVistos() {
+    if (!obterApiKey()) return;
+    try {
+        const desdeId = ultimoAlertaAssistenteId();
+        const response = await fetch(`/api/assistente/alertas/novos?desde_id=${encodeURIComponent(desdeId)}&limite=100`, { headers: headersAutenticados() });
+        if (!response.ok) return;
+        const data = await response.json();
+        salvarUltimoAlertaAssistenteId(data.ultimo_id || desdeId);
+    } catch (error) {
+        console.error('Erro ao marcar alertas como vistos:', error);
+    }
+}
+
+function iniciarMonitorAlertasAssistente() {
+    consultarNovosAlertasAssistente();
+    window.setInterval(consultarNovosAlertasAssistente, ASSISTENTE_ALERTAS_POLL_MS);
 }
 
 async function carregarAlertasAssistente() {
@@ -344,6 +423,12 @@ async function carregarAlertasAssistente() {
         const response = await fetch('/api/assistente/alertas', { headers: headersAutenticados() });
         const data = await response.json();
         const alertas = data.alertas || [];
+        const badge = document.getElementById('assistenteAlertasBadge');
+        if (badge) {
+            badge.textContent = '0';
+            badge.classList.add('hidden');
+        }
+        marcarAlertasAssistenteComoVistos();
         if (!alertas.length) {
             alvo.innerHTML = '<div class="audit-empty">Sem alertas operacionais agora.</div>';
             return;
@@ -426,6 +511,7 @@ function renderDetalheFundo(data, evolucao) {
     const dec = data.decisao || {};
     const ticker = data.ticker || ind.ticker || dec.ticker || '---';
     const exportUrl = `/api/assistente/fundos/${encodeURIComponent(ticker)}/exportar?formato=txt`;
+    const exportPdfUrl = `/api/assistente/fundos/${encodeURIComponent(ticker)}/exportar?formato=pdf`;
     return `
         <details class="audit-panel history-detail-panel" open>
             <summary>Detalhe diario - ${escapeHtml(ticker)}</summary>
@@ -443,6 +529,7 @@ function renderDetalheFundo(data, evolucao) {
             <div class="audit-blocks"><strong>Motivo:</strong> ${escapeHtml(dec.motivo || 'Nao informado')}</div>
             <div class="history-actions">
                 <a class="btn-mini" href="${escapeHtml(exportUrl)}" target="_blank" rel="noopener">Exportar texto</a>
+                <a class="btn-mini" href="${escapeHtml(exportPdfUrl)}" target="_blank" rel="noopener">Exportar PDF</a>
             </div>
         </details>
     `;

@@ -11,6 +11,7 @@ from coleta import api_bcb, cvm_informe_mensal, informe_diario, informe_trimestr
 from coleta.informe_anual import coletar_atual as anual_atual
 from coleta.informe_trimestral_completo import coletar_atual as tri_completo_atual
 from servicos.agendador_avaliador import executar_avaliador_temporal
+from servicos.assistente_financeiro import gerar_alertas
 from aprendizado.snapshots import criar_snapshots_diarios
 from aprendizado.paper_trading import executar_paper_trading_diario
 from operacional.saude_fontes import gerar_relatorio_saude_fontes
@@ -83,6 +84,13 @@ def rotina_saude_fontes():
     print(f"[agendador] Saúde das fontes concluída: {resultado.get('cobertura')}")
 
 
+def rotina_alertas_assistente():
+    """Executada diariamente - Gera e persiste alertas do assistente sem scraping."""
+    print(f"[{datetime.now()}] Iniciando Alertas do Assistente...")
+    resultado = gerar_alertas()
+    print(f"[agendador] Alertas do assistente persistidos: {resultado.get('quantidade', 0)}")
+
+
 def rotina_oportunidades_mercado():
     """Executada às 11:00 - Busca oportunidades com a bolsa aberta."""
     print(f"[{datetime.now()}] Iniciando Radar de Oportunidades...")
@@ -110,6 +118,7 @@ schedule.every().day.at("07:00").do(rotina_cvm_diaria)
 schedule.every().monday.at("07:20").do(rotina_cvm_trimestral)
 schedule.every().monday.at("07:35").do(rotina_cvm_trimestral_completa)
 schedule.every().day.at("08:00").do(rotina_snapshots_diarios)
+schedule.every().day.at("08:30").do(rotina_alertas_assistente)
 schedule.every().day.at("09:00").do(rotina_diaria_abertura)
 schedule.every().day.at("10:00").do(rotina_paper_trading_diario)
 schedule.every().day.at("10:45").do(rotina_oportunidades_mercado)

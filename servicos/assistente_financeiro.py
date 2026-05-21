@@ -188,6 +188,35 @@ def _salvar_alerta(alerta: dict[str, Any]) -> None:
     )
 
 
+def listar_alertas_novos(desde_id: int = 0, limite: int = 20) -> dict[str, Any]:
+    _garantir_tabela_alertas()
+    limite_seguro = max(1, min(int(limite or 20), 100))
+    rows = db.buscar_todos(
+        """
+        SELECT id, ticker, tipo, severidade, mensagem, data_referencia, payload_json, criado_em
+        FROM assistente_alertas
+        WHERE id > ?
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (int(desde_id or 0), limite_seguro),
+    )
+    alertas = []
+    for row in rows:
+        item = _row_dict(row)
+        item["payload"] = _json(item.pop("payload_json", None), {})
+        alertas.append(item)
+    ultimo_id = max([int(alerta.get("id") or 0) for alerta in alertas] or [int(desde_id or 0)])
+    return {
+        "status": "ok",
+        "quantidade": len(alertas),
+        "ultimo_id": ultimo_id,
+        "alertas": alertas,
+        "sem_scraping": True,
+        "executou_motor": False,
+    }
+
+
 def gerar_alertas(tickers: list[str] | None = None) -> dict[str, Any]:
     if tickers:
         universo = [_ticker(t) for t in tickers if _ticker(t)]
@@ -249,6 +278,62 @@ def gerar_alertas(tickers: list[str] | None = None) -> dict[str, Any]:
         _salvar_alerta(alerta)
 
     return {"status": "ok", "quantidade": len(alertas), "alertas": alertas, "sem_scraping": True, "executou_motor": False}
+
+
+def _quebrar_linhas_pdf(texto: str, largura: int = 92) -> list[str]:
+    linhas: list[str] = []
+    for bruto in str(texto or "").splitlines():
+        palavras = bruto.split()
+        if not palavras:
+            linhas.append("")
+            continue
+        atual = ""
+        for palavra in palavras:
+            candidato = f"{atual} {palavra}".strip()
+            if len(candidato) <= largura:
+                atual = candidato
+                continue
+            if atual:
+                linhas.append(atual)
+            atual = palavra[:largura]
+        linhas.append(atual)
+    return linhas
+
+
+def _escapar_pdf(texto: str) -> str:
+    return str(texto).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _pdf_simples(texto: str) -> bytes:
+    linhas = _quebrar_linhas_pdf(texto)
+    paginas = [linhas[i:i + 45] for i in range(0, len(linhas), 45)] or [[]]
+    objetos: list[str] = ["<< /Type /Catalog /Pages 2 0 R >>"]
+    kids = " ".join(f"{3 + i * 2} 0 R" for i in range(len(paginas)))
+    objetos.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(paginas)} >>")
+    for indice, pagina in enumerate(paginas):
+        pagina_obj = 3 + indice * 2
+        conteudo_obj = pagina_obj + 1
+        objetos.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents {conteudo_obj} 0 R >>")
+        comandos = ["BT", "/F1 10 Tf", "50 800 Td", "14 TL"]
+        for linha in pagina:
+            seguro = _escapar_pdf(linha.encode("latin-1", "replace").decode("latin-1"))
+            comandos.append(f"({seguro}) Tj")
+            comandos.append("T*")
+        comandos.append("ET")
+        stream = "\n".join(comandos)
+        objetos.append(f"<< /Length {len(stream.encode('latin-1'))} >>\nstream\n{stream}\nendstream")
+
+    saida = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for numero, objeto in enumerate(objetos, start=1):
+        offsets.append(len(saida))
+        saida.extend(f"{numero} 0 obj\n{objeto}\nendobj\n".encode("latin-1"))
+    xref = len(saida)
+    saida.extend(f"xref\n0 {len(objetos) + 1}\n0000000000 65535 f \n".encode("latin-1"))
+    for offset in offsets[1:]:
+        saida.extend(f"{offset:010d} 00000 n \n".encode("latin-1"))
+    saida.extend(f"trailer\n<< /Size {len(objetos) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("latin-1"))
+    return bytes(saida)
 
 
 def _delta(atual: Any, anterior: Any) -> dict[str, Any]:
@@ -390,6 +475,16 @@ def relatorio_offline(ticker: str, formato: str = "txt") -> dict[str, Any]:
 
     conteudo = "\n".join(linhas)
     formato_norm = str(formato or "txt").lower()
+    if formato_norm == "pdf":
+        return {
+            "status": "ok",
+            "ticker": detalhe["ticker"],
+            "formato": "pdf",
+            "conteudo": _pdf_simples(conteudo),
+            "content_type": "application/pdf",
+            "sem_scraping": True,
+            "executou_motor": False,
+        }
     return {
         "status": "ok",
         "ticker": detalhe["ticker"],

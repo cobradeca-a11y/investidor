@@ -167,6 +167,11 @@ header { display: flex; justify-content: space-between; align-items: center; pad
 .btn-mini { border: 1px solid rgba(56, 189, 248, 0.24); color: var(--primary); background: rgba(56, 189, 248, 0.08); border-radius: 10px; padding: 7px 10px; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
 .btn-mini.replay { color: #fde68a; background: rgba(234, 179, 8, 0.10); border-color: rgba(234, 179, 8, 0.25); }
 .btn-mini:hover { transform: translateY(-1px); }
+.alert-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 0.7rem; font-weight: 800; }
+.toast-stack { position: fixed; right: 18px; bottom: 18px; z-index: 50; display: grid; gap: 10px; width: min(360px, calc(100vw - 36px)); }
+.alert-toast { border: 1px solid rgba(239, 68, 68, 0.35); background: rgba(15, 23, 42, 0.96); color: #f8fafc; border-radius: 8px; padding: 12px 14px; text-align: left; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35); cursor: pointer; }
+.alert-toast strong { display: block; margin-bottom: 4px; color: #fecaca; }
+.alert-toast span { display: block; line-height: 1.35; }
 .assist-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn-transaction.secondary { background: rgba(15, 23, 42, 0.65); color: var(--text-main); border: 1px solid var(--glass-border); box-shadow: none; }
 .card-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.06); }

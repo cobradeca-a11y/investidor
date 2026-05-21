@@ -87,10 +87,13 @@ def test_frontend_expoe_assistente_diario():
     assert "function criarPainelAssistente" in conteudo
     assert "function consultarDetalheFundo" in conteudo
     assert "/api/assistente/alertas" in conteudo
+    assert "/api/assistente/alertas/novos" in conteudo
     assert "/api/assistente/rebalanceamento" in conteudo
     assert "/api/assistente/fundos/${encodeURIComponent(ticker)}" in conteudo
     assert "data-fundo-detalhe" in conteudo
     assert "Exportar texto" in conteudo
+    assert "Exportar PDF" in conteudo
+    assert "function iniciarMonitorAlertasAssistente" in conteudo
 
 
 def test_css_contem_classes_do_dashboard_de_auditoria():

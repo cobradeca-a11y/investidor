@@ -78,3 +78,52 @@ def test_relatorio_offline_texto(monkeypatch):
     assert resultado["status"] == "ok"
     assert "FIIA - Relatorio offline: HGLG11" in resultado["conteudo"]
     assert "Sem alertas operacionais" in resultado["conteudo"]
+
+
+def test_lista_alertas_novos_sem_gerar_novos_alertas(monkeypatch):
+    monkeypatch.setattr(af, "_garantir_tabela_alertas", lambda: None)
+    monkeypatch.setattr(
+        af.db,
+        "buscar_todos",
+        lambda sql, params=(): [
+            {
+                "id": 7,
+                "ticker": "HGLG11",
+                "tipo": "ZONA_ENTRADA",
+                "severidade": "ALTA",
+                "mensagem": "Entrou na zona de entrada.",
+                "data_referencia": "2026-05-21",
+                "payload_json": '{"preco": 90}',
+                "criado_em": "2026-05-21T10:00:00+00:00",
+            }
+        ],
+    )
+
+    resultado = af.listar_alertas_novos(desde_id=3)
+
+    assert resultado["quantidade"] == 1
+    assert resultado["ultimo_id"] == 7
+    assert resultado["alertas"][0]["payload"]["preco"] == 90
+
+
+def test_relatorio_offline_pdf(monkeypatch):
+    monkeypatch.setattr(
+        af,
+        "detalhe_fundo",
+        lambda ticker: {
+            "ticker": "HGLG11",
+            "indicador": {"preco": 100, "pvp": 0.9, "dy_12m": 0.1},
+            "decisao": {"decisao": "MANTER", "confianca": "MEDIA", "motivo": "Teste"},
+            "trimestral": {"vacancia_media_ponderada": 3.0, "quantidade_imoveis": 5},
+            "ultimo_dividendo": {"valor": 0.8, "data_pagamento": "2026-05-15"},
+            "fnet": {"quantidade_documentos": 2, "tipos": ["INFORME_MENSAL"]},
+        },
+    )
+    monkeypatch.setattr(af, "evolucao_fundo", lambda ticker: {"leitura": "ESTAVEL"})
+    monkeypatch.setattr(af, "gerar_alertas", lambda tickers: {"alertas": []})
+
+    resultado = af.relatorio_offline("HGLG11", formato="pdf")
+
+    assert resultado["formato"] == "pdf"
+    assert resultado["content_type"] == "application/pdf"
+    assert resultado["conteudo"].startswith(b"%PDF-")
