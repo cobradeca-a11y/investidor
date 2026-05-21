@@ -81,6 +81,18 @@ def test_frontend_usa_radar_assincrono_com_fallback_sincrono():
     assert "job.detalhe" in conteudo
 
 
+def test_frontend_expoe_assistente_diario():
+    conteudo = APP_JS.read_text(encoding="utf-8")
+
+    assert "function criarPainelAssistente" in conteudo
+    assert "function consultarDetalheFundo" in conteudo
+    assert "/api/assistente/alertas" in conteudo
+    assert "/api/assistente/rebalanceamento" in conteudo
+    assert "/api/assistente/fundos/${encodeURIComponent(ticker)}" in conteudo
+    assert "data-fundo-detalhe" in conteudo
+    assert "Exportar texto" in conteudo
+
+
 def test_css_contem_classes_do_dashboard_de_auditoria():
     conteudo = STYLE_CSS.read_text(encoding="utf-8")
 

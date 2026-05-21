@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inicializarNavegacao();
     inicializarTransacoes();
     criarPainelHistorico();
+    criarPainelAssistente();
     carregarCarteira();
 });
 
@@ -301,6 +302,150 @@ function criarPainelHistorico() {
     `;
     container.appendChild(section);
     document.getElementById('btnHistoricoDecisoes')?.addEventListener('click', carregarHistoricoDecisoes);
+}
+
+function criarPainelAssistente() {
+    const container = document.querySelector('.app-container') || document.body;
+    if (document.getElementById('assistenteDiario')) return;
+
+    const section = document.createElement('section');
+    section.id = 'assistenteDiario';
+    section.className = 'history-panel glass-card';
+    section.innerHTML = `
+        <div class="history-header">
+            <div>
+                <h2>Assistente Diario</h2>
+                <p>Alertas, evolucao, rebalanceamento e detalhe por fundo sem acionar scraping.</p>
+            </div>
+            <div class="assist-actions">
+                <button id="btnAssistenteAlertas" class="btn-transaction">Ver alertas</button>
+                <button id="btnAssistenteRebalance" class="btn-transaction secondary">Rebalancear</button>
+            </div>
+        </div>
+        <div id="assistenteResumo" class="history-list">
+            <div class="audit-empty">Assistente ainda nao carregado.</div>
+        </div>
+        <div id="assistenteDetalhe" class="history-detail hidden"></div>
+    `;
+    container.appendChild(section);
+    document.getElementById('btnAssistenteAlertas')?.addEventListener('click', carregarAlertasAssistente);
+    document.getElementById('btnAssistenteRebalance')?.addEventListener('click', carregarRebalanceamento);
+}
+
+async function carregarAlertasAssistente() {
+    const alvo = document.getElementById('assistenteResumo');
+    if (!alvo) return;
+    if (!obterApiKey()) {
+        alvo.innerHTML = '<div class="audit-blocks">Configure fiia_api_key para consultar alertas.</div>';
+        return;
+    }
+    alvo.innerHTML = '<div class="loading-simple">Consultando alertas...</div>';
+    try {
+        const response = await fetch('/api/assistente/alertas', { headers: headersAutenticados() });
+        const data = await response.json();
+        const alertas = data.alertas || [];
+        if (!alertas.length) {
+            alvo.innerHTML = '<div class="audit-empty">Sem alertas operacionais agora.</div>';
+            return;
+        }
+        alvo.innerHTML = alertas.map(alerta => `
+            <article class="history-row">
+                <div class="history-row-main">
+                    <strong>${escapeHtml(alerta.ticker)}</strong>
+                    <span>${escapeHtml(alerta.tipo)}</span>
+                    <small>${escapeHtml(alerta.severidade)}</small>
+                </div>
+                <div class="history-row-audit"><span>${escapeHtml(alerta.mensagem)}</span></div>
+            </article>
+        `).join('');
+    } catch (error) {
+        console.error('Erro ao consultar alertas:', error);
+        alvo.innerHTML = '<div class="error-simple">Falha controlada ao consultar alertas.</div>';
+    }
+}
+
+async function carregarRebalanceamento() {
+    const alvo = document.getElementById('assistenteResumo');
+    if (!alvo) return;
+    if (!obterApiKey()) {
+        alvo.innerHTML = '<div class="audit-blocks">Configure fiia_api_key para consultar rebalanceamento.</div>';
+        return;
+    }
+    alvo.innerHTML = '<div class="loading-simple">Calculando rebalanceamento...</div>';
+    try {
+        const response = await fetch('/api/assistente/rebalanceamento', { headers: headersAutenticados() });
+        const data = await response.json();
+        const sugestoes = data.sugestoes || [];
+        if (!sugestoes.length) {
+            alvo.innerHTML = '<div class="audit-empty">Sem posicoes para rebalancear.</div>';
+            return;
+        }
+        alvo.innerHTML = sugestoes.map(item => `
+            <article class="history-row">
+                <div class="history-row-main">
+                    <strong>${escapeHtml(item.ticker)}</strong>
+                    <span>${escapeHtml(item.politica?.acao_carteira || 'MANTER')}</span>
+                    <small>${percentual((item.percentual_atual || 0) * 100, 1)} da carteira</small>
+                </div>
+                <div class="history-row-audit">
+                    <span>Valor: ${moeda(item.valor_atual)}</span>
+                    <span>Sugerido: ${percentual((item.politica?.percentual_sugerido || 0) * 100, 1)}</span>
+                </div>
+            </article>
+        `).join('');
+    } catch (error) {
+        console.error('Erro ao consultar rebalanceamento:', error);
+        alvo.innerHTML = '<div class="error-simple">Falha controlada ao consultar rebalanceamento.</div>';
+    }
+}
+
+async function consultarDetalheFundo(ticker) {
+    const detalhe = document.getElementById('assistenteDetalhe');
+    if (!detalhe) return;
+    detalhe.classList.remove('hidden');
+    detalhe.innerHTML = `<div class="loading-simple">Consultando detalhe de ${escapeHtml(ticker)}...</div>`;
+    try {
+        const [detalheResp, evolucaoResp] = await Promise.all([
+            fetch(`/api/assistente/fundos/${encodeURIComponent(ticker)}`, { headers: headersAutenticados() }),
+            fetch(`/api/assistente/fundos/${encodeURIComponent(ticker)}/evolucao`, { headers: headersAutenticados() })
+        ]);
+        const data = await detalheResp.json();
+        const evolucao = await evolucaoResp.json();
+        detalhe.innerHTML = renderDetalheFundo(data, evolucao);
+    } catch (error) {
+        console.error('Erro ao consultar detalhe do fundo:', error);
+        detalhe.innerHTML = '<div class="error-simple">Falha controlada ao consultar detalhe do fundo.</div>';
+    }
+}
+
+function renderDetalheFundo(data, evolucao) {
+    const ind = data.indicador || {};
+    const tri = data.trimestral || {};
+    const div = data.ultimo_dividendo || {};
+    const fnet = data.fnet || {};
+    const dec = data.decisao || {};
+    const ticker = data.ticker || ind.ticker || dec.ticker || '---';
+    const exportUrl = `/api/assistente/fundos/${encodeURIComponent(ticker)}/exportar?formato=txt`;
+    return `
+        <details class="audit-panel history-detail-panel" open>
+            <summary>Detalhe diario - ${escapeHtml(ticker)}</summary>
+            <div class="audit-grid">
+                <div><span>Decisao</span><strong>${escapeHtml(dec.decisao || 'Nao informado')}</strong></div>
+                <div><span>Evolucao</span><strong>${escapeHtml(evolucao.leitura || 'Nao informado')}</strong></div>
+                <div><span>Preco</span><strong>${moeda(ind.preco)}</strong></div>
+                <div><span>P/VP</span><strong>${escapeHtml(textoSeguro(ind.pvp))}</strong></div>
+                <div><span>Ultimo dividendo</span><strong>${escapeHtml(textoSeguro(div.valor))} em ${escapeHtml(textoSeguro(div.data_pagamento, 'N/D'))}</strong></div>
+                <div><span>Vacancia CVM</span><strong>${escapeHtml(textoSeguro(tri.vacancia_media_ponderada))}</strong></div>
+                <div><span>Imoveis</span><strong>${escapeHtml(textoSeguro(tri.quantidade_imoveis))}</strong></div>
+                <div><span>FNET docs</span><strong>${escapeHtml(textoSeguro(fnet.quantidade_documentos, 0))}</strong></div>
+            </div>
+            <div class="audit-blocks"><strong>FNET tipos:</strong> ${renderListaRotulos(fnet.tipos || [])}</div>
+            <div class="audit-blocks"><strong>Motivo:</strong> ${escapeHtml(dec.motivo || 'Nao informado')}</div>
+            <div class="history-actions">
+                <a class="btn-mini" href="${escapeHtml(exportUrl)}" target="_blank" rel="noopener">Exportar texto</a>
+            </div>
+        </details>
+    `;
 }
 
 async function carregarHistoricoDecisoes() {
@@ -634,8 +779,15 @@ function renderResults(oportunidades, targetId = 'results', isPortfolio = false)
             <div class="ai-analysis"><div class="ai-header"><span class="ai-icon">🧠</span><span class="ai-label">Inteligência FIIA</span><span class="ai-score">Score: ${escapeHtml(fii.score_ia || '?')}/10</span></div><div class="ai-content">${escapeHtml(fii.motivo || 'Aguardando processamento...')}</div></div>
             ${fii.alertas.length ? `<div class="alerts-box">${fii.alertas.map(alert => `<div class="alert-item">⚠️ ${escapeHtml(alert)}</div>`).join('')}</div>` : ''}
             ${renderAuditoria(fii.auditoria)}
+            <div class="card-actions">
+                <button class="btn-mini" data-fundo-detalhe="${escapeHtml(fii.ticker)}">Detalhar</button>
+                <button class="btn-mini" data-fundo-evolucao="${escapeHtml(fii.ticker)}">Evolucao</button>
+            </div>
             <div class="card-footer"><span class="footer-info">Próxima Revisão: ${escapeHtml(fii.revisao)}</span></div>
         `;
         grid.appendChild(card);
+    });
+    grid.querySelectorAll('[data-fundo-detalhe], [data-fundo-evolucao]').forEach((btn) => {
+        btn.addEventListener('click', () => consultarDetalheFundo(btn.dataset.fundoDetalhe || btn.dataset.fundoEvolucao));
     });
 }

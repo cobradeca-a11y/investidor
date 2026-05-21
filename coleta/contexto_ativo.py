@@ -118,6 +118,13 @@ def obter_contexto_ativo(ticker: str) -> dict[str, Any]:
         return _CACHE_CONTEXTO[cache_key]
 
     # Verifica se já temos snapshot no banco hoje
+    try:
+        from aprendizado.snapshots import garantir_tabela as garantir_tabela_snapshots
+
+        garantir_tabela_snapshots()
+    except Exception:
+        pass
+
     snapshot_row = db.buscar_um(
         "SELECT payload_json FROM snapshots_indicadores WHERE ticker = ? AND data_snapshot = ? ORDER BY criado_em DESC LIMIT 1",
         (ticker_norm, hoje),
@@ -442,6 +449,17 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         vacancia_fisica = res_fund.get("vacancia_fisica") or vacancia_fisica
         qtd_ativos = res_fund.get("qtd_ativos") or qtd_ativos
 
+    vacancia_fonte = "Fundamentus" if vacancia_fisica else "AUSENTE"
+    try:
+        from coleta.informe_trimestral import vacancia_media
+
+        vacancia_cvm = vacancia_media(ticker_norm)
+        if vacancia_cvm is not None and (vacancia_fisica in (None, 0, 0.0)):
+            vacancia_fisica = vacancia_cvm
+            vacancia_fonte = "CVM_INF_TRIMESTRAL"
+    except Exception as e:
+        print(f"[contexto] Falha CVM trimestral vacancia para {ticker_norm}: {e}")
+
     # 7. Cálculo do Score Consolidado de Confiança (0 a 100)
     score_confianca = 100
     if preco_status == "AUSENTE":
@@ -570,6 +588,7 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         "recorrencia_dividendos_pct": recorrencia_dividendos_pct,
         "liquidez_diaria": liquidez_diaria,
         "vacancia_fisica": vacancia_fisica,
+        "vacancia_fonte": vacancia_fonte,
         "qtd_ativos": qtd_ativos,
         "score_confianca": score_confianca,
         "nivel_uso_dados": nivel_uso,

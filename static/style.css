@@ -167,6 +167,10 @@ header { display: flex; justify-content: space-between; align-items: center; pad
 .btn-mini { border: 1px solid rgba(56, 189, 248, 0.24); color: var(--primary); background: rgba(56, 189, 248, 0.08); border-radius: 10px; padding: 7px 10px; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
 .btn-mini.replay { color: #fde68a; background: rgba(234, 179, 8, 0.10); border-color: rgba(234, 179, 8, 0.25); }
 .btn-mini:hover { transform: translateY(-1px); }
+.assist-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn-transaction.secondary { background: rgba(15, 23, 42, 0.65); color: var(--text-main); border: 1px solid var(--glass-border); box-shadow: none; }
+.card-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.card-actions .btn-mini, .history-actions a.btn-mini { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .history-detail { margin-top: 14px; }
 .history-detail-panel { border-color: rgba(129, 140, 248, 0.28); }
 
