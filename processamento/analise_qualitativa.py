@@ -145,7 +145,7 @@ def _salvar_cache_ia(ticker: str, fingerprint: str, resultado: dict) -> None:
 
 def _validar_dados(dados_banco: dict, fii_info: dict) -> list[str]:
     problemas = []
-    segmento = fii_info.get("segmento", "").upper()
+    segmento = (fii_info.get("segmento") or "").upper()
     
     for campo, descricao in _CAMPOS_OBRIGATORIOS.items():
         valor = dados_banco.get(campo)

@@ -35,3 +35,16 @@ def test_cache_ia_retorna_payload_e_marca_cache(monkeypatch):
 
     assert cached["score"] == 7
     assert cached["cache_qualitativo"] is True
+
+
+def test_validar_dados_aceita_segmento_none_sem_quebrar():
+    dados = {
+        "pvp": 0.9,
+        "dy_12m": 0.1,
+        "vacancia_fisica": 1.0,
+        "liquidez_diaria": 10_000,
+    }
+
+    problemas = aq._validar_dados(dados, {"segmento": None})
+
+    assert "Segmento do fundo" in problemas
