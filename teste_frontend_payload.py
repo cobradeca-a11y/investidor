@@ -76,6 +76,8 @@ def test_frontend_usa_radar_assincrono_com_fallback_sincrono():
     assert "fetch(`/api/radar/jobs/${encodeURIComponent(jobId)}`" in conteudo
     assert "function fetchRadarSincronoFallback" in conteudo
     assert "fetch('/api/radar')" in conteudo
+    assert "const RADAR_TIMEOUT_MS = 900000" in conteudo
+    assert "Erro ao ligar o radar: ${error.message" in conteudo
 
 
 def test_css_contem_classes_do_dashboard_de_auditoria():

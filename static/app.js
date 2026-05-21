@@ -39,7 +39,7 @@ document.getElementById('btnRadar')?.addEventListener('click', async () => {
         renderResults(data.oportunidades || [], 'results');
     } catch (error) {
         console.error(error);
-        alert('Erro ao ligar o radar. Verifique se o servidor está rodando.');
+        alert(`Erro ao ligar o radar: ${error.message || 'verifique se o servidor está rodando.'}`);
         loading?.classList.add('hidden');
         welcomeView?.classList.remove('hidden');
     } finally {
@@ -74,7 +74,7 @@ function headersAutenticados(extra = {}) {
 }
 
 const RADAR_POLL_MS = 2000;
-const RADAR_TIMEOUT_MS = 180000;
+const RADAR_TIMEOUT_MS = 900000;
 
 function esperar(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
