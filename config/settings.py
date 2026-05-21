@@ -26,10 +26,10 @@ CONCENTRACAO_MAX_POR_GESTORA = 0.25     # 25% por gestora
 # ─────────────────────────────────────────
 # Exigências mínimas para entrada
 # ─────────────────────────────────────────
-PREMIO_CDI_MINIMO = 1.5             # pontos percentuais acima do CDI
+PREMIO_CDI_MINIMO = 1.0             # pontos percentuais acima do CDI
 LIQUIDEZ_MINIMA_DIARIA = 50_000     # R$ 50.000 de liquidez mínima
 CONFIABILIDADE_MINIMA = 60          # score mínimo de dados (0-100)
-HISTORICO_MINIMO_MESES = 24         # meses de histórico mínimo
+HISTORICO_MINIMO_MESES = 18         # meses de histórico mínimo
 PERCENTUAL_RECORRENTE_MINIMO = 0.70 # 70% do DY deve ser recorrente
 
 # ─────────────────────────────────────────
