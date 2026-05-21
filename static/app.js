@@ -143,7 +143,8 @@ async function executarRadarAssincrono() {
             return job.resultado || { status: 'ok', oportunidades: [], quantidade: 0 };
         }
         if (job.status === 'erro') {
-            throw new Error(job.mensagem || 'Radar job falhou.');
+            const detalhe = job.detalhe ? `: ${job.detalhe}` : '';
+            throw new Error(`${job.mensagem || 'Radar job falhou.'}${detalhe}`);
         }
     }
 

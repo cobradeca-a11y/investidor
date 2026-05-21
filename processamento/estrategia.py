@@ -142,6 +142,19 @@ def _somar_falhas_por_fonte(destino: dict[str, int], fontes: list[str] | None) -
         destino[fonte] = destino.get(fonte, 0) + 1
 
 
+def _veredito_fallback_ia(ticker: str, item: dict, erro: Exception) -> dict:
+    """Preserva o pre-veredito quando a etapa qualitativa falha."""
+    veredito = dict(item.get("veredito_pre_ia") or {})
+    veredito.setdefault("ticker", ticker)
+    veredito.setdefault("decisao", "MONITORAR")
+    veredito["ia_status"] = "ERRO_IA"
+    veredito["score_ia"] = 0
+    alertas = list(veredito.get("alertas") or [])
+    alertas.append(f"IA qualitativa indisponivel: {erro}")
+    veredito["alertas"] = alertas
+    return veredito
+
+
 def _resolver_contextos_ciclo(tickers: list[str], metricas: dict | None = None, hints_mercado: dict[str, dict] | None = None) -> dict[str, dict]:
     """
     Resolve contextos para um ciclo de radar com cache local e versionado.
@@ -288,24 +301,31 @@ def radar_oportunidades() -> list:
     for i, item in enumerate(top):
         ticker = item["ticker"]
 
-        inicio_ia = time.perf_counter()
-        qual = analisar_fundo_ia(ticker)
-        metricas_radar["tempo_ia_ms"] += round((time.perf_counter() - inicio_ia) * 1000, 2)
-        time.sleep(3)
+        try:
+            inicio_ia = time.perf_counter()
+            qual = analisar_fundo_ia(ticker)
+            metricas_radar["tempo_ia_ms"] += round((time.perf_counter() - inicio_ia) * 1000, 2)
+            time.sleep(3)
 
-        inicio_decisao = time.perf_counter()
-        veredito = decidir(
-            ticker=ticker,
-            score_ia=qual.get("score"),
-            riscos_ia=qual.get("riscos"),
-            tom_gestor=qual.get("tom_gestor"),
-            ia_status=qual.get("status", "INDISPONIVEL"),
-            contexto=item["contexto"],
-        )
-        metricas_radar["tempo_decisao_ms"] += round((time.perf_counter() - inicio_decisao) * 1000, 2)
+            inicio_decisao = time.perf_counter()
+            veredito = decidir(
+                ticker=ticker,
+                score_ia=qual.get("score"),
+                riscos_ia=qual.get("riscos"),
+                tom_gestor=qual.get("tom_gestor"),
+                ia_status=qual.get("status", "INDISPONIVEL"),
+                contexto=item["contexto"],
+            )
+            metricas_radar["tempo_decisao_ms"] += round((time.perf_counter() - inicio_decisao) * 1000, 2)
+        except Exception as erro:
+            print(f"[radar] ERRO {ticker} na etapa IA/decisao. Mantendo pre-veredito: {erro}")
+            veredito = _veredito_fallback_ia(ticker, item, erro)
 
         item["veredito"] = veredito
-        gravar(veredito)
+        try:
+            gravar(veredito)
+        except Exception as erro:
+            print(f"[radar] ERRO {ticker} ao persistir veredito. Card mantido em memoria: {erro}")
         finalistas.append(item)
 
     metricas_radar["ativos_finalistas"] = len(finalistas)

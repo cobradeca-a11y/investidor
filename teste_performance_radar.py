@@ -125,3 +125,45 @@ def test_radar_reaproveita_veredito_pre_ia_e_contexto(monkeypatch):
     assert chamadas_decisao == [("HGLG11", "INDISPONIVEL"), ("HGLG11", "OK")]
     assert len(gravados) == 1
     assert resultado[0]["veredito"]["decisao"] == "COMPRAR"
+
+
+def test_radar_mantem_pre_veredito_quando_ia_falha(monkeypatch):
+    gravados: list[dict] = []
+
+    mercado = [
+        {"ticker": "KORE11", "segmento": "OUTROS", "liquidez": 2_000_000, "vacancia_media": 0.0},
+    ]
+    contexto = {
+        "ticker": "KORE11",
+        "contexto_versao": "asset-context-v1.3",
+        "permitir_decisao": True,
+    }
+
+    def fake_decidir(ticker: str, score_ia=None, riscos_ia=None, tom_gestor=None, ia_status="INDISPONIVEL", contexto=None) -> dict:
+        return {
+            "ticker": ticker,
+            "decisao": "MONITORAR",
+            "gate_parada": 7,
+            "margem": 12.0,
+            "fonte_patrimonial": "CVM_INF_MENSAL",
+        }
+
+    def falhar_ia(ticker: str) -> dict:
+        raise RuntimeError("falha simulada na IA")
+
+    monkeypatch.setattr("coleta.api_fundamentus.coletar_mercado_inteiro", lambda: mercado)
+    monkeypatch.setattr("coleta.contexto_ativo.VERSAO_CONTEXTO", "asset-context-v1.3")
+    monkeypatch.setattr("coleta.contexto_ativo.obter_contexto_ativo", lambda ticker: contexto)
+    monkeypatch.setattr("processamento.analise_qualitativa.analisar_fundo_ia", falhar_ia)
+    monkeypatch.setattr("decisao.decisao_com_confianca.decidir", fake_decidir)
+    monkeypatch.setattr("decisao.persistencia_decisao.gravar", lambda veredito: gravados.append(veredito) or 1)
+    monkeypatch.setattr(estrategia.time, "sleep", lambda segundos: None)
+
+    resultado = estrategia.radar_oportunidades()
+
+    veredito = resultado[0]["veredito"]
+    assert veredito["ticker"] == "KORE11"
+    assert veredito["ia_status"] == "ERRO_IA"
+    assert veredito["score_ia"] == 0
+    assert "falha simulada na IA" in veredito["alertas"][0]
+    assert gravados[0]["ia_status"] == "ERRO_IA"
