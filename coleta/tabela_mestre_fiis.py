@@ -77,7 +77,7 @@ def _limpar_ticker(valor: Any) -> str | None:
 
 def _ler_csv(caminho: Path) -> pd.DataFrame:
     try:
-        return pd.read_csv(caminho, sep=None, engine="python", dtype=str, encoding="utf-8")
+        return pd.read_csv(caminho, sep=None, engine="python", dtype=str, encoding="utf-8-sig")
     except Exception:
         return pd.read_csv(caminho, sep=None, engine="python", dtype=str, encoding="latin1")
 

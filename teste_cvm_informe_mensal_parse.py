@@ -72,3 +72,18 @@ def test_ultimo_por_cnpj_prioriza_registro_com_vp_cota(monkeypatch):
 
     assert resposta["valor_patrimonial_cota"] == 166.40
     assert "CASE WHEN valor_patrimonial_cota IS NOT NULL" in consultas[0]
+
+
+def test_tabela_mestre_importa_csv_com_bom(tmp_path):
+    bom = b"\xef\xbb\xbf"
+    arquivo = tmp_path / "tabela_teste.csv"
+    arquivo.write_bytes(
+        bom + b"ticker_b3_11;cnpj_fundo\n"
+        b"HGLG11;11.728.688/0001-47\n"
+        b"KNCR11;08.181.530/0001-74\n"
+    )
+
+    resultado = tabela_mestre_fiis.importar_csv(arquivo)
+
+    assert resultado.get("registros", 0) == 2
+    assert "erro" not in resultado
