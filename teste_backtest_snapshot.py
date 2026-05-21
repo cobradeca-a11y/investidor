@@ -116,6 +116,8 @@ def test_backtest_data_exata_usa_horizonte_em_dias(monkeypatch):
     assert resultado["validade_institucional"] is True
     assert resultado["resultado"]["decisao"] == "COMPRAR_PARCIAL"
     assert resultado["resultado"]["rentabilidade_total_pct"] == 30.0
+    assert "valuation_modelos" in resultado["resultado"]
+    assert resultado["resultado"]["valuation_modelos"]["composto_conservador"]["modelo"] == "COMPOSTO_CONSERVADOR"
 
 
 def test_backtest_radar_monta_top_por_snapshot_sem_olhar_futuro(monkeypatch):
@@ -141,6 +143,7 @@ def test_backtest_radar_monta_top_por_snapshot_sem_olhar_futuro(monkeypatch):
     assert resultado["top"] == 1
     assert resultado["ranking"][0]["ticker"] == "BBB11"
     assert resultado["ranking"][0]["margem"] == 0.30
+    assert "valuation_modelos" in resultado["ranking"][0]
     assert resultado["avaliaveis"] == 1
 
 

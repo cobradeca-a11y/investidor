@@ -17,6 +17,7 @@ from banco import db
 from coleta.api_yfinance import pegar_preco_historico
 from decisao.motor_decisao import decidir
 from aprendizado.snapshots import buscar_snapshot_historico, contexto_decisao_de_snapshot
+from processamento.modelos_valuation import aplicar_modelos_valuation
 
 _DECISOES_ENTRADA = {"COMPRAR", "COMPRAR_PARCIAL", "COMPRAR_PARCIALMENTE"}
 _DECISOES_NAO_ENTRADA = {"AGUARDAR", "MONITORAR", "EVITAR", "ELIMINADO", "EVITAR_ENTRADA"}
@@ -345,6 +346,7 @@ def executar_backtest_data(
             "look_ahead_bias": "controlado: preço futuro seria usado apenas para avaliação, mas não foi encontrado.",
         }
 
+    modelos_valuation = aplicar_modelos_valuation(contexto_snapshot)
     decisao_motor = decidir(ticker_norm, contexto=contexto_snapshot)
     decisao = decisao_motor.get("decisao") or decisao_motor.get("status") or "INDEFINIDA"
     dividendos_resultado = _somar_dividendos(ticker_norm, data_ref, data_avaliacao)
@@ -385,6 +387,7 @@ def executar_backtest_data(
             "avaliacao": avaliacao,
             "validade_institucional": True,
             "motivo_validade": snapshot.get("motivo_validade"),
+            "valuation_modelos": modelos_valuation,
         },
     }
 
@@ -425,19 +428,23 @@ def executar_backtest_radar(
         decisao_motor = decidir(ticker, contexto=contexto_snapshot)
         decisao = decisao_motor.get("decisao") or decisao_motor.get("status") or "INDEFINIDA"
         margem = decisao_motor.get("margem")
+        modelos_valuation = aplicar_modelos_valuation(contexto_snapshot)
+        margem_composta = (modelos_valuation.get("composto_conservador") or {}).get("margem")
         entrada = decisao in _DECISOES_ENTRADA
         candidatos.append({
             "ticker": ticker,
             "decisao": decisao,
             "margem": float(margem or 0.0),
+            "margem_composta_conservadora": float(margem_composta or 0.0),
             "entrada": entrada,
             "gate_parada": decisao_motor.get("gate_parada"),
             "motivo": decisao_motor.get("motivo"),
             "snapshot_usado": snapshot.get("snapshot_usado"),
             "hash_snapshot": snapshot.get("hash_snapshot"),
+            "valuation_modelos": modelos_valuation,
         })
 
-    candidatos.sort(key=lambda item: (item["entrada"], item["margem"]), reverse=True)
+    candidatos.sort(key=lambda item: (item["entrada"], item["margem_composta_conservadora"], item["margem"]), reverse=True)
     selecionados = candidatos[: max(1, int(top))]
     avaliacoes = [
         executar_backtest_data(
