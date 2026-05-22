@@ -191,6 +191,15 @@ def pegar_preco_historico(ticker: str, data_alvo: str) -> Optional[float]:
     Retorna o preço de fechamento ajustado do ativo numa data específica.
     """
     try:
+        from coleta.cotahist_b3 import preco_historico as preco_historico_b3
+
+        preco_local = preco_historico_b3(ticker, data_alvo)
+        if preco_local is not None:
+            return float(preco_local)
+    except Exception:
+        pass
+
+    try:
         ticker_norm = ticker.upper().replace(".SA", "").strip()
         ativo = yf.Ticker(f"{ticker_norm}.SA")
         historico = ativo.history(start=data_alvo, period="5d")
