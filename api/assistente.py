@@ -71,7 +71,7 @@ def rebalanceamento() -> dict[str, Any]:
 def exportar_fundo(ticker: str, formato: str = "txt") -> dict[str, Any] | Response:
     try:
         exportacao = assistente_financeiro.relatorio_offline(ticker, formato=formato)
-        if exportacao.get("formato") in {"txt", "md", "pdf"}:
+        if formato.lower() in {"txt", "md", "markdown", "pdf"}:
             nome = f"fiia_{exportacao['ticker']}.{exportacao['formato']}"
             return Response(
                 content=exportacao["conteudo"],
@@ -82,4 +82,3 @@ def exportar_fundo(ticker: str, formato: str = "txt") -> dict[str, Any] | Respon
     except Exception as erro:
         observabilidade.registrar_erro("api.assistente.exportar_fundo", erro, ticker=ticker)
         return resposta_erro_segura("Falha controlada ao exportar relatorio do fundo.", ticker=ticker)
-

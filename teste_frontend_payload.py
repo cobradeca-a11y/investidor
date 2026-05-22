@@ -91,6 +91,9 @@ def test_frontend_expoe_assistente_diario():
     assert "/api/assistente/rebalanceamento" in conteudo
     assert "/api/assistente/fundos/${encodeURIComponent(ticker)}" in conteudo
     assert "data-fundo-detalhe" in conteudo
+    assert "function consultarAlertasNovos" in conteudo
+    assert "function mostrarToastAlerta" in conteudo
+    assert "fiia_alertas_ultimo_id" in conteudo
     assert "Exportar texto" in conteudo
     assert "Exportar PDF" in conteudo
     assert "function iniciarMonitorAlertasAssistente" in conteudo

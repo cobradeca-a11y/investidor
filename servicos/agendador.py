@@ -85,10 +85,10 @@ def rotina_saude_fontes():
 
 
 def rotina_alertas_assistente():
-    """Executada diariamente - Gera e persiste alertas do assistente sem scraping."""
+    """Executada diariamente - Persiste alertas operacionais para a PWA."""
     print(f"[{datetime.now()}] Iniciando Alertas do Assistente...")
     resultado = gerar_alertas()
-    print(f"[agendador] Alertas do assistente persistidos: {resultado.get('quantidade', 0)}")
+    print(f"[agendador] Alertas do assistente concluidos: {resultado.get('quantidade', 0)} alerta(s).")
 
 
 def rotina_oportunidades_mercado():
@@ -122,6 +122,7 @@ schedule.every().day.at("08:30").do(rotina_alertas_assistente)
 schedule.every().day.at("09:00").do(rotina_diaria_abertura)
 schedule.every().day.at("10:00").do(rotina_paper_trading_diario)
 schedule.every().day.at("10:45").do(rotina_oportunidades_mercado)
+schedule.every().day.at("11:30").do(rotina_alertas_assistente)
 schedule.every().day.at("20:00").do(rotina_noturna_radar)
 schedule.every().day.at("22:30").do(lambda: rotina_cvm_mensal() if datetime.now().day == 1 else None)
 schedule.every().day.at("22:45").do(lambda: rotina_cvm_anual() if datetime.now().month in [3, 4] and datetime.now().day == 1 else None)

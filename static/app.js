@@ -319,6 +319,7 @@ function criarPainelAssistente() {
                 <p>Alertas, evolucao, rebalanceamento e detalhe por fundo sem acionar scraping.</p>
             </div>
             <div class="assist-actions">
+                <span id="alertasNovosBadge" class="assist-badge hidden">0</span>
                 <button id="btnAssistenteAlertas" class="btn-transaction">Ver alertas <span id="assistenteAlertasBadge" class="alert-badge hidden">0</span></button>
                 <button id="btnAssistenteRebalance" class="btn-transaction secondary">Rebalancear</button>
             </div>
@@ -336,24 +337,27 @@ function criarPainelAssistente() {
 const ASSISTENTE_ALERTAS_POLL_MS = 60000;
 
 function ultimoAlertaAssistenteId() {
-    return parseInt(localStorage.getItem('fiia_ultimo_alerta_id') || '0', 10) || 0;
+    return parseInt(localStorage.getItem('fiia_alertas_ultimo_id') || localStorage.getItem('fiia_ultimo_alerta_id') || '0', 10) || 0;
 }
 
 function salvarUltimoAlertaAssistenteId(id) {
     if (!id) return;
+    localStorage.setItem('fiia_alertas_ultimo_id', String(id));
     localStorage.setItem('fiia_ultimo_alerta_id', String(id));
 }
 
 function atualizarBadgeAlertas(qtd) {
-    const badge = document.getElementById('assistenteAlertasBadge');
-    if (!badge) return;
-    const atual = parseInt(badge.textContent || '0', 10) || 0;
+    const badges = [document.getElementById('assistenteAlertasBadge'), document.getElementById('alertasNovosBadge')].filter(Boolean);
+    if (!badges.length) return;
+    const atual = parseInt(badges[0].textContent || '0', 10) || 0;
     const total = Math.min(99, atual + Math.max(0, qtd || 0));
-    badge.textContent = String(total);
-    badge.classList.toggle('hidden', total === 0);
+    badges.forEach((badge) => {
+        badge.textContent = String(total);
+        badge.classList.toggle('hidden', total === 0);
+    });
 }
 
-function exibirToastAlerta(alerta) {
+function mostrarToastAlerta(alerta) {
     let container = document.getElementById('toastAlertasAssistente');
     if (!container) {
         container = document.createElement('div');
@@ -373,7 +377,7 @@ function exibirToastAlerta(alerta) {
     setTimeout(() => toast.remove(), 9000);
 }
 
-async function consultarNovosAlertasAssistente() {
+async function consultarAlertasNovos() {
     if (!obterApiKey()) return;
     try {
         const desdeId = ultimoAlertaAssistenteId();
@@ -385,12 +389,16 @@ async function consultarNovosAlertasAssistente() {
             salvarUltimoAlertaAssistenteId(data.ultimo_id || desdeId);
             return;
         }
-        alertas.slice(-3).forEach(exibirToastAlerta);
+        alertas.slice(-3).forEach(mostrarToastAlerta);
         atualizarBadgeAlertas(alertas.length);
         salvarUltimoAlertaAssistenteId(data.ultimo_id || alertas[alertas.length - 1]?.id);
     } catch (error) {
         console.error('Erro ao consultar novos alertas:', error);
     }
+}
+
+async function consultarNovosAlertasAssistente() {
+    return consultarAlertasNovos();
 }
 
 async function marcarAlertasAssistenteComoVistos() {
@@ -407,8 +415,12 @@ async function marcarAlertasAssistenteComoVistos() {
 }
 
 function iniciarMonitorAlertasAssistente() {
-    consultarNovosAlertasAssistente();
-    window.setInterval(consultarNovosAlertasAssistente, ASSISTENTE_ALERTAS_POLL_MS);
+    consultarAlertasNovos();
+    window.setInterval(consultarAlertasNovos, ASSISTENTE_ALERTAS_POLL_MS);
+}
+
+function iniciarPollingAlertasNovos() {
+    iniciarMonitorAlertasAssistente();
 }
 
 async function carregarAlertasAssistente() {

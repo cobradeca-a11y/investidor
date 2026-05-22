@@ -40,7 +40,7 @@ def test_assistente_endpoints_respondem_payloads_controlados(monkeypatch):
     monkeypatch.setattr(
         api_assistente.assistente_financeiro,
         "listar_alertas_novos",
-        lambda desde_id=0, limite=20: {"status": "ok", "quantidade": 0, "ultimo_id": desde_id, "alertas": []},
+        lambda desde_id=0, limite=20: {"status": "ok", "quantidade": 0, "ultimo_id": desde_id, "alertas": [], "gerou_alertas": False},
     )
     monkeypatch.setattr(
         api_assistente.assistente_financeiro,
@@ -52,7 +52,7 @@ def test_assistente_endpoints_respondem_payloads_controlados(monkeypatch):
     detalhe = client.get("/api/assistente/fundos/hglg11", headers=_headers())
     evolucao = client.get("/api/assistente/fundos/hglg11/evolucao", headers=_headers())
     alertas = client.get("/api/assistente/alertas?tickers=HGLG11,KNRI11", headers=_headers())
-    novos = client.get("/api/assistente/alertas/novos?desde_id=5", headers=_headers())
+    alertas_novos = client.get("/api/assistente/alertas/novos?desde_id=10", headers=_headers())
     rebalanceamento = client.get("/api/assistente/rebalanceamento", headers=_headers())
 
     assert detalhe.status_code == 200
@@ -61,8 +61,8 @@ def test_assistente_endpoints_respondem_payloads_controlados(monkeypatch):
     assert evolucao.json()["leitura"] == "ESTAVEL"
     assert alertas.status_code == 200
     assert alertas.json()["quantidade"] == 2
-    assert novos.status_code == 200
-    assert novos.json()["ultimo_id"] == 5
+    assert alertas_novos.status_code == 200
+    assert alertas_novos.json()["gerou_alertas"] is False
     assert rebalanceamento.status_code == 200
     assert rebalanceamento.json()["sugestoes"] == []
 

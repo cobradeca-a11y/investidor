@@ -50,9 +50,11 @@ pytest teste_assistente_financeiro.py teste_api_assistente.py
 Critério de aceite:
 
 - Alertas indicam zona de entrada, dividendo ausente e vacância trimestral ausente.
+- Agendador persiste alertas diariamente para a PWA.
+- `/api/assistente/alertas/novos` consulta alertas persistidos sem gerar novos registros.
 - Evolução mostra se o fundo melhorou, piorou ou ficou estável.
 - Rebalanceamento usa a política de carteira existente.
-- Exportação offline em texto funciona por endpoint autenticado.
+- Exportação offline em texto e PDF funciona por endpoint autenticado.
 
 ## Bloco 4 — PWA
 
@@ -68,7 +70,8 @@ Critério de aceite:
 
 - Cards têm ações de detalhe/evolução por fundo.
 - Painel "Assistente Diário" carrega alertas e rebalanceamento.
-- Exportação de texto fica acessível pela tela de detalhe.
+- Badge/toast usa `/alertas/novos` para polling sem persistir alertas.
+- Exportação de texto e PDF fica acessível pela tela de detalhe.
 - A PWA continua sem recalcular hash/payload auditável.
 
 ## Bloco 5 — Smoke local

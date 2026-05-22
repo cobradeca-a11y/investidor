@@ -10,13 +10,14 @@ Objetivo:
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from banco import db
 from coleta.api_yfinance import pegar_preco_historico
 from decisao.motor_decisao import decidir
 from aprendizado.snapshots import buscar_snapshot_historico, contexto_decisao_de_snapshot
+from processamento.modelos_valuation import aplicar_modelos_valuation
 
 _DECISOES_ENTRADA = {"COMPRAR", "COMPRAR_PARCIAL", "COMPRAR_PARCIALMENTE"}
 _DECISOES_NAO_ENTRADA = {"AGUARDAR", "MONITORAR", "EVITAR", "ELIMINADO", "EVITAR_ENTRADA"}
@@ -26,6 +27,29 @@ def _iso(d: str | date) -> str:
     if isinstance(d, date):
         return d.isoformat()
     return str(d)[:10]
+
+
+def _somar_dias(data_iso: str, dias: int) -> str:
+    base = datetime.strptime(_iso(data_iso), "%Y-%m-%d").date()
+    return (base + timedelta(days=int(dias))).isoformat()
+
+
+def _listar_tickers_com_snapshot_ate(data_referencia: str, limite_base: int = 500) -> list[str]:
+    from aprendizado.snapshots import TABELA, garantir_tabela
+
+    garantir_tabela()
+    rows = db.buscar_todos(
+        f"""
+        SELECT ticker, MAX(data_snapshot) AS snapshot_mais_recente
+        FROM {TABELA}
+        WHERE data_snapshot <= ?
+        GROUP BY ticker
+        ORDER BY ticker
+        LIMIT ?
+        """,
+        (_iso(data_referencia), int(limite_base)),
+    )
+    return [str(row["ticker"]).upper().replace(".SA", "").strip() for row in rows if row["ticker"]]
 
 
 def _somar_dividendos(ticker: str, inicio: str, fim: str) -> float:
@@ -240,6 +264,222 @@ def executar_backtest(
         "acertos": acertos,
         "taxa_acerto_pct": round(taxa_acerto, 2) if taxa_acerto is not None else None,
         "resultados": resultados,
+    }
+
+
+def executar_backtest_data(
+    ticker: str,
+    data_decisao: str | date,
+    *,
+    horizonte_dias: int = 365,
+    max_defasagem_snapshot_dias: int = 45,
+) -> dict[str, Any]:
+    """Executa um ponto de backtest para um ticker em uma data exata."""
+    ticker_norm = ticker.upper().replace(".SA", "").strip()
+    data_ref = _iso(data_decisao)
+    data_avaliacao = _somar_dias(data_ref, horizonte_dias)
+    ano = int(data_ref[:4])
+
+    snapshot = buscar_snapshot_historico(
+        ticker_norm,
+        data_ref,
+        max_defasagem_dias=max_defasagem_snapshot_dias,
+    )
+    if not snapshot.get("validade_institucional"):
+        return {
+            "ticker": ticker_norm,
+            "data_referencia": data_ref,
+            "data_decisao": data_ref,
+            "data_avaliacao": data_avaliacao,
+            "horizonte_dias": horizonte_dias,
+            "resultado": _resultado_invalido(
+                ano,
+                data_ref,
+                data_avaliacao,
+                snapshot,
+                snapshot.get("motivo_validade", "Snapshot histórico insuficiente."),
+            ),
+            "validade_institucional": False,
+            "look_ahead_bias": "bloqueado: sem snapshot institucional para a data informada.",
+        }
+
+    contexto_snapshot = contexto_decisao_de_snapshot(snapshot)
+    if not contexto_snapshot:
+        return {
+            "ticker": ticker_norm,
+            "data_referencia": data_ref,
+            "data_decisao": data_ref,
+            "data_avaliacao": data_avaliacao,
+            "horizonte_dias": horizonte_dias,
+            "resultado": _resultado_invalido(
+                ano,
+                data_ref,
+                data_avaliacao,
+                snapshot,
+                "Snapshot histórico não contém campos mínimos para decisão institucional.",
+            ),
+            "validade_institucional": False,
+            "look_ahead_bias": "bloqueado: snapshot sem campos mínimos.",
+        }
+
+    preco_entrada = contexto_snapshot.get("preco")
+    preco_saida = pegar_preco_historico(ticker_norm, data_avaliacao)
+    if not preco_entrada or not preco_saida:
+        return {
+            "ticker": ticker_norm,
+            "data_referencia": data_ref,
+            "data_decisao": data_ref,
+            "data_avaliacao": data_avaliacao,
+            "horizonte_dias": horizonte_dias,
+            "resultado": {
+                "ano": ano,
+                "data_referencia": data_ref,
+                "data_decisao": data_ref,
+                "data_avaliacao": data_avaliacao,
+                "status": "IGNORADO_SEM_PRECO_HISTORICO_AVALIACAO",
+                "snapshot_usado": snapshot.get("snapshot_usado"),
+                "hash_snapshot": snapshot.get("hash_snapshot"),
+                "validade_institucional": False,
+                "motivo_validade": "Snapshot da decisão existe, mas falta preço histórico de avaliação futura.",
+            },
+            "validade_institucional": False,
+            "look_ahead_bias": "controlado: preço futuro seria usado apenas para avaliação, mas não foi encontrado.",
+        }
+
+    modelos_valuation = aplicar_modelos_valuation(contexto_snapshot)
+    decisao_motor = decidir(ticker_norm, contexto=contexto_snapshot)
+    decisao = decisao_motor.get("decisao") or decisao_motor.get("status") or "INDEFINIDA"
+    dividendos_resultado = _somar_dividendos(ticker_norm, data_ref, data_avaliacao)
+    rentabilidade_cotas = (float(preco_saida) / float(preco_entrada)) - 1
+    rentabilidade_dividendos = dividendos_resultado / float(preco_entrada)
+    rentabilidade_total = rentabilidade_cotas + rentabilidade_dividendos
+    benchmark_cdi = _cdi_periodo(data_ref, data_avaliacao)
+    avaliacao = _avaliar_decisao(decisao, rentabilidade_total, benchmark_cdi)
+
+    return {
+        "ticker": ticker_norm,
+        "data_referencia": data_ref,
+        "data_decisao": data_ref,
+        "data_avaliacao": data_avaliacao,
+        "horizonte_dias": horizonte_dias,
+        "validade_institucional": True,
+        "look_ahead_bias": "controlado: decisão usa snapshot histórico; preço e dividendos futuros só avaliam resultado.",
+        "resultado": {
+            "ano": ano,
+            "data_referencia": data_ref,
+            "data_decisao": data_ref,
+            "data_avaliacao": data_avaliacao,
+            "status": "AVALIADO",
+            "decisao": decisao,
+            "motivo": decisao_motor.get("motivo"),
+            "gate_parada": decisao_motor.get("gate_parada"),
+            "margem": decisao_motor.get("margem"),
+            "snapshot_usado": snapshot.get("snapshot_usado"),
+            "hash_snapshot": snapshot.get("hash_snapshot"),
+            "defasagem_snapshot_dias": snapshot.get("defasagem_dias"),
+            "preco_entrada": round(float(preco_entrada), 2),
+            "preco_saida": round(float(preco_saida), 2),
+            "dividendos_resultado": round(dividendos_resultado, 4),
+            "rentabilidade_cotas_pct": round(rentabilidade_cotas * 100, 2),
+            "rentabilidade_dividendos_pct": round(rentabilidade_dividendos * 100, 2),
+            "rentabilidade_total_pct": round(rentabilidade_total * 100, 2),
+            "benchmark_cdi_pct": round(benchmark_cdi * 100, 2) if benchmark_cdi is not None else None,
+            "avaliacao": avaliacao,
+            "validade_institucional": True,
+            "motivo_validade": snapshot.get("motivo_validade"),
+            "valuation_modelos": modelos_valuation,
+        },
+    }
+
+
+def executar_backtest_radar(
+    data_decisao: str | date,
+    *,
+    top: int = 5,
+    horizonte_dias: int = 365,
+    max_defasagem_snapshot_dias: int = 45,
+    limite_base: int = 500,
+) -> dict[str, Any]:
+    """
+    Simula ranking temporal top N usando apenas snapshots disponíveis em T0.
+
+    Se não houver snapshots históricos suficientes, o resultado explicita a
+    limitação em vez de reconstruir dados atuais como se fossem passados.
+    """
+    data_ref = _iso(data_decisao)
+    candidatos = []
+    invalidos = []
+
+    for ticker in _listar_tickers_com_snapshot_ate(data_ref, limite_base=limite_base):
+        snapshot = buscar_snapshot_historico(
+            ticker,
+            data_ref,
+            max_defasagem_dias=max_defasagem_snapshot_dias,
+        )
+        if not snapshot.get("validade_institucional"):
+            invalidos.append({"ticker": ticker, "motivo": snapshot.get("motivo_validade")})
+            continue
+
+        contexto_snapshot = contexto_decisao_de_snapshot(snapshot)
+        if not contexto_snapshot:
+            invalidos.append({"ticker": ticker, "motivo": "Snapshot sem campos mínimos."})
+            continue
+
+        decisao_motor = decidir(ticker, contexto=contexto_snapshot)
+        decisao = decisao_motor.get("decisao") or decisao_motor.get("status") or "INDEFINIDA"
+        margem = decisao_motor.get("margem")
+        modelos_valuation = aplicar_modelos_valuation(contexto_snapshot)
+        margem_composta = (modelos_valuation.get("composto_conservador") or {}).get("margem")
+        entrada = decisao in _DECISOES_ENTRADA
+        candidatos.append({
+            "ticker": ticker,
+            "decisao": decisao,
+            "margem": float(margem or 0.0),
+            "margem_composta_conservadora": float(margem_composta or 0.0),
+            "entrada": entrada,
+            "gate_parada": decisao_motor.get("gate_parada"),
+            "motivo": decisao_motor.get("motivo"),
+            "snapshot_usado": snapshot.get("snapshot_usado"),
+            "hash_snapshot": snapshot.get("hash_snapshot"),
+            "valuation_modelos": modelos_valuation,
+        })
+
+    candidatos.sort(key=lambda item: (item["entrada"], item["margem_composta_conservadora"], item["margem"]), reverse=True)
+    selecionados = candidatos[: max(1, int(top))]
+    avaliacoes = [
+        executar_backtest_data(
+            item["ticker"],
+            data_ref,
+            horizonte_dias=horizonte_dias,
+            max_defasagem_snapshot_dias=max_defasagem_snapshot_dias,
+        )
+        for item in selecionados
+    ]
+
+    acertos = 0
+    avaliaveis = 0
+    for item in avaliacoes:
+        avaliacao = (item.get("resultado") or {}).get("avaliacao") or {}
+        if avaliacao.get("acerto") is not None:
+            avaliaveis += 1
+            if avaliacao.get("acerto"):
+                acertos += 1
+
+    return {
+        "data_referencia": data_ref,
+        "data_avaliacao": _somar_dias(data_ref, horizonte_dias),
+        "top": int(top),
+        "horizonte_dias": horizonte_dias,
+        "validade_institucional": bool(selecionados) and all(item.get("validade_institucional") for item in avaliacoes),
+        "look_ahead_bias": "controlado: ranking usa snapshots <= data_referencia; resultado futuro apenas avalia.",
+        "candidatos_validos": len(candidatos),
+        "candidatos_invalidos": len(invalidos),
+        "ranking": selecionados,
+        "avaliacoes": avaliacoes,
+        "avaliaveis": avaliaveis,
+        "acertos": acertos,
+        "taxa_acerto_pct": round((acertos / avaliaveis) * 100, 2) if avaliaveis else None,
+        "motivo_validade": "Snapshots históricos suficientes para ranking temporal." if selecionados else "Sem snapshots históricos suficientes para montar ranking temporal.",
     }
 
 

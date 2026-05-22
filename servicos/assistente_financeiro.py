@@ -6,7 +6,7 @@ Camada de uso diario do FIIA:
 - alertas operacionais;
 - evolucao entre snapshots/decisoes;
 - sugestao de rebalanceamento;
-- exportacao offline em texto.
+- exportacao offline em texto/PDF.
 
 As consultas sao auditaveis e nao executam scraping nem motor de decisao.
 """
@@ -189,8 +189,15 @@ def _salvar_alerta(alerta: dict[str, Any]) -> None:
 
 
 def listar_alertas_novos(desde_id: int = 0, limite: int = 20) -> dict[str, Any]:
+    """
+    Consulta alertas ja persistidos sem gerar novos registros.
+
+    Usado pela PWA para polling leve. Nao chama gerar_alertas(), nao executa
+    motor e nao aciona scraping.
+    """
     _garantir_tabela_alertas()
-    limite_seguro = max(1, min(int(limite or 20), 100))
+    desde = max(0, int(desde_id or 0))
+    limite_seguro = min(max(int(limite or 20), 1), 100)
     rows = db.buscar_todos(
         """
         SELECT id, ticker, tipo, severidade, mensagem, data_referencia, payload_json, criado_em
@@ -199,14 +206,14 @@ def listar_alertas_novos(desde_id: int = 0, limite: int = 20) -> dict[str, Any]:
         ORDER BY id ASC
         LIMIT ?
         """,
-        (int(desde_id or 0), limite_seguro),
+        (desde, limite_seguro),
     )
     alertas = []
     for row in rows:
-        item = _row_dict(row)
+        item = dict(row)
         item["payload"] = _json(item.pop("payload_json", None), {})
         alertas.append(item)
-    ultimo_id = max([int(alerta.get("id") or 0) for alerta in alertas] or [int(desde_id or 0)])
+    ultimo_id = max([desde] + [int(a["id"]) for a in alertas])
     return {
         "status": "ok",
         "quantidade": len(alertas),
@@ -214,6 +221,7 @@ def listar_alertas_novos(desde_id: int = 0, limite: int = 20) -> dict[str, Any]:
         "alertas": alertas,
         "sem_scraping": True,
         "executou_motor": False,
+        "gerou_alertas": False,
     }
 
 
@@ -334,6 +342,10 @@ def _pdf_simples(texto: str) -> bytes:
         saida.extend(f"{offset:010d} 00000 n \n".encode("latin-1"))
     saida.extend(f"trailer\n<< /Size {len(objetos) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("latin-1"))
     return bytes(saida)
+
+
+def gerar_pdf_simples(texto: str) -> bytes:
+    return _pdf_simples(texto)
 
 
 def _delta(atual: Any, anterior: Any) -> dict[str, Any]:
@@ -494,4 +506,3 @@ def relatorio_offline(ticker: str, formato: str = "txt") -> dict[str, Any]:
         "sem_scraping": True,
         "executou_motor": False,
     }
-

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from servicos import assistente_financeiro as af
+import servicos.agendador as agendador
 
 
 def test_alerta_zona_entrada_e_dividendo_ausente(monkeypatch):
@@ -19,6 +20,34 @@ def test_alerta_zona_entrada_e_dividendo_ausente(monkeypatch):
     assert "ZONA_ENTRADA" in tipos
     assert "DIVIDENDO_AUSENTE" in tipos
     assert len(salvos) == resultado["quantidade"]
+
+
+def test_listar_alertas_novos_nao_gera_alertas(monkeypatch):
+    monkeypatch.setattr(af, "gerar_alertas", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("nao deve gerar")))
+    monkeypatch.setattr(af, "_garantir_tabela_alertas", lambda: None)
+    monkeypatch.setattr(
+        af.db,
+        "buscar_todos",
+        lambda *args, **kwargs: [
+            {
+                "id": 12,
+                "ticker": "KORE11",
+                "tipo": "ZONA_ENTRADA",
+                "severidade": "ALTA",
+                "mensagem": "KORE11 entrou na zona.",
+                "data_referencia": "2026-05-21",
+                "payload_json": '{"preco": 90}',
+                "criado_em": "2026-05-21T12:00:00+00:00",
+            }
+        ],
+    )
+
+    resultado = af.listar_alertas_novos(desde_id=10)
+
+    assert resultado["gerou_alertas"] is False
+    assert resultado["quantidade"] == 1
+    assert resultado["ultimo_id"] == 12
+    assert resultado["alertas"][0]["payload"]["preco"] == 90
 
 
 def test_evolucao_classifica_melhora_por_confiabilidade(monkeypatch):
@@ -127,3 +156,13 @@ def test_relatorio_offline_pdf(monkeypatch):
     assert resultado["formato"] == "pdf"
     assert resultado["content_type"] == "application/pdf"
     assert resultado["conteudo"].startswith(b"%PDF-")
+
+
+def test_agendador_dispara_gerar_alertas(monkeypatch):
+    chamadas = []
+
+    monkeypatch.setattr(agendador, "gerar_alertas", lambda: chamadas.append(True) or {"quantidade": 3})
+
+    agendador.rotina_alertas_assistente()
+
+    assert chamadas == [True]

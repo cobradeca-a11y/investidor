@@ -4,6 +4,7 @@ Ponto de entrada do sistema FIIA.
 """
 import sys
 import argparse
+import json
 from pathlib import Path
 from banco import db
 from acesso import auth
@@ -111,10 +112,10 @@ def rodar_radar():
             print(f"  {i+1:2}.   {op['ticker']:<8} Margem: {margem_val:+.1f}%")
 
     print("\n" + "="*50)
-    print("      ANÁLISE DETALHADA — TOP 3")
+    print("      ANÁLISE DETALHADA — TOP 5")
     print("="*50)
 
-    for i, op in enumerate(oportunidades[:3]):
+    for i, op in enumerate(oportunidades[:5]):
         veredito = op.get("veredito")
         if veredito:
             print(formatar_veredito(veredito))
@@ -122,12 +123,27 @@ def rodar_radar():
             analisar_fii(op["ticker"])
 
 
-def rodar_backtest(ticker: str):
+def rodar_backtest(ticker: str, data: str | None = None, horizonte: int = 365):
     """Aciona a máquina do tempo para o FII especificado."""
     autoupdater.verificar_e_atualizar()
     api_yfinance.coletar_historico_dividendos(ticker)
-    from backtest.maquina_tempo import executar_backtest
-    executar_backtest(ticker)
+    from backtest.maquina_tempo import executar_backtest, executar_backtest_data
+
+    if data:
+        resultado = executar_backtest_data(ticker, data, horizonte_dias=horizonte)
+    else:
+        resultado = executar_backtest(ticker)
+
+    print(json.dumps(resultado, ensure_ascii=False, indent=2, default=str))
+
+
+def rodar_backtest_radar(data: str, top: int = 5, horizonte: int = 365):
+    """Roda a máquina do tempo em modo ranking top N."""
+    autoupdater.verificar_e_atualizar()
+    from backtest.maquina_tempo import executar_backtest_radar
+
+    resultado = executar_backtest_radar(data, top=top, horizonte_dias=horizonte)
+    print(json.dumps(resultado, ensure_ascii=False, indent=2, default=str))
 
 
 
@@ -136,6 +152,10 @@ def main():
     parser = argparse.ArgumentParser(description="FIIA - Fundo Inteligente de Investimento em Ativos")
     parser.add_argument("--setup", action="store_true", help="Inicializa o banco de dados e as tabelas.")
     parser.add_argument("--backtest", type=str, help="Roda a máquina do tempo simulando 5 anos no passado para o TICKER.")
+    parser.add_argument("--backtest-radar", action="store_true", help="Roda a máquina do tempo em modo ranking top N.")
+    parser.add_argument("--data", type=str, help="Data de referência do backtest no formato AAAA-MM-DD.")
+    parser.add_argument("--horizonte", type=int, default=365, help="Horizonte de avaliação do backtest em dias.")
+    parser.add_argument("--top", type=int, default=5, help="Quantidade de oportunidades no ranking temporal.")
     parser.add_argument("--top10", action="store_true", help="Analisa os 10 FIIs mais populares do mercado.")
     parser.add_argument("--radar", action="store_true", help="Varre o mercado inteiro em busca de oportunidades reais.")
 
@@ -147,7 +167,12 @@ def main():
 
     elif args.backtest:
         auth.exigir_autenticacao()
-        rodar_backtest(args.backtest.upper())
+        rodar_backtest(args.backtest.upper(), data=args.data, horizonte=args.horizonte)
+    elif args.backtest_radar:
+        auth.exigir_autenticacao()
+        if not args.data:
+            parser.error("--backtest-radar exige --data AAAA-MM-DD")
+        rodar_backtest_radar(args.data, top=args.top, horizonte=args.horizonte)
     elif args.top10:
         auth.exigir_autenticacao()
         rodar_top10()
