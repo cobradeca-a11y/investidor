@@ -12,20 +12,54 @@ A extração automática de PDF fica em camada posterior de NLP/ETL documental.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from banco import db
 from processamento.dividendo_recorrente import classificar_dividendos
 from sistema import observabilidade
 
 TABELA = "fnet_dividendos_fii"
+_COLUNAS_TABELA = {
+    "ticker",
+    "cnpj_fundo",
+    "data_base",
+    "data_com",
+    "data_pagamento",
+    "valor",
+    "tipo",
+    "fonte",
+    "protocolo",
+    "url_documento",
+    "assunto",
+    "arquivo_origem",
+    "coletado_em",
+    "payload_json",
+    "dedupe_key",
+}
+_FNET_GRID = "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados"
+_FNET_DOWNLOAD = "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={doc_id}"
+_FNET_VISUALIZAR = "https://fnet.bmfbovespa.com.br/fnet/publico/visualizarDocumento?id={doc_id}"
+_TIMEOUT = (5, 30)
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Referer": "https://fnet.bmfbovespa.com.br/fnet/publico/abrirGerenciadorDocumentosCVM",
+    "X-Requested-With": "XMLHttpRequest",
+    "Origin": "https://fnet.bmfbovespa.com.br",
+}
 
 _ALIASES = {
     "ticker": ["ticker", "codigo", "código", "cod_negociacao", "codigo_negociacao", "ativo"],
@@ -39,6 +73,26 @@ _ALIASES = {
     "url_documento": ["url_documento", "url", "link", "download", "urlDownload"],
     "assunto": ["assunto", "titulo", "descricao", "nome_documento"],
 }
+
+
+def _criar_sessao() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=2,
+        connect=2,
+        read=2,
+        status=2,
+        backoff_factor=1.2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset(["GET"]),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    session.mount("https://", adapter)
+    return session
+
+
+_session = _criar_sessao()
 
 
 def _agora_iso() -> str:
@@ -121,7 +175,8 @@ def _normalizar_data(valor: Any) -> str | None:
     if not texto:
         return None
     try:
-        data = pd.to_datetime(texto, dayfirst=True, errors="coerce")
+        dayfirst = not bool(re.match(r"^\d{4}-\d{2}-\d{2}", texto))
+        data = pd.to_datetime(texto, dayfirst=dayfirst, errors="coerce")
         if pd.isna(data):
             return None
         return data.strftime("%Y-%m-%d")
@@ -140,6 +195,94 @@ def _normalizar_float(valor: Any) -> float | None:
         return float(texto)
     except Exception:
         return None
+
+
+def _texto_xml(elemento: ET.Element | None, caminho: str) -> str | None:
+    if elemento is None:
+        return None
+    alvo = elemento.find(caminho)
+    if alvo is None or alvo.text is None:
+        return None
+    texto = alvo.text.strip()
+    return texto or None
+
+
+def _normalizar_tipo_evento(valor: str | None) -> str:
+    texto = (valor or "").strip().upper()
+    if "AMORT" in texto:
+        return "AMORTIZACAO"
+    if "RESTIT" in texto:
+        return "RESTITUICAO"
+    if "SUBSCR" in texto:
+        return "SUBSCRICAO"
+    if "REND" in texto:
+        return "RENDIMENTO"
+    return texto or "INDEFINIDO"
+
+
+def _decodificar_resposta_fnet(conteudo: bytes) -> bytes:
+    bruto = conteudo.strip().strip(b'"')
+    if bruto.startswith(b"<?xml") or bruto.startswith(b"<"):
+        return bruto
+    try:
+        decodificado = base64.b64decode(bruto, validate=True)
+    except Exception:
+        return bruto
+    return decodificado.strip()
+
+
+def extrair_eventos_xml(conteudo_xml: bytes | str) -> list[dict[str, Any]]:
+    """Extrai eventos estruturados de proventos do XML oficial do FNET."""
+    if isinstance(conteudo_xml, str):
+        conteudo_xml = conteudo_xml.encode("utf-8")
+
+    root = ET.fromstring(conteudo_xml)
+    dados_gerais = root.find(".//DadosGerais")
+    cnpj_fundo = _texto_xml(dados_gerais, "CNPJFundo")
+    data_informacao = _normalizar_data(_texto_xml(dados_gerais, "DataInformacao"))
+    eventos: list[dict[str, Any]] = []
+
+    for provento in root.findall(".//Provento"):
+        ticker = _limpar_ticker(_texto_xml(provento, "CodNegociacao"))
+        cod_isin = _limpar(_texto_xml(provento, "CodISIN"))
+        for bloco in list(provento):
+            if bloco.tag in {"CodISIN", "CodNegociacao"}:
+                continue
+            data_base = _normalizar_data(
+                _texto_xml(bloco, "DataBase")
+                or _texto_xml(bloco, "DataCom")
+                or _texto_xml(bloco, "DataIdentificacaoDireito")
+            )
+            data_pagamento = _normalizar_data(
+                _texto_xml(bloco, "DataPagamento")
+                or _texto_xml(bloco, "DataPgto")
+                or _texto_xml(bloco, "DataPrevisaoPagamento")
+            )
+            valor = _normalizar_float(
+                _texto_xml(bloco, "ValorProvento")
+                or _texto_xml(bloco, "ValorProventoCota")
+                or _texto_xml(bloco, "ValorRendimentoCota")
+                or _texto_xml(bloco, "ValorAmortizacaoCota")
+            )
+            if not ticker or not data_pagamento or valor is None:
+                continue
+            eventos.append(
+                {
+                    "ticker": ticker,
+                    "cnpj_fundo": cnpj_fundo,
+                    "data_base": data_base,
+                    "data_com": data_base,
+                    "data_pagamento": data_pagamento,
+                    "valor": valor,
+                    "tipo": _normalizar_tipo_evento(bloco.tag),
+                    "cod_isin": cod_isin,
+                    "periodo_referencia": _limpar(_texto_xml(bloco, "PeriodoReferencia")),
+                    "data_informacao": data_informacao,
+                    "ato_societario_aprovacao": _normalizar_data(_texto_xml(bloco, "AtoSocietarioAprovacao")),
+                    "rendimento_isento_ir": _limpar(_texto_xml(bloco, "RendimentoIsentoIR")),
+                }
+            )
+    return eventos
 
 
 def _dedupe_key(dados: dict[str, Any]) -> str:
@@ -178,11 +321,21 @@ def _salvar_operacional(dados: dict[str, Any]) -> None:
         """
         DELETE FROM dividendos
         WHERE ticker = ?
-          AND data_pagamento = ?
           AND ABS(valor - ?) < 0.000001
+          AND (
+                data_pagamento = ?
+             OR data_com = ?
+             OR COALESCE(data_com, data_pagamento) = ?
+          )
           AND COALESCE(fonte, '') <> 'FNET_AVISO_COTISTAS'
         """,
-        (dados["ticker"], dados["data_pagamento"], dados["valor"]),
+        (
+            dados["ticker"],
+            dados["valor"],
+            dados["data_pagamento"],
+            dados.get("data_com"),
+            dados.get("data_com") or dados["data_pagamento"],
+        ),
     )
 
     registro = {
@@ -196,7 +349,31 @@ def _salvar_operacional(dados: dict[str, Any]) -> None:
         "protocolo": dados.get("protocolo"),
         "url_documento": dados.get("url_documento"),
     }
+    db.executar("INSERT OR IGNORE INTO fiis (ticker, tipo, ativo) VALUES (?, 'FII', 1)", (dados["ticker"],))
     db.upsert("dividendos", registro)
+
+
+def _salvar_fnet(dados: dict[str, Any]) -> None:
+    dados = {
+        **dados,
+        "fonte": "FNET_AVISO_COTISTAS",
+        "coletado_em": dados.get("coletado_em") or _agora_iso(),
+    }
+    dados["dedupe_key"] = _dedupe_key(dados)
+    dados = {chave: valor for chave, valor in dados.items() if chave in _COLUNAS_TABELA}
+    colunas_sql = ", ".join(dados.keys())
+    placeholders = ", ".join("?" for _ in dados)
+    updates = ", ".join(f"{col}=excluded.{col}" for col in dados if col != "dedupe_key")
+    db.executar(
+        f"""
+        INSERT INTO {TABELA} ({colunas_sql})
+        VALUES ({placeholders})
+        ON CONFLICT(dedupe_key)
+        DO UPDATE SET {updates}
+        """,
+        tuple(dados.values()),
+    )
+    _salvar_operacional(dados)
 
 
 def importar_arquivo(caminho_arquivo: str | Path) -> dict[str, Any]:
@@ -248,24 +425,7 @@ def importar_arquivo(caminho_arquivo: str | Path) -> dict[str, Any]:
                 "payload_json": row.to_json(force_ascii=False),
             }
             dados["dedupe_key"] = _dedupe_key(dados)
-
-            colunas_sql = ", ".join(dados.keys())
-            placeholders = ", ".join("?" for _ in dados)
-            updates = ", ".join(
-                f"{col}=excluded.{col}"
-                for col in dados
-                if col not in {"dedupe_key"}
-            )
-            db.executar(
-                f"""
-                INSERT INTO {TABELA} ({colunas_sql})
-                VALUES ({placeholders})
-                ON CONFLICT(dedupe_key)
-                DO UPDATE SET {updates}
-                """,
-                tuple(dados.values()),
-            )
-            _salvar_operacional(dados)
+            _salvar_fnet(dados)
             total += 1
 
         tickers = sorted({str(t).upper().replace(".SA", "") for t in df[colunas["ticker"]].dropna()}) if colunas.get("ticker") else []
@@ -296,6 +456,166 @@ def importar_arquivo(caminho_arquivo: str | Path) -> dict[str, Any]:
             contexto={"arquivo": str(caminho)},
         )
         return {"arquivo": str(caminho), "erro": str(erro), "registros": 0}
+
+
+def _cnpj_limpo(cnpj: str) -> str:
+    return re.sub(r"\D", "", cnpj or "")
+
+
+def buscar_documentos_online(
+    cnpj_fundo: str,
+    limite: int = 120,
+    apenas_do_dia: bool = False,
+    verify_ssl: bool = True,
+) -> list[dict[str, Any]]:
+    """Busca metadados FNET por CNPJ. O filtro final ocorre no XML baixado."""
+    limite = 10 if apenas_do_dia else limite
+    params = {
+        "d": 1,
+        "s": 0,
+        "l": limite,
+        "tipoFundo": "1",
+        "idCategoriaDocumento": "0",
+        "idTipoDocumento": "0",
+        "idEspecieDocumento": "0",
+        "paginaCertificados": "false",
+        "cnpj": _cnpj_limpo(cnpj_fundo),
+        "cnpjFundo": _cnpj_limpo(cnpj_fundo),
+    }
+    try:
+        resposta = _session.get(_FNET_GRID, params=params, headers=_HEADERS, timeout=_TIMEOUT, verify=verify_ssl)
+        if resposta.status_code != 200:
+            return []
+        dados = resposta.json()
+    except Exception:
+        return []
+    return list(dados.get("data") or [])
+
+
+def baixar_xml_documento(doc_id: str | int, verify_ssl: bool = True) -> bytes | None:
+    resposta = _session.get(_FNET_DOWNLOAD.format(doc_id=doc_id), headers=_HEADERS, timeout=_TIMEOUT, verify=verify_ssl)
+    if resposta.status_code != 200:
+        return None
+    conteudo = _decodificar_resposta_fnet(resposta.content)
+    if not conteudo.startswith(b"<?xml") and not conteudo.startswith(b"<"):
+        return None
+    return conteudo
+
+
+def importar_online(
+    cnpj_fundo: str,
+    limite: int = 120,
+    apenas_do_dia: bool = False,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """Importa dividendos oficiais FNET baixando XMLs estruturados por CNPJ."""
+    garantir_tabelas()
+    documentos = buscar_documentos_online(
+        cnpj_fundo,
+        limite=limite,
+        apenas_do_dia=apenas_do_dia,
+        verify_ssl=verify_ssl,
+    )
+    total = 0
+    documentos_com_evento = 0
+    erros = 0
+    tickers: set[str] = set()
+    coletado_em = _agora_iso()
+
+    for doc in documentos:
+        doc_id = doc.get("id")
+        if not doc_id:
+            continue
+        try:
+            xml = baixar_xml_documento(doc_id, verify_ssl=verify_ssl)
+            if not xml:
+                continue
+            eventos = extrair_eventos_xml(xml)
+            if not eventos:
+                continue
+            documentos_com_evento += 1
+            for evento in eventos:
+                ticker = evento.get("ticker")
+                if ticker:
+                    tickers.add(ticker)
+                payload = {
+                    **evento,
+                    "protocolo": str(doc_id),
+                    "url_documento": _FNET_VISUALIZAR.format(doc_id=doc_id),
+                    "assunto": doc.get("tipoDescricao") or doc.get("especieDocumento") or "Rendimentos e Amortizacoes",
+                    "arquivo_origem": "FNET_API_XML",
+                    "coletado_em": coletado_em,
+                    "payload_json": json.dumps({"documento": doc, "evento": evento}, ensure_ascii=False),
+                }
+                _salvar_fnet(payload)
+                total += 1
+        except Exception as erro:
+            erros += 1
+            observabilidade.registrar_erro(
+                "coleta.fnet_dividendos.online.documento",
+                erro,
+                fonte="FNET_AVISO_COTISTAS",
+                contexto={"doc_id": doc_id, "cnpj_fundo": cnpj_fundo},
+            )
+
+    for ticker in tickers:
+        classificar_dividendos(ticker)
+
+    resumo = {
+        "cnpj_fundo": cnpj_fundo,
+        "documentos_analisados": len(documentos),
+        "documentos_com_evento": documentos_com_evento,
+        "registros": total,
+        "erros": erros,
+        "tickers": sorted(tickers),
+    }
+    observabilidade.registrar_evento(
+        "INFO",
+        "coleta.fnet_dividendos.online",
+        "Dividendos FNET online importados",
+        fonte="FNET_AVISO_COTISTAS",
+        contexto=resumo,
+    )
+    return resumo
+
+
+def importar_documento_online(
+    doc_id: str | int,
+    metadados: dict[str, Any] | None = None,
+    verify_ssl: bool = True,
+) -> dict[str, Any]:
+    """Importa um XML FNET estruturado pelo id do documento."""
+    garantir_tabelas()
+    metadados = metadados or {}
+    xml = baixar_xml_documento(doc_id, verify_ssl=verify_ssl)
+    if not xml:
+        return {"doc_id": str(doc_id), "registros": 0, "erro": "Documento nao retornou XML estruturado."}
+
+    eventos = extrair_eventos_xml(xml)
+    tickers: set[str] = set()
+    coletado_em = _agora_iso()
+    total = 0
+
+    for evento in eventos:
+        ticker = evento.get("ticker")
+        if ticker:
+            tickers.add(ticker)
+        payload = {
+            **evento,
+            "protocolo": str(doc_id),
+            "url_documento": _FNET_VISUALIZAR.format(doc_id=doc_id),
+            "assunto": metadados.get("tipoDescricao") or metadados.get("especieDocumento") or "Rendimentos e Amortizacoes",
+            "arquivo_origem": "FNET_API_XML",
+            "coletado_em": coletado_em,
+            "payload_json": json.dumps({"documento": metadados, "evento": evento}, ensure_ascii=False),
+        }
+        _salvar_fnet(payload)
+        total += 1
+
+    for ticker in tickers:
+        classificar_dividendos(ticker)
+
+    return {"doc_id": str(doc_id), "registros": total, "tickers": sorted(tickers)}
 
 
 def cobertura_fnet(ticker: str) -> dict[str, Any]:
