@@ -1,4 +1,4 @@
-from coleta.fnet_dividendos import extrair_eventos_xml
+from coleta.fnet_dividendos import _eh_metadado_provento, extrair_eventos_xml
 
 
 XML_RENDIMENTO = b"""<?xml version="1.0"?>
@@ -76,3 +76,18 @@ def test_extrai_xml_fnet_preserva_eventos_separados():
     assert [evento["valor"] for evento in eventos] == [0.8, 0.2]
     assert all(evento["data_com"] == "2024-01-10" for evento in eventos)
     assert all(evento["data_pagamento"] == "2024-01-17" for evento in eventos)
+
+
+def test_identifica_metadado_fnet_de_rendimentos_e_amortizacoes():
+    assert _eh_metadado_provento(
+        {
+            "categoriaDocumento": "Aviso aos Cotistas - Estruturado",
+            "tipoDocumento": "Rendimentos e Amortizações",
+        }
+    )
+    assert not _eh_metadado_provento(
+        {
+            "categoriaDocumento": "Oferta Pública de Distribuição de Cotas",
+            "tipoDocumento": "Anúncio de Início",
+        }
+    )

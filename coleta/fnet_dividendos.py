@@ -467,12 +467,13 @@ def buscar_documentos_online(
     limite: int = 120,
     apenas_do_dia: bool = False,
     verify_ssl: bool = True,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Busca metadados FNET por CNPJ. O filtro final ocorre no XML baixado."""
     limite = 10 if apenas_do_dia else limite
     params = {
         "d": 1,
-        "s": 0,
+        "s": offset,
         "l": limite,
         "tipoFundo": "1",
         "idCategoriaDocumento": "0",
@@ -492,6 +493,38 @@ def buscar_documentos_online(
     return list(dados.get("data") or [])
 
 
+def _eh_metadado_provento(doc: dict[str, Any]) -> bool:
+    texto = " ".join(
+        str(doc.get(chave) or "")
+        for chave in ("categoriaDocumento", "tipoDocumento", "especieDocumento", "assuntos")
+    ).upper()
+    return "AVISO AOS COTISTAS" in texto and "RENDIMENTOS" in texto and "AMORTIZA" in texto
+
+
+def descobrir_documentos_proventos(
+    cnpj_fundo: str,
+    tamanho_lote: int = 80,
+    max_paginas: int = 10,
+    verify_ssl: bool = True,
+) -> list[dict[str, Any]]:
+    """Pagina o grid FNET e retorna candidatos rotulados como rendimentos/amortizacoes."""
+    encontrados: list[dict[str, Any]] = []
+    vistos: set[str] = set()
+    for pagina in range(max_paginas):
+        offset = pagina * tamanho_lote
+        docs = buscar_documentos_online(cnpj_fundo, limite=tamanho_lote, offset=offset, verify_ssl=verify_ssl)
+        if not docs:
+            break
+        for doc in docs:
+            doc_id = str(doc.get("id") or "")
+            if doc_id and doc_id not in vistos and _eh_metadado_provento(doc):
+                vistos.add(doc_id)
+                encontrados.append(doc)
+        if len(docs) < tamanho_lote:
+            break
+    return encontrados
+
+
 def baixar_xml_documento(doc_id: str | int, verify_ssl: bool = True) -> bytes | None:
     resposta = _session.get(_FNET_DOWNLOAD.format(doc_id=doc_id), headers=_HEADERS, timeout=_TIMEOUT, verify=verify_ssl)
     if resposta.status_code != 200:
@@ -507,14 +540,24 @@ def importar_online(
     limite: int = 120,
     apenas_do_dia: bool = False,
     verify_ssl: bool = True,
+    max_paginas: int = 10,
 ) -> dict[str, Any]:
     """Importa dividendos oficiais FNET baixando XMLs estruturados por CNPJ."""
     garantir_tabelas()
-    documentos = buscar_documentos_online(
-        cnpj_fundo,
-        limite=limite,
-        apenas_do_dia=apenas_do_dia,
-        verify_ssl=verify_ssl,
+    documentos = (
+        buscar_documentos_online(
+            cnpj_fundo,
+            limite=limite,
+            apenas_do_dia=apenas_do_dia,
+            verify_ssl=verify_ssl,
+        )
+        if apenas_do_dia
+        else descobrir_documentos_proventos(
+            cnpj_fundo,
+            tamanho_lote=limite,
+            max_paginas=max_paginas,
+            verify_ssl=verify_ssl,
+        )
     )
     total = 0
     documentos_com_evento = 0
