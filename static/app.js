@@ -1067,7 +1067,9 @@ function normalizarFii(fii) {
         score_ia: fii.score_ia ?? v.score_ia ?? 7.0, motivo: fii.motivo || v.motivo || 'Ativo em monitoramento.',
         alertas: asArray(fii.alertas || v.alertas || []), quantidade: fii.quantidade ?? 0,
         preco_medio: fii.preco_medio ?? 0.0, custo_total: fii.custo_total ?? 0.0,
-        revisao: fii.revisao || v.revisao || 'Próximo Radar', auditoria
+        revisao: fii.revisao || v.revisao || 'Próximo Radar', auditoria,
+        zonas_entrada: asObject(fii.zonas_entrada || v.zonas_entrada || null),
+        dimensionamento: asObject(fii.dimensionamento || v.dimensionamento || null),
     };
 }
 
@@ -1130,6 +1132,37 @@ function renderAuditoria(auditoria) {
     `;
 }
 
+function renderZonasEntrada(zonas) {
+    if (!zonas || !zonas.calculavel) return '';
+    const zona = zonas.zona_atual || 'ESPERA';
+    const classeZona = { 'FORTE': 'zona-forte', 'PARCIAL': 'zona-parcial', 'ESPERA': 'zona-espera' }[zona] || 'zona-espera';
+    return `
+        <div class="zonas-card">
+            <div class="zonas-title">Zonas de Entrada</div>
+            <div class="zonas-grid">
+                <div class="zona-item zona-forte-ref"><span>Forte</span><strong>${moeda(zonas.zona_forte)}</strong></div>
+                <div class="zona-item zona-parcial-ref"><span>Parcial</span><strong>${moeda(zonas.zona_parcial)}</strong></div>
+                <div class="zona-item zona-espera-ref"><span>Espera</span><strong>${moeda(zonas.zona_espera)}</strong></div>
+            </div>
+            <div class="zona-badge ${classeZona}">Zona atual: ${escapeHtml(zona)}</div>
+        </div>
+    `;
+}
+
+function renderDimensionamento(dim) {
+    if (!dim || dim.pct_carteira === undefined) return '';
+    return `
+        <div class="dim-card">
+            <div class="dim-title">Dimensionamento Sugerido</div>
+            <div class="dim-grid">
+                <div><span>% carteira</span><strong>${numeroSeguro(dim.pct_carteira).toFixed(1)}%</strong></div>
+                <div><span>Ref. R$ 10k</span><strong>${moeda(dim.valor_ref_10k)}</strong></div>
+                <div><span>Lote mínimo</span><strong>${escapeHtml(textoSeguro(dim.lote_minimo, '---'))} cotas</strong></div>
+            </div>
+        </div>
+    `;
+}
+
 function renderResults(oportunidades, targetId = 'results', isPortfolio = false) {
     const grid = document.getElementById(targetId);
     if (!grid) return;
@@ -1149,6 +1182,8 @@ function renderResults(oportunidades, targetId = 'results', isPortfolio = false)
             ${renderResumoExplicabilidade(fii)}
             ${isPortfolio ? `<div class="holding-details-container glass-card"><div class="holding-metric"><span class="label">Minhas Cotas</span><span class="value">${escapeHtml(fii.quantidade)}</span></div><div class="holding-metric"><span class="label">Preço Médio</span><span class="value">${moeda(fii.preco_medio)}</span></div><div class="holding-metric highlight"><span class="label">Total Aplicado</span><span class="value">R$ ${numeroSeguro(fii.custo_total).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div></div>` : ''}
             <div class="price-grid"><div class="price-item"><span class="label">Preço Atual</span><span class="value">${moeda(fii.preco_atual)}</span></div><div class="price-item highlight"><span class="label">Preço Justo</span><span class="value">${moeda(fii.preco_justo)}</span></div><div class="price-item"><span class="label">Entrada Ideal</span><span class="value">${moeda(fii.preco_entrada)}</span></div></div>
+            ${renderZonasEntrada(fii.zonas_entrada)}
+            ${renderDimensionamento(fii.dimensionamento)}
             <div class="metrics-grid"><div class="metric"><span class="label">Margem</span><span class="value ${numeroSeguro(fii.margem) > 0 ? 'pos' : 'neg'}">${percentual(fii.margem)}</span></div><div class="metric"><span class="label">P/VP</span><span class="value">${numeroSeguro(fii.pvp).toFixed(2)}</span></div><div class="metric"><span class="label">DY 12M</span><span class="value">${percentual(fii.dy_12m_pct)}</span></div><div class="metric"><span class="label">Recorrência</span><span class="value">${escapeHtml(textoSeguro(fii.pct_recorrente, '---'))}%</span></div></div>
             <div class="gate-trail"><div class="gate-title">Esteira de Qualidade (8 Gates)</div><div class="gates-container">${fii.trilha_gates.map(gate => `<span class="gate-tag">${escapeHtml(gate)}</span>`).join('')}</div></div>
             <div class="ai-analysis"><div class="ai-header"><span class="ai-icon">🧠</span><span class="ai-label">Inteligência FIIA</span><span class="ai-score">Score: ${escapeHtml(fii.score_ia || '?')}/10</span></div><div class="ai-content">${escapeHtml(fii.motivo || 'Aguardando processamento...')}</div></div>

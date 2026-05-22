@@ -11,10 +11,14 @@ from coleta import api_bcb, cvm_informe_mensal, informe_diario, informe_trimestr
 from coleta.informe_anual import coletar_atual as anual_atual
 from coleta.informe_trimestral_completo import coletar_atual as tri_completo_atual
 from servicos.agendador_avaliador import executar_avaliador_temporal
-from servicos.assistente_financeiro import gerar_alertas
+from servicos.assistente_financeiro import gerar_alertas, gravar_alertas_gatilhos
 from aprendizado.snapshots import criar_snapshots_diarios
 from aprendizado.paper_trading import executar_paper_trading_diario
 from operacional.saude_fontes import gerar_relatorio_saude_fontes
+from carteira.repositorio_carteira import listar_posicoes
+from decisao import gatilhos as mod_gatilhos
+from coleta.contexto_ativo import obter_contexto_ativo
+from sistema import observabilidade
 
 
 def rotina_diaria_abertura():
@@ -105,6 +109,95 @@ def rotina_semanal_deep_scan():
     print(f"[agendador] Deep Scan concluído para {len(vencedores)} fundos.")
 
 
+def rotina_gatilhos_carteira():
+    """
+    Executada diariamente - Verifica gatilhos de gestão de posição
+    para todos os ativos em carteira e registra alertas operacionais.
+
+    Fontes de dados por campo:
+      pvp, vacancia_fisica, dy_recorrente → contexto ativo (coleta ao vivo)
+      margem, score_ia                    → última decisão gravada no banco
+    """
+    from banco import db as _db
+
+    print(f"[{datetime.now()}] Iniciando Verificação de Gatilhos da Carteira...")
+    posicoes = listar_posicoes()
+
+    if not posicoes:
+        print("[agendador] Nenhuma posição em carteira. Gatilhos ignorados.")
+        return
+
+    alertas_acionados = []
+
+    for pos in posicoes:
+        ticker = pos.get("ticker")
+        if not ticker:
+            continue
+
+        try:
+            contexto = obter_contexto_ativo(ticker)
+            pvp           = contexto.get("pvp")
+            vacancia      = contexto.get("vacancia_fisica")
+            dy_recorrente = contexto.get("dy_recorrente")
+
+            # margem e score_ia vêm da última decisão gravada
+            ultima_decisao = _db.buscar_um(
+                """
+                SELECT margem, score_ia FROM decisoes
+                WHERE ticker = ?
+                ORDER BY data_decisao DESC LIMIT 1
+                """,
+                (ticker,),
+            )
+            margem   = ultima_decisao.get("margem")   if ultima_decisao else None
+            score_ia = ultima_decisao.get("score_ia") if ultima_decisao else None
+
+            resultado = mod_gatilhos.verificar(
+                ticker=ticker,
+                pvp=pvp,
+                vacancia=vacancia,
+                margem=margem,
+                score_ia=score_ia,
+                dy_recorrente_atual=dy_recorrente,
+            )
+
+            if resultado["total_gatilhos"] > 0:
+                alertas_acionados.append(resultado)
+                observabilidade.registrar_evento(
+                    "WARN",
+                    "servicos.agendador.gatilhos",
+                    f"Gatilho acionado: {ticker} → {resultado['acao_principal']}",
+                    contexto={
+                        "ticker": ticker,
+                        "acao": resultado["acao_principal"],
+                        "gatilhos": resultado["gatilhos"],
+                    },
+                )
+                print(
+                    f"  [gatilho] {ticker}: {resultado['acao_principal']} "
+                    f"({resultado['total_gatilhos']} gatilho(s))"
+                )
+            else:
+                print(f"  [gatilho] {ticker}: MANTER — nenhum gatilho acionado.")
+
+        except Exception as erro:
+            observabilidade.registrar_erro(
+                "servicos.agendador.gatilhos",
+                erro,
+                contexto={"ticker": ticker},
+            )
+            print(f"  [gatilho] ERRO ao verificar {ticker}: {erro}")
+
+    if alertas_acionados:
+        resultado_gravacao = gravar_alertas_gatilhos(alertas_acionados)
+        print(f"[agendador] Alertas de gatilho gravados no assistente: {resultado_gravacao.get('gravados', 0)}")
+
+    print(
+        f"[agendador] Verificação de gatilhos concluída: "
+        f"{len(alertas_acionados)} ativo(s) com alerta de {len(posicoes)} em carteira."
+    )
+
+
 def rotina_noturna_radar():
     """Executada às 20:00 - Varredura noturna do radar."""
     print(f"[{datetime.now()}] Iniciando Varredura Noturna do Radar...")
@@ -122,6 +215,7 @@ schedule.every().day.at("08:30").do(rotina_alertas_assistente)
 schedule.every().day.at("09:00").do(rotina_diaria_abertura)
 schedule.every().day.at("10:00").do(rotina_paper_trading_diario)
 schedule.every().day.at("10:45").do(rotina_oportunidades_mercado)
+schedule.every().day.at("11:15").do(rotina_gatilhos_carteira)
 schedule.every().day.at("11:30").do(rotina_alertas_assistente)
 schedule.every().day.at("20:00").do(rotina_noturna_radar)
 schedule.every().day.at("22:30").do(lambda: rotina_cvm_mensal() if datetime.now().day == 1 else None)

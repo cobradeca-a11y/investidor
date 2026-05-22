@@ -288,6 +288,64 @@ def gerar_alertas(tickers: list[str] | None = None) -> dict[str, Any]:
     return {"status": "ok", "quantidade": len(alertas), "alertas": alertas, "sem_scraping": True, "executou_motor": False}
 
 
+def gravar_alertas_gatilhos(resultados_gatilhos: list[dict]) -> dict[str, Any]:
+    """
+    Persiste alertas gerados pela rotina_gatilhos_carteira no canal
+    assistente_alertas, tornando-os visíveis no polling do PWA.
+
+    Chamada pelo agendador após verificar gatilhos da carteira.
+    Não executa scraping nem motor de decisão.
+
+    Args:
+        resultados_gatilhos: lista de dicts retornados por gatilhos.verificar(),
+                             filtrada para apenas os que têm total_gatilhos > 0.
+    """
+    _garantir_tabela_alertas()
+    hoje = date.today().isoformat()
+    gravados = 0
+
+    _SEVERIDADE_ACAO = {
+        "VENDER":             "CRITICA",
+        "REALIZAR_PARCIAL_50": "ALTA",
+        "REALIZAR_PARCIAL_30": "ALTA",
+        "REDUZIR":            "MEDIA",
+        "ADICIONAR":          "INFO",
+        "MANTER":             "INFO",
+    }
+
+    for resultado in resultados_gatilhos:
+        ticker = resultado.get("ticker")
+        if not ticker or not resultado.get("gatilhos"):
+            continue
+
+        acao = resultado.get("acao_principal", "MANTER")
+        severidade = _SEVERIDADE_ACAO.get(acao, "MEDIA")
+
+        for gatilho in resultado["gatilhos"]:
+            tipo_alerta = f"GATILHO_{gatilho.get('nome', 'DESCONHECIDO')}"
+            mensagem = f"[{acao}] {ticker}: {gatilho.get('motivo', 'Gatilho acionado.')}"
+            _salvar_alerta({
+                "ticker": ticker,
+                "tipo": tipo_alerta,
+                "severidade": severidade,
+                "mensagem": mensagem,
+                "data_referencia": hoje,
+                "payload": {
+                    "acao_principal": acao,
+                    "total_gatilhos": resultado.get("total_gatilhos"),
+                    "gatilho": gatilho,
+                },
+            })
+            gravados += 1
+
+    return {
+        "status": "ok",
+        "gravados": gravados,
+        "sem_scraping": True,
+        "executou_motor": False,
+    }
+
+
 def _quebrar_linhas_pdf(texto: str, largura: int = 92) -> list[str]:
     linhas: list[str] = []
     for bruto in str(texto or "").splitlines():

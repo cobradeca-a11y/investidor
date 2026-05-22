@@ -2,13 +2,21 @@
 acesso/auth.py
 Autenticação local por senha com hash SHA-256.
 A senha nunca é armazenada em texto puro.
+
+O hash deve ser definido via variável de ambiente FIIA_SENHA_HASH no .env.
+Para gerar o hash da sua senha:
+    python -c "import hashlib; print(hashlib.sha256(b'sua_senha').hexdigest())"
 """
 import hashlib
 import getpass
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _CONFIG_PATH = Path.home() / ".fiia_config"
-_HASH_CORRETO = "6aa81c4b1b739b3e82bbf3a5586aad9ccdd3bbfaa460f53d04b1a34cc542e316"
+_HASH_CORRETO = os.getenv("FIIA_SENHA_HASH", "")
 
 
 def _hash(senha: str) -> str:
@@ -20,6 +28,12 @@ def autenticar() -> bool:
     Solicita a senha no terminal e valida contra o hash.
     Retorna True se autenticado, False caso contrário.
     """
+    if not _HASH_CORRETO:
+        print("⚠️  FIIA_SENHA_HASH não configurada no .env. Acesso bloqueado.")
+        print("   Gere o hash com: python -c \"import hashlib; print(hashlib.sha256(b'sua_senha').hexdigest())\"")
+        print("   E adicione FIIA_SENHA_HASH=<hash> ao seu .env")
+        return False
+
     tentativas = 3
     for i in range(tentativas):
         senha = getpass.getpass("🔒 FIIA — Senha de acesso: ")
