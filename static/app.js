@@ -14,6 +14,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     inicializarNavegacao();
     inicializarTransacoes();
+    criarPainelMaquinaTempo();
     criarPainelHistorico();
     criarPainelAssistente();
     iniciarMonitorAlertasAssistente();
@@ -340,6 +341,223 @@ function ultimoAlertaAssistenteId() {
     return parseInt(localStorage.getItem('fiia_alertas_ultimo_id') || localStorage.getItem('fiia_ultimo_alerta_id') || '0', 10) || 0;
 }
 
+function criarPainelMaquinaTempo() {
+    const container = document.querySelector('.app-container') || document.body;
+    if (document.getElementById('maquinaTempo')) return;
+
+    const section = document.createElement('section');
+    section.id = 'maquinaTempo';
+    section.className = 'history-panel glass-card machine-panel';
+    section.innerHTML = `
+        <div class="history-header">
+            <div>
+                <h2>Maquina do Tempo</h2>
+                <p>Simula uma decisao em data historica usando apenas snapshots validos daquela epoca.</p>
+            </div>
+        </div>
+        <div class="machine-form">
+            <label>Ticker <input id="mtTicker" type="text" value="HGLG11" maxlength="12" autocomplete="off"></label>
+            <label>Data <input id="mtData" type="date" value="2021-05-20"></label>
+            <label>Horizonte <input id="mtHorizonte" type="number" value="365" min="30" max="3650" step="30"></label>
+            <label>Top radar <input id="mtTop" type="number" value="5" min="1" max="30" step="1"></label>
+            <div class="machine-actions">
+                <button id="btnMaquinaSnapshot" class="btn-transaction secondary">Gerar base da data</button>
+                <button id="btnMaquinaTicker" class="btn-transaction">Rodar ativo</button>
+                <button id="btnMaquinaRadar" class="btn-transaction secondary">Rodar top 5</button>
+            </div>
+        </div>
+        <div id="maquinaResultado" class="machine-result">
+            <div class="audit-empty">Escolha ativo/data para verificar cobertura, decisao historica e resultado futuro.</div>
+        </div>
+    `;
+    container.appendChild(section);
+    document.getElementById('btnMaquinaSnapshot')?.addEventListener('click', gerarBaseMaquinaTempo);
+    document.getElementById('btnMaquinaTicker')?.addEventListener('click', executarMaquinaTempoTicker);
+    document.getElementById('btnMaquinaRadar')?.addEventListener('click', executarMaquinaTempoRadar);
+}
+
+function obterParametrosMaquinaTempo() {
+    return {
+        ticker: (document.getElementById('mtTicker')?.value || '').toUpperCase().replace('.SA', '').trim(),
+        data: document.getElementById('mtData')?.value || '',
+        horizonte: parseInt(document.getElementById('mtHorizonte')?.value || '365', 10) || 365,
+        top: parseInt(document.getElementById('mtTop')?.value || '5', 10) || 5
+    };
+}
+
+async function executarMaquinaTempoTicker() {
+    const apiKey = obterOuSolicitarApiKey('rodar a Maquina do Tempo');
+    if (!apiKey) return;
+
+    const alvo = document.getElementById('maquinaResultado');
+    const params = obterParametrosMaquinaTempo();
+    if (!params.ticker || !params.data) {
+        alvo.innerHTML = '<div class="error-simple">Informe ticker e data para rodar a Maquina do Tempo.</div>';
+        return;
+    }
+    alvo.innerHTML = '<div class="loading-simple">Consultando snapshot e executando backtest temporal...</div>';
+
+    try {
+        const response = await fetch('/api/maquina-tempo/backtest', {
+            method: 'POST',
+            headers: headersAutenticados({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ ticker: params.ticker, data: params.data, horizonte: params.horizonte })
+        });
+        const data = await response.json();
+        alvo.innerHTML = renderMaquinaTempoTicker(data);
+    } catch (error) {
+        console.error('Erro na Maquina do Tempo:', error);
+        alvo.innerHTML = '<div class="error-simple">Falha controlada ao executar Maquina do Tempo.</div>';
+    }
+}
+
+async function gerarBaseMaquinaTempo() {
+    const apiKey = obterOuSolicitarApiKey('gerar base temporal');
+    if (!apiKey) return;
+
+    const alvo = document.getElementById('maquinaResultado');
+    const params = obterParametrosMaquinaTempo();
+    if (!params.ticker || !params.data) {
+        alvo.innerHTML = '<div class="error-simple">Informe ticker e data para gerar a base temporal.</div>';
+        return;
+    }
+    alvo.innerHTML = '<div class="loading-simple">Gerando snapshot local com COTAHIST, CVM mensal, dividendos e macro...</div>';
+
+    try {
+        const response = await fetch('/api/maquina-tempo/snapshots', {
+            method: 'POST',
+            headers: headersAutenticados({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                ticker: params.ticker,
+                data_inicio: params.data,
+                data_fim: params.data,
+                passo_dias: 30
+            })
+        });
+        const data = await response.json();
+        alvo.innerHTML = renderSnapshotTemporal(data);
+    } catch (error) {
+        console.error('Erro ao gerar base temporal:', error);
+        alvo.innerHTML = '<div class="error-simple">Falha controlada ao gerar base temporal.</div>';
+    }
+}
+
+function renderSnapshotTemporal(data) {
+    const ok = Number(data.ok || 0);
+    const insuficientes = Number(data.insuficientes || 0);
+    const primeiro = (data.resultados || [])[0] || {};
+    return `
+        <details class="audit-panel machine-detail" open>
+            <summary>Base temporal - ${escapeHtml(data.ticker || 'ativo')}</summary>
+            <div class="audit-grid">
+                <div><span>Snapshots OK</span><strong>${escapeHtml(String(ok))}</strong></div>
+                <div><span>Insuficientes</span><strong>${escapeHtml(String(insuficientes))}</strong></div>
+                <div><span>Inicio</span><strong>${escapeHtml(textoSeguro(data.data_inicio))}</strong></div>
+                <div><span>Fim</span><strong>${escapeHtml(textoSeguro(data.data_fim))}</strong></div>
+            </div>
+            <div class="audit-blocks"><strong>Status:</strong> ${escapeHtml(primeiro.status || data.status || 'Nao informado')} ${primeiro.faltantes ? `- faltantes: ${escapeHtml(primeiro.faltantes.join(', '))}` : ''}</div>
+        </details>
+    `;
+}
+
+async function executarMaquinaTempoRadar() {
+    const apiKey = obterOuSolicitarApiKey('rodar o radar temporal');
+    if (!apiKey) return;
+
+    const alvo = document.getElementById('maquinaResultado');
+    const params = obterParametrosMaquinaTempo();
+    if (!params.data) {
+        alvo.innerHTML = '<div class="error-simple">Informe a data para rodar o radar temporal.</div>';
+        return;
+    }
+    alvo.innerHTML = '<div class="loading-simple">Montando ranking temporal com snapshots historicos...</div>';
+
+    try {
+        const response = await fetch('/api/maquina-tempo/radar', {
+            method: 'POST',
+            headers: headersAutenticados({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ data: params.data, top: params.top, horizonte: params.horizonte })
+        });
+        const data = await response.json();
+        alvo.innerHTML = renderMaquinaTempoRadar(data);
+    } catch (error) {
+        console.error('Erro no radar temporal:', error);
+        alvo.innerHTML = '<div class="error-simple">Falha controlada ao executar radar temporal.</div>';
+    }
+}
+
+function renderValuationModelos(modelos) {
+    const lista = modelos?.modelos || [];
+    if (!lista.length) return '<div class="audit-empty">Modelos de valuation nao disponiveis.</div>';
+    return lista.map(modelo => `
+        <div class="machine-model-row">
+            <strong>${escapeHtml(modelo.modelo || 'MODELO')}</strong>
+            <span>Preco justo: ${moeda(modelo.preco_justo)}</span>
+            <span>Margem: ${percentual(modelo.margem_pct, 1)}</span>
+            <small>${escapeHtml(modelo.motivo || '')}</small>
+        </div>
+    `).join('');
+}
+
+function renderMaquinaTempoTicker(data) {
+    const resultado = data.resultado || {};
+    const avaliacao = resultado.avaliacao || {};
+    const modelos = resultado.valuation_modelos || {};
+    const valido = data.validade_institucional === true;
+    return `
+        <details class="audit-panel machine-detail" open>
+            <summary>${escapeHtml(data.ticker || 'Ativo')} em ${escapeHtml(data.data_referencia || 'data historica')}</summary>
+            <div class="audit-note">${escapeHtml(data.look_ahead_bias || 'Sem leitura de look-ahead informada.')}</div>
+            <div class="audit-grid">
+                <div><span>Status</span><strong>${escapeHtml(resultado.status || data.status || 'Nao informado')}</strong></div>
+                <div><span>Snapshot valido</span><strong>${valido ? 'Sim' : 'Nao'}</strong></div>
+                <div><span>Snapshot usado</span><strong>${escapeHtml(textoSeguro(resultado.snapshot_usado))}</strong></div>
+                <div><span>Decisao historica</span><strong>${escapeHtml(textoSeguro(resultado.decisao))}</strong></div>
+                <div><span>Preco entrada</span><strong>${moeda(resultado.preco_entrada)}</strong></div>
+                <div><span>Preco avaliacao</span><strong>${moeda(resultado.preco_saida)}</strong></div>
+                <div><span>Retorno total</span><strong>${percentual(resultado.rentabilidade_total_pct, 2)}</strong></div>
+                <div><span>Acerto</span><strong>${avaliacao.acerto === undefined ? 'Nao avaliado' : avaliacao.acerto ? 'Sim' : 'Nao'}</strong></div>
+            </div>
+            <div class="audit-blocks"><strong>Motivo:</strong> ${escapeHtml(resultado.motivo || resultado.motivo_validade || data.mensagem || 'Nao informado')}</div>
+            <div class="machine-models">${renderValuationModelos(modelos)}</div>
+        </details>
+    `;
+}
+
+function renderMaquinaTempoRadar(data) {
+    const ranking = data.ranking || [];
+    const avaliacoes = data.avaliacoes || [];
+    return `
+        <details class="audit-panel machine-detail" open>
+            <summary>Radar temporal ${escapeHtml(data.data_referencia || '')} - Top ${escapeHtml(textoSeguro(data.top, 5))}</summary>
+            <div class="audit-note">${escapeHtml(data.look_ahead_bias || 'Ranking temporal usa snapshots historicos.')}</div>
+            <div class="machine-scoreline">
+                <div><span>Avaliaveis</span><strong>${escapeHtml(textoSeguro(data.avaliaveis, 0))}</strong></div>
+                <div><span>Acertos</span><strong>${escapeHtml(textoSeguro(data.acertos, 0))}</strong></div>
+                <div><span>Taxa de acerto</span><strong>${percentual(data.taxa_acerto_pct, 2)}</strong></div>
+                <div><span>Candidatos validos</span><strong>${escapeHtml(textoSeguro(data.candidatos_validos, 0))}</strong></div>
+            </div>
+            <div class="history-list">
+                ${ranking.length ? ranking.map((item, idx) => `
+                    <article class="history-row">
+                        <div class="history-row-main">
+                            <strong>${idx + 1}. ${escapeHtml(item.ticker)}</strong>
+                            <span>${escapeHtml(item.decisao || 'INDEFINIDA')}</span>
+                            <small>Margem composta: ${percentual((item.margem_composta_conservadora || 0) * 100, 2)}</small>
+                        </div>
+                        <div class="history-row-audit">
+                            <span>${escapeHtml(item.motivo || 'Sem motivo informado')}</span>
+                            <span>Snapshot: ${escapeHtml(textoSeguro(item.snapshot_usado))}</span>
+                        </div>
+                        <div class="history-actions"><button class="btn-mini" data-mt-ativo="${escapeHtml(item.ticker)}">Ver ativo</button></div>
+                    </article>
+                `).join('') : '<div class="audit-empty">Sem ranking temporal. Gere snapshots historicos para essa data.</div>'}
+            </div>
+            <div class="audit-blocks"><strong>Avaliacoes:</strong> ${escapeHtml(String(avaliacoes.length))} resultado(s) calculado(s).</div>
+        </details>
+    `;
+}
+
 function salvarUltimoAlertaAssistenteId(id) {
     if (!id) return;
     localStorage.setItem('fiia_alertas_ultimo_id', String(id));
@@ -496,8 +714,35 @@ async function carregarRebalanceamento() {
     }
 }
 
-async function consultarDetalheFundo(ticker) {
-    const detalhe = document.getElementById('assistenteDetalhe');
+function obterAlvoDetalheFundo(anchorEl) {
+    const card = anchorEl?.closest?.('.fii-card');
+    if (!card) {
+        const detalheGlobal = document.getElementById('assistenteDetalhe');
+        detalheGlobal?.classList.remove('hidden');
+        return detalheGlobal;
+    }
+
+    document.querySelectorAll('.inline-fund-detail').forEach((painel) => {
+        if (!card.contains(painel)) painel.remove();
+    });
+
+    let detalhe = card.querySelector('.inline-fund-detail');
+    if (!detalhe) {
+        detalhe = document.createElement('div');
+        detalhe.className = 'inline-fund-detail history-detail';
+        const actions = card.querySelector('.card-actions');
+        if (actions?.nextSibling) {
+            card.insertBefore(detalhe, actions.nextSibling);
+        } else {
+            card.appendChild(detalhe);
+        }
+    }
+    detalhe.classList.remove('hidden');
+    return detalhe;
+}
+
+async function consultarDetalheFundo(ticker, anchorEl = null) {
+    const detalhe = obterAlvoDetalheFundo(anchorEl);
     if (!detalhe) return;
     detalhe.classList.remove('hidden');
     detalhe.innerHTML = `<div class="loading-simple">Consultando detalhe de ${escapeHtml(ticker)}...</div>`;
@@ -509,9 +754,42 @@ async function consultarDetalheFundo(ticker) {
         const data = await detalheResp.json();
         const evolucao = await evolucaoResp.json();
         detalhe.innerHTML = renderDetalheFundo(data, evolucao);
+        inicializarExportacoesDetalhe(detalhe, data.ticker || ticker);
     } catch (error) {
         console.error('Erro ao consultar detalhe do fundo:', error);
         detalhe.innerHTML = '<div class="error-simple">Falha controlada ao consultar detalhe do fundo.</div>';
+    }
+}
+
+function inicializarExportacoesDetalhe(container, ticker) {
+    container.querySelectorAll('[data-export-fundo]').forEach((btn) => {
+        btn.addEventListener('click', () => baixarRelatorioFundo(ticker, btn.dataset.exportFundo || 'txt'));
+    });
+}
+
+async function baixarRelatorioFundo(ticker, formato) {
+    const apiKey = obterOuSolicitarApiKey('exportar relatorio');
+    if (!apiKey) return;
+
+    try {
+        const response = await fetch(`/api/assistente/fundos/${encodeURIComponent(ticker)}/exportar?formato=${encodeURIComponent(formato)}`, {
+            headers: headersAutenticados()
+        });
+        if (!response.ok) {
+            throw new Error(`Exportacao retornou HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `fiia_${ticker}.${formato === 'pdf' ? 'pdf' : 'txt'}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error('Erro ao exportar relatorio:', error);
+        alert(`Erro ao exportar relatorio: ${error.message || 'falha controlada.'}`);
     }
 }
 
@@ -522,8 +800,6 @@ function renderDetalheFundo(data, evolucao) {
     const fnet = data.fnet || {};
     const dec = data.decisao || {};
     const ticker = data.ticker || ind.ticker || dec.ticker || '---';
-    const exportUrl = `/api/assistente/fundos/${encodeURIComponent(ticker)}/exportar?formato=txt`;
-    const exportPdfUrl = `/api/assistente/fundos/${encodeURIComponent(ticker)}/exportar?formato=pdf`;
     return `
         <details class="audit-panel history-detail-panel" open>
             <summary>Detalhe diario - ${escapeHtml(ticker)}</summary>
@@ -540,8 +816,8 @@ function renderDetalheFundo(data, evolucao) {
             <div class="audit-blocks"><strong>FNET tipos:</strong> ${renderListaRotulos(fnet.tipos || [])}</div>
             <div class="audit-blocks"><strong>Motivo:</strong> ${escapeHtml(dec.motivo || 'Nao informado')}</div>
             <div class="history-actions">
-                <a class="btn-mini" href="${escapeHtml(exportUrl)}" target="_blank" rel="noopener">Exportar texto</a>
-                <a class="btn-mini" href="${escapeHtml(exportPdfUrl)}" target="_blank" rel="noopener">Exportar PDF</a>
+                <button class="btn-mini" data-export-fundo="txt">Exportar texto</button>
+                <button class="btn-mini" data-export-fundo="pdf">Exportar PDF</button>
             </div>
         </details>
     `;
@@ -887,6 +1163,6 @@ function renderResults(oportunidades, targetId = 'results', isPortfolio = false)
         grid.appendChild(card);
     });
     grid.querySelectorAll('[data-fundo-detalhe], [data-fundo-evolucao]').forEach((btn) => {
-        btn.addEventListener('click', () => consultarDetalheFundo(btn.dataset.fundoDetalhe || btn.dataset.fundoEvolucao));
+        btn.addEventListener('click', () => consultarDetalheFundo(btn.dataset.fundoDetalhe || btn.dataset.fundoEvolucao, btn));
     });
 }

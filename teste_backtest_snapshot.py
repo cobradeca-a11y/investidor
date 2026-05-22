@@ -55,6 +55,51 @@ def test_contexto_decisao_de_snapshot_usa_payload_historico():
     assert contexto["patrimonio_fonte"] == "SNAPSHOT_TESTE"
 
 
+def test_criar_snapshot_historico_ticker_monta_payload_sem_fontes_futuras(monkeypatch):
+    executados = []
+
+    monkeypatch.setattr(snapshots, "garantir_tabela", lambda: None)
+    monkeypatch.setattr(
+        snapshots,
+        "_preco_em_ou_antes",
+        lambda ticker, data: {"data": "2021-05-20", "preco_fechamento": 100.0},
+    )
+    monkeypatch.setattr(
+        snapshots,
+        "_cvm_mensal_ate",
+        lambda ticker, data: {
+            "competencia": "2021-04-01",
+            "versao": 2,
+            "valor_patrimonial_cota": 125.0,
+            "patrimonio_liquido": 1_000_000_000.0,
+        },
+    )
+    monkeypatch.setattr(snapshots, "_liquidez_media_ate", lambda ticker, data: 2_500_000.0)
+    monkeypatch.setattr(
+        snapshots,
+        "_dividendos_ate",
+        lambda ticker, data: {
+            "ultimo_dividendo": 0.8,
+            "ultimo_dividendo_data": "2021-05-03",
+            "soma_12m": 9.6,
+            "soma_recorrente_12m": 9.6,
+            "recorrencia_dividendos_pct": 1.0,
+            "meses_historico": 12,
+            "quantidade_12m": 12,
+        },
+    )
+    monkeypatch.setattr(snapshots, "_macro_ate", lambda data: {"data": "2021-05-20", "cdi": 3.5, "selic": 3.5, "ipca": 0.5})
+    monkeypatch.setattr(snapshots.db, "buscar_um", lambda *args, **kwargs: {"ticker": "HGLG11", "segmento": "LOGISTICA"})
+    monkeypatch.setattr(snapshots.db, "executar", lambda sql, params=None: executados.append((sql, params)))
+
+    resultado = snapshots.criar_snapshot_historico_ticker("HGLG11", "2021-05-20")
+
+    assert resultado["status"] == "ok"
+    assert resultado["fontes_temporais"]["cotahist_data"] == "2021-05-20"
+    assert resultado["fontes_temporais"]["cvm_competencia"] == "2021-04-01"
+    assert executados
+
+
 def test_contexto_decisao_de_snapshot_rejeita_campos_minimos_ausentes():
     snap = _snapshot_valido()
     del snap["payload"]["indicadores"]["preco"]

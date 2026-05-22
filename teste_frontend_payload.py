@@ -86,17 +86,38 @@ def test_frontend_expoe_assistente_diario():
 
     assert "function criarPainelAssistente" in conteudo
     assert "function consultarDetalheFundo" in conteudo
+    assert "function obterAlvoDetalheFundo" in conteudo
+    assert "function baixarRelatorioFundo" in conteudo
     assert "/api/assistente/alertas" in conteudo
     assert "/api/assistente/alertas/novos" in conteudo
     assert "/api/assistente/rebalanceamento" in conteudo
     assert "/api/assistente/fundos/${encodeURIComponent(ticker)}" in conteudo
     assert "data-fundo-detalhe" in conteudo
+    assert "inline-fund-detail" in conteudo
+    assert "data-export-fundo" in conteudo
     assert "function consultarAlertasNovos" in conteudo
     assert "function mostrarToastAlerta" in conteudo
     assert "fiia_alertas_ultimo_id" in conteudo
     assert "Exportar texto" in conteudo
     assert "Exportar PDF" in conteudo
     assert "function iniciarMonitorAlertasAssistente" in conteudo
+
+
+def test_frontend_expoe_maquina_do_tempo():
+    conteudo = APP_JS.read_text(encoding="utf-8")
+
+    assert "function criarPainelMaquinaTempo" in conteudo
+    assert "function executarMaquinaTempoTicker" in conteudo
+    assert "function executarMaquinaTempoRadar" in conteudo
+    assert "function gerarBaseMaquinaTempo" in conteudo
+    assert "function renderSnapshotTemporal" in conteudo
+    assert "function renderMaquinaTempoTicker" in conteudo
+    assert "function renderMaquinaTempoRadar" in conteudo
+    assert "/api/maquina-tempo/backtest" in conteudo
+    assert "/api/maquina-tempo/radar" in conteudo
+    assert "/api/maquina-tempo/snapshots" in conteudo
+    assert "valuation_modelos" in conteudo
+    assert "look_ahead_bias" in conteudo
 
 
 def test_css_contem_classes_do_dashboard_de_auditoria():
@@ -112,6 +133,9 @@ def test_css_contem_classes_do_dashboard_de_auditoria():
         ".gate-eliminado",
         ".audit-empty",
         ".card-bloqueado",
+        ".inline-fund-detail",
+        ".machine-form",
+        ".machine-scoreline",
     ]
     for classe in classes:
         assert classe in conteudo
