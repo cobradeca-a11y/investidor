@@ -85,6 +85,20 @@ Criterio de conclusao:
 - Conseguir consultar preco em uma data historica.
 - Conseguir calcular liquidez media anterior a data da decisao.
 
+Status atual:
+
+- Importador local `coleta.cotahist_b3` implementado.
+- Pipeline aceita `--importar-cotahist`.
+- Backtest consulta COTAHIST antes de cair para yfinance.
+- COTAHIST 2020 importado: 55.650 registros de FIIs.
+- COTAHIST 2021 importado: 74.693 registros de FIIs.
+- Validacao HGLG11 em 2021-05-20: preco historico `170.25`, liquidez media aproximada `7,53 mi`.
+
+Pendente para fechar P2:
+
+- Obter `COTAHIST_A2022.ZIP` a `COTAHIST_A2026.ZIP`.
+- Importar esses anos com `--importar-cotahist`.
+
 ### P3 - Dividendos historicos
 
 Usar duas camadas:

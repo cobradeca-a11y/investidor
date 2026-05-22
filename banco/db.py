@@ -22,6 +22,7 @@ _TABELAS_PERMITIDAS = {
     "indicadores",
     "dividendos",
     "cvm_informes_mensais_fii",
+    "cotacoes_b3",
     "fnet_dividendos_fii",
     "fnet_nlp_classificacoes",
     "inf_trimestral_imoveis",
