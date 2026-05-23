@@ -71,7 +71,7 @@ body::after {
     left: 0;
     right: 0;
     z-index: 100;
-    height: 70px;
+    height: 130px;
     background: rgba(255,255,255,.85);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border);
@@ -101,7 +101,7 @@ body::after {
 
 .logo-image {
     width: auto;
-    height: 38px;
+    height: 120px;
     border-radius: 0;
     object-fit: contain;
     display: block;
@@ -234,11 +234,11 @@ body::after {
 /* ── HOME / HERO ────────────────────────────────────────────── */
 .hero-section {
     position: relative;
-    min-height: calc(100vh - 70px);
+    min-height: calc(100vh - 130px);
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 120px 24px 80px;
+    padding: 140px 24px 80px;
 }
 
 .hero-section::before {
