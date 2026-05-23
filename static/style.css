@@ -1329,6 +1329,141 @@ body::after {
 .scanner-text p { color: var(--text-2); font-size: .82rem; }
 
 /* ── History & Machine panels ──────────────────────────────── */
+/* ── Tools Grid ─────────────────────────────────────────────── */
+.tools-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 32px;
+}
+
+.tool-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl, 20px);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: border-color .2s, box-shadow .2s;
+}
+
+.tool-card:hover {
+    border-color: var(--border-2);
+    box-shadow: var(--shadow-sm);
+}
+
+.tool-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tool-icon-box {
+    width: 38px;
+    height: 38px;
+    background: var(--accent-soft);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+.tool-badge {
+    font-family: var(--mono);
+    font-size: .6rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+}
+
+.tool-badge.active {
+    background: rgba(37,99,235,.1);
+    color: var(--accent);
+    border: 1px solid rgba(37,99,235,.2);
+}
+
+.tool-badge.soon {
+    background: var(--ink-3);
+    color: var(--text-3);
+    border: 1px solid var(--border);
+}
+
+.tool-card h3 {
+    font-family: var(--display);
+    font-size: .95rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    margin: 0;
+}
+
+.tool-card p {
+    font-size: .82rem;
+    color: var(--text-2);
+    line-height: 1.6;
+    margin: 0;
+    flex: 1;
+}
+
+.tool-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tool-metric {
+    font-family: var(--mono);
+    font-size: .62rem;
+    color: var(--text-2);
+    background: var(--ink-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 8px;
+    white-space: nowrap;
+}
+
+.tool-btn {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 16px;
+    border-radius: var(--radius-sm);
+    font-family: var(--sans);
+    font-size: .8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+    border: 1px solid var(--border);
+    background: var(--ink-2);
+    color: var(--text-2);
+    width: 100%;
+}
+
+.tool-btn:not(:disabled):hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.tool-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+@media (max-width: 1024px) {
+    .tools-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+    .tools-grid { grid-template-columns: 1fr; }
+}
+
 .panel-list { display: grid; gap: 8px; margin-bottom: 24px; }
 .panel-detail { margin-top: 16px; }
 

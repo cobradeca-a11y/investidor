@@ -384,6 +384,8 @@ function criarPainelAssistente() {
     // Se o painel já existe no HTML estático, apenas registrar os listeners
     if (document.getElementById('assistenteDiario')) {
         document.getElementById('btnAssistenteAlertas')?.addEventListener('click', carregarAlertasAssistente);
+        document.getElementById('btnAssistenteAlertas2')?.addEventListener('click', carregarAlertasAssistente);
+        document.getElementById('btnAssistenteRebalance2')?.addEventListener('click', carregarRebalanceamento);
         document.getElementById('btnAssistenteRebalance')?.addEventListener('click', carregarRebalanceamento);
         return;
     }
