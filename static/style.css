@@ -3,7 +3,7 @@
    Design: Refined Terminal · Typographic Precision
 ================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@300;400;500;700&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@300;400;500;700&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=optional');
 
 /* ── Tokens ─────────────────────────────────────────────────── */
 :root {
@@ -252,7 +252,7 @@ body::after {
 .hero-inner {
     position: relative;
     z-index: 1;
-    max-width: 720px;
+    max-width: 860px;
     width: 100%;
     margin: 0 auto;
     display: grid;
@@ -269,7 +269,7 @@ body::after {
 }
 
 .hero-title {
-    max-width: 680px;
+    max-width: 820px;
 }
 
 .hero-desc {
@@ -309,9 +309,9 @@ body::after {
 
 .hero-title {
     font-family: var(--display);
-    font-size: clamp(1.9rem, 3.2vw, 2.8rem);
+    font-size: clamp(1.5rem, 1.9vw, 1.95rem);
     font-weight: 900;
-    line-height: 1.08;
+    line-height: 1.1;
     letter-spacing: -0.04em;
     margin: 0;
     color: var(--text);
@@ -461,6 +461,7 @@ body::after {
 .trust-stat strong {
     font-family: var(--display);
     font-size: 1.05rem;
+    letter-spacing: -0.03em;
     color: var(--text);
 }
 
@@ -510,10 +511,10 @@ body::after {
 
 .section-title {
     font-family: var(--display);
-    font-size: clamp(1.8rem, 3vw, 2.6rem);
+    font-size: clamp(1.2rem, 1.75vw, 1.65rem);
     font-weight: 800;
     letter-spacing: -0.045em;
-    line-height: 1.08;
+    line-height: 1.1;
     margin-bottom: 14px;
 }
 
@@ -843,7 +844,7 @@ body::after {
 
 .dashboard-title {
     font-family: var(--display);
-    font-size: 1.7rem;
+    font-size: 1.15rem;
     font-weight: 800;
     letter-spacing: -0.04em;
 }
@@ -892,9 +893,10 @@ body::after {
 
 .ticker-symbol {
     font-family: var(--display);
-    font-size: 1.4rem;
+    font-size: 1.15rem;
     font-weight: 800;
     line-height: 1.1;
+    letter-spacing: -0.04em;
 }
 
 .segment-badge {
@@ -1275,9 +1277,9 @@ body::after {
 
 .radar-welcome-inner h3 {
     font-family: var(--display);
-    font-size: 1.2rem;
+    font-size: 1rem;
     font-weight: 700;
-    letter-spacing: -0.025em;
+    letter-spacing: -0.03em;
     margin-bottom: 8px;
 }
 
@@ -1321,7 +1323,7 @@ body::after {
     white-space: nowrap;
 }
 
-.scanner-text h3 { font-family: var(--display); font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+.scanner-text h3 { font-family: var(--display); font-size: .95rem; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 4px; }
 .scanner-text p { color: var(--text-2); font-size: .82rem; }
 
 /* ── History & Machine panels ──────────────────────────────── */
@@ -1496,7 +1498,7 @@ body::after {
     margin-bottom: 22px;
 }
 
-.modal-header h2 { font-family: var(--display); font-size: 1.1rem; font-weight: 700; letter-spacing: -0.03em; }
+.modal-header h2 { font-family: var(--display); font-size: 1rem; font-weight: 700; letter-spacing: -0.035em; }
 
 .modal-close {
     background: none;
@@ -1697,7 +1699,7 @@ body::after {
     border-radius: var(--radius-lg);
     margin-bottom: 20px;
 }
-.empty-state-container h3 { font-family: var(--display); font-size: 1.1rem; margin-bottom: 6px; }
+.empty-state-container h3 { font-family: var(--display); font-size: .95rem; letter-spacing: -0.03em; margin-bottom: 6px; }
 .empty-state-container p { color: var(--text-2); font-size: .85rem; margin-bottom: 18px; }
 
 .demo-badge {
@@ -1862,7 +1864,7 @@ body::after {
     flex-wrap: wrap;
 }
 
-.history-header h2 { font-family: var(--display); font-size: 1.15rem; font-weight: 700; }
+.history-header h2 { font-family: var(--display); font-size: 1rem; font-weight: 700; letter-spacing: -0.035em; }
 .history-header p { color: var(--text-2); font-size: .8rem; }
 
 .history-list { display: grid; gap: 8px; }
@@ -1876,8 +1878,9 @@ body::after {
     align-items: center;
     justify-content: center;
     font-family: var(--display);
-    font-size: 1rem;
+    font-size: .85rem;
     font-weight: 800;
+    letter-spacing: -0.02em;
     color: var(--acid);
     min-width: 70px;
 }
