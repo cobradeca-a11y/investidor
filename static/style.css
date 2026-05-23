@@ -82,11 +82,11 @@ body::after {
 .nav-inner {
     max-width: 1300px;
     margin: 0 auto;
-    padding: 0 32px;
+    padding: 8px 48px;
     height: 100%;
     display: flex;
     align-items: center;
-    gap: 28px;
+    gap: 40px;
     overflow: visible;
 }
 
