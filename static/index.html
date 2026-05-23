@@ -3,600 +3,599 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIIA — Engine Analítica de Fundos Imobiliários</title>
-    <meta name="description" content="Engine quantitativa local para analisar FIIs. Pipeline de 8 gates, valuation multi-modelo, IA interpretativa e auditoria completa. Dados CVM, B3 e BCB.">
+    <title>FIIA — Engine de Decisão de FIIs</title>
+    <meta name="description" content="Engine quantitativa local para análise de FIIs. Pipeline de 8 Gates, valuation multi-modelo, IA qualitativa e auditoria completa. Dados CVM, B3 e BCB.">
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Instrument+Sans:wght@400;600;700&family=Outfit:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-    <!-- Fixed Navigation -->
-    <nav id="mainNav" class="site-nav">
-        <div class="nav-inner">
-            <a class="logo" id="btnHomeLogo">
-                <svg viewBox="0 0 128 128" width="32" height="32">
-                    <rect x="2" y="2" width="124" height="124" rx="26" fill="#0c0c0c" stroke="#222" stroke-width="3"/>
-                    <text x="64" y="66" text-anchor="middle" dominant-baseline="central" font-size="76" font-weight="800" fill="#3af062" font-family="Outfit,sans-serif">F</text>
+<!-- ── NAV ──────────────────────────────────────────────────── -->
+<nav id="mainNav" class="site-nav">
+    <div class="nav-inner">
+        <a class="logo" id="btnHomeLogo">
+            <svg viewBox="0 0 40 40" width="34" height="34">
+                <rect width="40" height="40" rx="9" fill="#b8ff3a"/>
+                <text x="20" y="27" text-anchor="middle" font-family="Syne,sans-serif" font-size="22" font-weight="800" fill="#0a0a0b">F</text>
+            </svg>
+            <div class="logo-text">
+                <span class="logo-name">FIIA</span>
+                <span class="logo-sub">Engine Analítica</span>
+            </div>
+        </a>
+
+        <div class="nav-links">
+            <a class="nav-link" href="#engine-section">Engine</a>
+            <a class="nav-link" href="#playground-section">Playground</a>
+            <button id="btnCarteira"       class="nav-link nav-tab-btn">Carteira</button>
+            <button id="btnRadarTab"       class="nav-link nav-tab-btn">Radar</button>
+            <button id="btnTabAssistente"  class="nav-link nav-tab-btn">Assistente</button>
+            <button id="btnTabMaquinaTempo" class="nav-link nav-tab-btn">Backtest</button>
+            <button id="btnTabHistorico"   class="nav-link nav-tab-btn">Histórico</button>
+        </div>
+
+        <div class="nav-actions">
+            <div class="api-key-widget">
+                <span class="key-icon">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                    </svg>
+                </span>
+                <input type="password" id="headerApiKey" placeholder="FIIA_API_KEY" title="Chave de API do FIIA">
+            </div>
+            <button id="btnRadar" class="btn-radar hidden">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="2"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 6a6 6 0 0 1 6 6"/>
                 </svg>
-                <div class="logo-text">
-                    <span class="logo-name">FIIA</span>
-                    <span class="logo-sub">ENGINE ANALÍTICA</span>
-                </div>
-            </a>
+                Ligar Radar
+            </button>
+            <button id="btnClear" class="btn-icon" title="Recarregar">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</nav>
 
-            <div class="nav-links">
-                <a class="nav-link" href="#engine-section">Engine</a>
-                <a class="nav-link" href="#playground-section">Playground</a>
-                <button id="btnCarteira" class="nav-link nav-tab-btn">Carteira</button>
-                <button id="btnRadarTab" class="nav-link nav-tab-btn">Radar</button>
-                <button id="btnTabAssistente" class="nav-link nav-tab-btn">Assistente</button>
-                <button id="btnTabMaquinaTempo" class="nav-link nav-tab-btn">Backtest</button>
-                <button id="btnTabHistorico" class="nav-link nav-tab-btn">Histórico</button>
+<!-- ═══════════════════════════════════════════════════════════
+     HOME VIEW
+═══════════════════════════════════════════════════════════════ -->
+<div id="homeView" class="tab-view-content">
+
+    <!-- Hero -->
+    <section class="hero-section" id="hero-section">
+        <div class="hero-glow-orb"></div>
+        <div class="hero-inner">
+
+            <!-- Left -->
+            <div class="hero-left fade-up">
+                <div class="hero-badge">
+                    <span class="pulse-dot"></span>
+                    400+ FIIs &nbsp;·&nbsp; 8 Gates &nbsp;·&nbsp; CVM-First &nbsp;·&nbsp; IA integrada
+                </div>
+                <h1 class="hero-title">
+                    Engine de Decisão<br>
+                    e <span class="accent">Inteligência</span><br>
+                    de FIIs
+                </h1>
+                <p class="hero-desc">
+                    Infraestrutura quantitativa local para analisar consistência de dividendos, calcular margem de segurança e auditar relatórios de fundos imobiliários com dados oficiais CVM, B3 e BCB.
+                </p>
+                <div class="hero-actions">
+                    <button id="btnExploreDashboard" class="btn-primary">
+                        Abrir Dashboard
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </button>
+                    <a href="#playground-section" class="btn-outline">Testar API Local</a>
+                </div>
             </div>
 
-            <div class="nav-actions">
-                <div class="api-key-widget">
-                    <span class="key-icon">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-                    </span>
-                    <input type="password" id="headerApiKey" placeholder="FIIA_API_KEY" title="Chave de API do FIIA">
+            <!-- Right: live code -->
+            <div class="hero-right fade-up" style="transition-delay:.15s">
+                <div class="code-block hero-code-block">
+                    <div class="code-bar">
+                        <div class="traffic-lights">
+                            <span class="tl red"></span>
+                            <span class="tl yellow"></span>
+                            <span class="tl green"></span>
+                        </div>
+                        <span class="code-endpoint" id="heroEndpointLabel">GET /api/auditoria/health</span>
+                        <button class="copy-btn" id="btnCopyHero">copiar</button>
+                    </div>
+                    <pre class="code-content"><code id="heroCodeOutput"><span class="syn-comment">// Conectando à engine local...</span></code></pre>
                 </div>
-                <button id="btnRadar" class="btn-radar hidden">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 6a6 6 0 0 1 6 6"/></svg>
-                    Ligar Radar
-                </button>
-                <button id="btnClear" class="btn-icon" title="Recarregar página">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                </button>
+
+                <!-- Floating decorative chips -->
+                <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+                    <div style="background:var(--ink-2);border:1px solid var(--border);padding:6px 12px;border-radius:8px;font-family:var(--mono);font-size:.68rem;color:var(--text-2);">
+                        <span style="color:var(--acid);margin-right:6px;">✓</span>Zero look-ahead bias
+                    </div>
+                    <div style="background:var(--ink-2);border:1px solid var(--border);padding:6px 12px;border-radius:8px;font-family:var(--mono);font-size:.68rem;color:var(--text-2);">
+                        <span style="color:var(--acid);margin-right:6px;">✓</span>SHA-256 auditável
+                    </div>
+                    <div style="background:var(--ink-2);border:1px solid var(--border);padding:6px 12px;border-radius:8px;font-family:var(--mono);font-size:.68rem;color:var(--text-2);">
+                        <span style="color:var(--acid);margin-right:6px;">✓</span>100% local
+                    </div>
+                </div>
             </div>
         </div>
-    </nav>
+    </section>
 
-    <!-- =========================================================
-         TAB: HOME — Landing Page completa
-    ========================================================= -->
-    <div id="homeView" class="tab-view-content">
-
-        <!-- Hero: 2 colunas -->
-        <section class="hero-section" id="hero-section">
-            <div class="hero-glow"></div>
-            <div class="hero-inner">
-                <!-- Coluna esquerda: texto -->
-                <div class="hero-left fade-up">
-                    <div class="hero-badge">
-                        <span class="pulse-dot"></span>
-                        <span>400+ FIIs · Pipeline de 8 Gates · CVM-First · IA integrada</span>
-                    </div>
-                    <h1 class="hero-title">
-                        Engine de Decisão<br>
-                        e <span class="accent">Inteligência</span><br>
-                        de FIIs
-                    </h1>
-                    <p class="hero-desc">
-                        Infraestrutura quantitativa local para analisar consistência de dividendos, calcular margem de segurança e auditar relatórios de fundos imobiliários brasileiros com dados oficiais.
-                    </p>
-                    <div class="hero-actions">
-                        <button id="btnExploreDashboard" class="btn-primary">
-                            Abrir Dashboard
-                            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                        </button>
-                        <a href="#playground-section" class="btn-outline">Testar API Local</a>
-                    </div>
+    <!-- Trust Bar -->
+    <div class="trust-bar">
+        <div class="trust-inner">
+            <div class="trust-stats">
+                <div class="trust-stat">
+                    <span class="pulse-dot small"></span>
+                    <strong>96%</strong>
+                    <span>Precisão vs CVM</span>
                 </div>
-
-                <!-- Coluna direita: live code block -->
-                <div class="hero-right fade-up" style="transition-delay:0.15s">
-                    <div class="code-block hero-code-block">
-                        <div class="code-bar">
-                            <div class="traffic-lights">
-                                <span class="tl red"></span>
-                                <span class="tl yellow"></span>
-                                <span class="tl green"></span>
-                            </div>
-                            <span class="code-endpoint" id="heroEndpointLabel">GET /api/auditoria/health</span>
-                            <button class="copy-btn" id="btnCopyHero">copiar</button>
-                        </div>
-                        <pre class="code-content" id="heroCodeBlock"><code id="heroCodeOutput"><span class="syn-comment">// Conectando à engine local...</span></code></pre>
-                    </div>
+                <div class="trust-stat">
+                    <strong>&lt;90ms</strong>
+                    <span>Latência Local</span>
+                </div>
+                <div class="trust-stat">
+                    <strong>8 Gates</strong>
+                    <span>Esteira de Filtro</span>
+                </div>
+                <div class="trust-stat">
+                    <strong>400+</strong>
+                    <span>FIIs Cobertos</span>
                 </div>
             </div>
-        </section>
-
-        <!-- Stats / Trust Bar -->
-        <section class="trust-bar">
-            <div class="trust-inner">
-                <div class="trust-stats">
-                    <div class="trust-stat">
-                        <span class="pulse-dot small"></span>
-                        <strong>96%</strong>
-                        <span>Precisão vs CVM</span>
-                    </div>
-                    <div class="trust-stat">
-                        <strong>&lt;90ms</strong>
-                        <span>Latência Local</span>
-                    </div>
-                    <div class="trust-stat">
-                        <strong>8 Gates</strong>
-                        <span>Esteira de Filtro</span>
-                    </div>
-                    <div class="trust-stat">
-                        <strong>400+</strong>
-                        <span>FIIs Cobertos</span>
-                    </div>
-                </div>
-                <div class="trust-sources">
-                    <span>Fontes Oficiais</span>
-                    <div class="source-chip">CVM</div>
-                    <div class="source-chip">B3</div>
-                    <div class="source-chip">BCB</div>
-                </div>
+            <div class="trust-sources">
+                <span>Fontes Oficiais</span>
+                <div class="source-chip">CVM</div>
+                <div class="source-chip">B3</div>
+                <div class="source-chip">BCB</div>
             </div>
-        </section>
-
-        <!-- Engine Section: Pipeline dos 8 Gates -->
-        <section class="engine-section" id="engine-section">
-            <div class="section-container">
-                <div class="section-label fade-up">ARQUITETURA DO MOTOR</div>
-                <h2 class="section-title fade-up" style="transition-delay:0.05s">Pipeline de Decisão<br>com <span class="accent">8 Gates de Qualidade</span></h2>
-                <p class="section-desc fade-up" style="transition-delay:0.1s">Cada ativo passa por uma esteira sequencial de filtros antes de receber uma decisão. Nenhum gate é pulado.</p>
-
-                <!-- Gate Pipeline Visual -->
-                <div class="gate-pipeline fade-up" style="transition-delay:0.15s">
-                    <div class="gate-node" data-gate="0">
-                        <div class="gate-icon">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        </div>
-                        <div class="gate-info">
-                            <strong>G0</strong>
-                            <span>Dados Mínimos</span>
-                        </div>
-                    </div>
-                    <div class="gate-arrow">→</div>
-                    <div class="gate-node" data-gate="1">
-                        <div class="gate-icon">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                        </div>
-                        <div class="gate-info">
-                            <strong>G1</strong>
-                            <span>Elegibilidade</span>
-                        </div>
-                    </div>
-                    <div class="gate-arrow">→</div>
-                    <div class="gate-node" data-gate="2">
-                        <div class="gate-icon">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zm9.75-9.75C12.75 2.754 13.254 2.25 13.875 2.25h2.25c.621 0 1.125.504 1.125 1.125v16.5c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V3.375z"/></svg>
-                        </div>
-                        <div class="gate-info">
-                            <strong>G2</strong>
-                            <span>Estrutural</span>
-                        </div>
-                    </div>
-                    <div class="gate-arrow">→</div>
-                    <div class="gate-node" data-gate="3">
-                        <div class="gate-icon">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        </div>
-                        <div class="gate-info">
-                            <strong>G3</strong>
-                            <span>Dividendos</span>
-                        </div>
-                    </div>
-                    <div class="gate-arrow">→</div>
-                    <div class="gate-node" data-gate="4">
-                        <div class="gate-icon">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>
-                        </div>
-                        <div class="gate-info">
-                            <strong>G4</strong>
-                            <span>Valuation</span>
-                        </div>
-                    </div>
-                    <div class="gate-arrow">→</div>
-                    <div class="gate-node" data-gate="5">
-                        <div class="gate-icon">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
-                        </div>
-                        <div class="gate-info">
-                            <strong>G5</strong>
-                            <span>IA Qualitativa</span>
-                        </div>
-                    </div>
-                    <div class="gate-arrow">→</div>
-                    <div class="gate-node" data-gate="6">
-                        <div class="gate-icon">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"/></svg>
-                        </div>
-                        <div class="gate-info">
-                            <strong>G6</strong>
-                            <span>Dimensionamento</span>
-                        </div>
-                    </div>
-                    <div class="gate-arrow">→</div>
-                    <div class="gate-node gate-final" data-gate="7">
-                        <div class="gate-icon">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
-                        </div>
-                        <div class="gate-info">
-                            <strong>G7</strong>
-                            <span>Veredito Final</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Features Grid -->
-                <div class="features-grid">
-                    <div class="feature-card fade-up">
-                        <div class="feature-icon-box">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
-                        </div>
-                        <h3>Filtros de Sobrevivência</h3>
-                        <p>Análise sequencial de liquidez, vacância, saúde patrimonial e consistência de proventos para mitigar risco de perdas permanentes de capital.</p>
-                    </div>
-                    <div class="feature-card fade-up" style="transition-delay:0.05s">
-                        <div class="feature-icon-box">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
-                        </div>
-                        <h3>Valuation Multi-Modelo</h3>
-                        <p>Cálculo de preço justo e margem de segurança com múltiplos modelos: VPA ajustado, Gordon, rendimento histórico e comparáveis de segmento.</p>
-                    </div>
-                    <div class="feature-card fade-up" style="transition-delay:0.1s">
-                        <div class="feature-icon-box">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"/></svg>
-                        </div>
-                        <h3>IA Interpretativa</h3>
-                        <p>Integração com Google Gemini para auditar o tom do gestor em relatórios oficiais, detectar riscos qualitativos e gerar análise de sentimento dos documentos FNET.</p>
-                    </div>
-                    <div class="feature-card fade-up" style="transition-delay:0.15s">
-                        <div class="feature-icon-box">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        </div>
-                        <h3>Máquina do Tempo</h3>
-                        <p>Backtest temporal usando apenas snapshots históricos válidos daquela época. Zero look-ahead bias por arquitetura — cada decisão usa somente dados que existiam na data.</p>
-                    </div>
-                    <div class="feature-card fade-up" style="transition-delay:0.2s">
-                        <div class="feature-icon-box">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M12 12.75l-3-3m0 0l3-3m-3 3h7.5"/></svg>
-                        </div>
-                        <h3>Auditoria Completa</h3>
-                        <p>Cada decisão é gravada com payload hash SHA-256, rastreabilidade de fontes, versão do motor e contexto. Replay explícito com detecção automática de divergências.</p>
-                    </div>
-                    <div class="feature-card fade-up" style="transition-delay:0.25s">
-                        <div class="feature-icon-box">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>
-                        </div>
-                        <h3>Radar Assíncrono</h3>
-                        <p>Varredura do mercado com execução em job assíncrono com polling de progresso. Processa centenas de fundos em paralelo com fallback síncrono automático.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Playground Section -->
-        <section class="playground-section" id="playground-section">
-            <div class="section-container narrow">
-                <div class="section-label fade-up">PLAYGROUND</div>
-                <h2 class="section-title fade-up" style="transition-delay:0.05s">Teste a API <span class="accent">ao vivo</span></h2>
-                <p class="section-desc fade-up" style="transition-delay:0.1s">Execute requisições reais contra sua engine local e visualize a resposta formatada com syntax highlighting.</p>
-
-                <div class="playground-wrapper fade-up" style="transition-delay:0.15s">
-                    <!-- Endpoint chips -->
-                    <div class="endpoint-chips">
-                        <button class="endpoint-chip active" data-path="/api/auditoria/health">health</button>
-                        <button class="endpoint-chip" data-path="/api/analisar/HGLG11">analisar FII</button>
-                        <button class="endpoint-chip" data-path="/api/carteira/resumo">resumo carteira</button>
-                        <button class="endpoint-chip" data-path="/api/carteira/posicoes">posições</button>
-                    </div>
-                    <div class="endpoint-chips">
-                        <button class="endpoint-chip pro-chip" data-path="/api/radar/ultimo">
-                            último radar <span class="pro-badge">LIVE</span>
-                        </button>
-                        <button class="endpoint-chip pro-chip" data-path="/api/assistente/alertas">
-                            alertas <span class="pro-badge">LIVE</span>
-                        </button>
-                        <button class="endpoint-chip pro-chip" data-path="/api/assistente/rebalanceamento">
-                            rebalanceamento <span class="pro-badge">LIVE</span>
-                        </button>
-                        <button class="endpoint-chip pro-chip" data-path="/api/auditoria/decisoes/auditaveis?limite=5">
-                            histórico <span class="pro-badge">LIVE</span>
-                        </button>
-                    </div>
-
-                    <!-- URL Bar -->
-                    <div class="url-bar">
-                        <span class="method-badge">GET</span>
-                        <input type="text" id="playgroundUrl" value="/api/auditoria/health" class="url-input">
-                        <button id="btnSendPlayground" class="btn-send">Enviar</button>
-                    </div>
-
-                    <!-- Result Code Block -->
-                    <div class="code-block">
-                        <div class="code-bar">
-                            <div class="traffic-lights">
-                                <span class="tl red"></span>
-                                <span class="tl yellow"></span>
-                                <span class="tl green"></span>
-                            </div>
-                            <span class="code-status" id="playgroundStatus">Pronto</span>
-                            <span class="code-time" id="playgroundTime"></span>
-                            <button class="copy-btn" id="btnCopyPlayground">copiar</button>
-                        </div>
-                        <pre class="code-content"><code id="playgroundResult" class="syn-comment">// Clique em "Enviar" para executar a requisição...</code></pre>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Footer inside home view -->
-        <footer class="site-footer">
-            <p>FIIA Intelligence Engine · Conectado Localmente · v2.5 · <span class="accent">CVM-First Architecture</span></p>
-        </footer>
-
-    </div><!-- /homeView -->
-
-    <!-- =========================================================
-         TAB: CARTEIRA
-    ========================================================= -->
-    <div id="portfolioView" class="tab-view-content dashboard-panel hidden">
-        <div class="dashboard-inner">
-            <div class="dashboard-header">
-                <div>
-                    <h2 class="dashboard-title">Minha Carteira</h2>
-                    <p class="dashboard-sub">Posições operacionais · Análise em tempo real · <span class="source-chip small">fiia.db</span></p>
-                </div>
-                <button id="btnOpenModal" class="btn-action">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                    Registrar Transação
-                </button>
-            </div>
-            <div id="portfolioGrid" class="results-grid"></div>
         </div>
     </div>
 
-    <!-- =========================================================
-         TAB: RADAR
-    ========================================================= -->
-    <div id="radarView" class="tab-view-content dashboard-panel hidden">
-        <div class="dashboard-inner">
-            <div class="dashboard-header">
-                <div>
-                    <h2 class="dashboard-title">Radar de Oportunidades</h2>
-                    <p class="dashboard-sub">Pipeline quantitativo completo · 8 Gates · IA integrada · Dados CVM + B3 + BCB</p>
-                </div>
-            </div>
+    <!-- Engine Section -->
+    <section class="engine-section" id="engine-section">
+        <div class="section-container">
+            <div class="section-label fade-up">Arquitetura do Motor</div>
+            <h2 class="section-title fade-up" style="transition-delay:.05s">
+                Pipeline com <span class="accent">8 Gates</span><br>de Qualidade
+            </h2>
+            <p class="section-desc fade-up" style="transition-delay:.1s">
+                Cada ativo percorre uma esteira sequencial de filtros antes de receber uma decisão. Nenhum gate é saltado — elegibilidade, liquidez, estrutura patrimonial, consistência de dividendos, valuation, IA qualitativa, dimensionamento e veredito final.
+            </p>
 
-            <div id="welcomeView" class="radar-welcome">
-                <div class="radar-welcome-inner">
-                    <div class="radar-icon-anim">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="2"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 6a6 6 0 0 1 6 6"/></svg>
+            <!-- Gate Pipeline -->
+            <div class="gate-pipeline fade-up" style="transition-delay:.15s">
+                <div class="gate-node" data-gate="0">
+                    <div class="gate-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     </div>
-                    <h3>Radar FIIA</h3>
-                    <p>Clique em "Ligar Radar" no topo para executar o pipeline de decisão quantitativa e qualitativa em todos os ativos do banco de dados.</p>
+                    <div class="gate-info"><strong>G0</strong><span>Dados Mínimos</span></div>
+                </div>
+                <div class="gate-arrow">→</div>
+                <div class="gate-node" data-gate="1">
+                    <div class="gate-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    </div>
+                    <div class="gate-info"><strong>G1</strong><span>Elegibilidade</span></div>
+                </div>
+                <div class="gate-arrow">→</div>
+                <div class="gate-node" data-gate="2">
+                    <div class="gate-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z"/></svg>
+                    </div>
+                    <div class="gate-info"><strong>G2</strong><span>Estrutural</span></div>
+                </div>
+                <div class="gate-arrow">→</div>
+                <div class="gate-node" data-gate="3">
+                    <div class="gate-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </div>
+                    <div class="gate-info"><strong>G3</strong><span>Dividendos</span></div>
+                </div>
+                <div class="gate-arrow">→</div>
+                <div class="gate-node" data-gate="4">
+                    <div class="gate-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>
+                    </div>
+                    <div class="gate-info"><strong>G4</strong><span>Valuation</span></div>
+                </div>
+                <div class="gate-arrow">→</div>
+                <div class="gate-node" data-gate="5">
+                    <div class="gate-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                    </div>
+                    <div class="gate-info"><strong>G5</strong><span>IA Qualitativa</span></div>
+                </div>
+                <div class="gate-arrow">→</div>
+                <div class="gate-node" data-gate="6">
+                    <div class="gate-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3"/></svg>
+                    </div>
+                    <div class="gate-info"><strong>G6</strong><span>Dimensionamento</span></div>
+                </div>
+                <div class="gate-arrow">→</div>
+                <div class="gate-node gate-final" data-gate="7">
+                    <div class="gate-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
+                    </div>
+                    <div class="gate-info"><strong>G7</strong><span>Veredito Final</span></div>
                 </div>
             </div>
 
-            <div id="loading" class="radar-loading hidden">
-                <div class="scanner-wrap">
-                    <div class="scanner-line"></div>
-                    <div class="scanner-tickers">HGLG11 · XPML11 · KNRI11 · BTLG11 · VISC11 · MXRF11 · SNAG11 · BCFF11 · RBVA11 · VGIP11 · HGRU11 · CPTS11</div>
+            <!-- Feature Cards -->
+            <div class="features-grid">
+                <div class="feature-card fade-up">
+                    <div class="feature-icon-box">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+                    </div>
+                    <h3>Filtros de Sobrevivência</h3>
+                    <p>Análise sequencial de liquidez, vacância, saúde patrimonial e consistência de proventos para mitigar risco de perdas permanentes de capital.</p>
                 </div>
-                <div class="scanner-text">
-                    <h3>Varrendo o Mercado</h3>
-                    <p id="loadingStatus">Inicializando pipeline de decisão...</p>
+                <div class="feature-card fade-up" style="transition-delay:.06s">
+                    <div class="feature-icon-box">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+                    </div>
+                    <h3>Valuation Multi-Modelo</h3>
+                    <p>Preço justo e margem de segurança via VPA ajustado, Gordon, rendimento histórico e comparáveis de segmento.</p>
+                </div>
+                <div class="feature-card fade-up" style="transition-delay:.12s">
+                    <div class="feature-icon-box">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                    </div>
+                    <h3>IA Interpretativa</h3>
+                    <p>Integração com Google Gemini para auditar o tom do gestor em relatórios FNET, detectar riscos qualitativos e gerar análise de sentimento.</p>
+                </div>
+                <div class="feature-card fade-up" style="transition-delay:.18s">
+                    <div class="feature-icon-box">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </div>
+                    <h3>Máquina do Tempo</h3>
+                    <p>Backtest temporal com zero look-ahead bias por arquitetura — cada decisão usa somente snapshots históricos válidos daquela época.</p>
+                </div>
+                <div class="feature-card fade-up" style="transition-delay:.24s">
+                    <div class="feature-icon-box">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M12 12.75l-3-3m0 0l3-3m-3 3h7.5"/></svg>
+                    </div>
+                    <h3>Auditoria SHA-256</h3>
+                    <p>Cada decisão gravada com payload hash, rastreabilidade de fontes, versão do motor e contexto. Replay explícito com detecção de divergências.</p>
+                </div>
+                <div class="feature-card fade-up" style="transition-delay:.30s">
+                    <div class="feature-icon-box">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>
+                    </div>
+                    <h3>Radar Assíncrono</h3>
+                    <p>Varredura com job assíncrono e polling de progresso. Centenas de fundos em paralelo com fallback síncrono automático.</p>
                 </div>
             </div>
-
-            <div id="results" class="results-grid hidden"></div>
         </div>
-    </div>
+    </section>
 
-    <!-- =========================================================
-         TAB: ASSISTENTE
-    ========================================================= -->
-    <div id="assistenteDiario" class="tab-view-content dashboard-panel hidden">
-        <div class="dashboard-inner">
-            <div class="dashboard-header">
-                <div>
-                    <h2 class="dashboard-title">Assistente Diário</h2>
-                    <p class="dashboard-sub">Alertas operacionais · Rebalanceamento automático · Detalhe por fundo</p>
-                </div>
-                <div class="header-btn-group">
-                    <span id="alertasNovosBadge" class="alert-badge hidden">0</span>
-                    <button id="btnAssistenteAlertas" class="btn-action">
-                        Ver Alertas
-                        <span id="assistenteAlertasBadge" class="alert-badge hidden">0</span>
-                    </button>
-                    <button id="btnAssistenteRebalance" class="btn-action secondary">Rebalancear Carteira</button>
-                </div>
-            </div>
-            <div id="assistenteResumo" class="panel-list">
-                <div class="empty-state">Escolha uma ação acima para consultar o assistente de carteira.</div>
-            </div>
-            <div id="assistenteDetalhe" class="panel-detail hidden"></div>
-        </div>
-    </div>
+    <!-- Playground Section -->
+    <section class="playground-section" id="playground-section">
+        <div class="section-container narrow">
+            <div class="section-label fade-up">Playground</div>
+            <h2 class="section-title fade-up" style="transition-delay:.05s">
+                Teste a API <span class="accent">ao vivo</span>
+            </h2>
+            <p class="section-desc fade-up" style="transition-delay:.1s">
+                Execute requisições reais contra sua engine local e veja a resposta formatada com syntax highlighting.
+            </p>
 
-    <!-- =========================================================
-         TAB: MÁQUINA DO TEMPO
-    ========================================================= -->
-    <div id="maquinaTempo" class="tab-view-content dashboard-panel hidden">
-        <div class="dashboard-inner">
-            <div class="dashboard-header">
-                <div>
-                    <h2 class="dashboard-title">Máquina do Tempo</h2>
-                    <p class="dashboard-sub">Backtest temporal com snapshots históricos · Zero look-ahead bias por arquitetura</p>
+            <div class="playground-wrapper fade-up" style="transition-delay:.15s">
+                <div class="endpoint-chips">
+                    <button class="endpoint-chip active" data-path="/api/auditoria/health">health</button>
+                    <button class="endpoint-chip" data-path="/api/analisar/HGLG11">analisar FII</button>
+                    <button class="endpoint-chip" data-path="/api/carteira/resumo">resumo carteira</button>
+                    <button class="endpoint-chip" data-path="/api/carteira/posicoes">posições</button>
                 </div>
-            </div>
-            <div class="machine-form-card">
-                <div class="machine-fields">
-                    <div class="field-group">
-                        <label>Ticker</label>
-                        <input id="mtTicker" type="text" value="HGLG11" maxlength="12" autocomplete="off">
-                    </div>
-                    <div class="field-group">
-                        <label>Data Histórica</label>
-                        <input id="mtData" type="date" value="2021-05-20">
-                    </div>
-                    <div class="field-group">
-                        <label>Horizonte (dias)</label>
-                        <input id="mtHorizonte" type="number" value="365" min="30" max="3650" step="30">
-                    </div>
-                    <div class="field-group">
-                        <label>Top Radar</label>
-                        <input id="mtTop" type="number" value="5" min="1" max="30" step="1">
-                    </div>
-                </div>
-                <div class="machine-actions">
-                    <button id="btnMaquinaSnapshot" class="btn-action secondary">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-                        Gerar Base
+                <div class="endpoint-chips">
+                    <button class="endpoint-chip pro-chip" data-path="/api/radar/ultimo">
+                        último radar <span class="pro-badge">LIVE</span>
                     </button>
-                    <button id="btnMaquinaTicker" class="btn-action">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                        Simular Ativo
+                    <button class="endpoint-chip pro-chip" data-path="/api/assistente/alertas">
+                        alertas <span class="pro-badge">LIVE</span>
                     </button>
-                    <button id="btnMaquinaRadar" class="btn-action secondary">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
-                        Rodar Top
+                    <button class="endpoint-chip pro-chip" data-path="/api/assistente/rebalanceamento">
+                        rebalanceamento <span class="pro-badge">LIVE</span>
+                    </button>
+                    <button class="endpoint-chip pro-chip" data-path="/api/auditoria/decisoes/auditaveis?limite=5">
+                        histórico <span class="pro-badge">LIVE</span>
                     </button>
                 </div>
-            </div>
-            <div id="maquinaResultado" class="panel-result">
-                <div class="empty-state">Selecione o ativo e a data histórica acima para rodar a simulação temporal.</div>
+
+                <div class="url-bar">
+                    <span class="method-badge">GET</span>
+                    <input type="text" id="playgroundUrl" value="/api/auditoria/health" class="url-input">
+                    <button id="btnSendPlayground" class="btn-send">Enviar</button>
+                </div>
+
+                <div class="code-block">
+                    <div class="code-bar">
+                        <div class="traffic-lights">
+                            <span class="tl red"></span>
+                            <span class="tl yellow"></span>
+                            <span class="tl green"></span>
+                        </div>
+                        <span class="code-status" id="playgroundStatus">Pronto</span>
+                        <span class="code-time" id="playgroundTime"></span>
+                        <button class="copy-btn" id="btnCopyPlayground">copiar</button>
+                    </div>
+                    <pre class="code-content"><code id="playgroundResult" class="syn-comment">// Clique em "Enviar" para executar a requisição...</code></pre>
+                </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <!-- =========================================================
-         TAB: HISTÓRICO
-    ========================================================= -->
-    <div id="historicoDecisoes" class="tab-view-content dashboard-panel hidden">
-        <div class="dashboard-inner">
-            <div class="dashboard-header">
-                <div>
-                    <h2 class="dashboard-title">Histórico de Auditoria</h2>
-                    <p class="dashboard-sub">Decisões auditáveis · Payload hash SHA-256 · Replay com detecção de divergência</p>
+    <footer class="site-footer">
+        FIIA Intelligence Engine &nbsp;·&nbsp; Engine Local &nbsp;·&nbsp; v2.5 &nbsp;·&nbsp; <span style="color:var(--acid)">CVM-First Architecture</span>
+    </footer>
+
+</div><!-- /homeView -->
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     CARTEIRA TAB
+═══════════════════════════════════════════════════════════════ -->
+<div id="portfolioView" class="tab-view-content dashboard-panel hidden">
+    <div class="dashboard-inner">
+        <div class="dashboard-header">
+            <div>
+                <h2 class="dashboard-title">Minha Carteira</h2>
+                <p class="dashboard-sub">Posições operacionais &nbsp;·&nbsp; Análise em tempo real &nbsp;·&nbsp; <span class="source-chip small">fiia.db</span></p>
+            </div>
+            <button id="btnOpenModal" class="btn-action">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                Registrar Transação
+            </button>
+        </div>
+        <div id="portfolioGrid" class="results-grid"></div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     RADAR TAB
+═══════════════════════════════════════════════════════════════ -->
+<div id="radarView" class="tab-view-content dashboard-panel hidden">
+    <div class="dashboard-inner">
+        <div class="dashboard-header">
+            <div>
+                <h2 class="dashboard-title">Radar de Oportunidades</h2>
+                <p class="dashboard-sub">Pipeline quantitativo completo &nbsp;·&nbsp; 8 Gates &nbsp;·&nbsp; IA integrada &nbsp;·&nbsp; CVM + B3 + BCB</p>
+            </div>
+        </div>
+
+        <div id="welcomeView" class="radar-welcome">
+            <div class="radar-welcome-inner">
+                <div class="radar-icon-anim">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                        <circle cx="12" cy="12" r="2"/>
+                        <path d="M12 2a10 10 0 0 1 10 10"/>
+                        <path d="M12 6a6 6 0 0 1 6 6"/>
+                    </svg>
                 </div>
-                <button id="btnHistoricoDecisoes" class="btn-action">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-                    Carregar Histórico
+                <h3>Radar FIIA</h3>
+                <p>Clique em "Ligar Radar" no topo para executar o pipeline de decisão quantitativa e qualitativa em todos os ativos do banco de dados.</p>
+            </div>
+        </div>
+
+        <div id="loading" class="radar-loading hidden">
+            <div class="scanner-wrap">
+                <div class="scanner-line"></div>
+                <div class="scanner-tickers">HGLG11 · XPML11 · KNRI11 · BTLG11 · VISC11 · MXRF11 · SNAG11 · BCFF11 · RBVA11 · VGIP11 · HGRU11 · CPTS11</div>
+            </div>
+            <div class="scanner-text">
+                <h3>Varrendo o Mercado</h3>
+                <p id="loadingStatus">Inicializando pipeline de decisão...</p>
+            </div>
+        </div>
+
+        <div id="results" class="results-grid hidden"></div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     ASSISTENTE TAB
+═══════════════════════════════════════════════════════════════ -->
+<div id="assistenteDiario" class="tab-view-content dashboard-panel hidden">
+    <div class="dashboard-inner">
+        <div class="dashboard-header">
+            <div>
+                <h2 class="dashboard-title">Assistente Diário</h2>
+                <p class="dashboard-sub">Alertas operacionais &nbsp;·&nbsp; Rebalanceamento automático &nbsp;·&nbsp; Detalhe por fundo</p>
+            </div>
+            <div class="header-btn-group">
+                <span id="alertasNovosBadge" class="alert-badge hidden">0</span>
+                <button id="btnAssistenteAlertas" class="btn-action">
+                    Ver Alertas
+                    <span id="assistenteAlertasBadge" class="alert-badge hidden">0</span>
+                </button>
+                <button id="btnAssistenteRebalance" class="btn-action secondary">Rebalancear Carteira</button>
+            </div>
+        </div>
+        <div id="assistenteResumo" class="panel-list">
+            <div class="empty-state">Escolha uma ação acima para consultar o assistente de carteira.</div>
+        </div>
+        <div id="assistenteDetalhe" class="panel-detail hidden"></div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     MÁQUINA DO TEMPO TAB
+═══════════════════════════════════════════════════════════════ -->
+<div id="maquinaTempo" class="tab-view-content dashboard-panel hidden">
+    <div class="dashboard-inner">
+        <div class="dashboard-header">
+            <div>
+                <h2 class="dashboard-title">Máquina do Tempo</h2>
+                <p class="dashboard-sub">Backtest temporal com snapshots históricos &nbsp;·&nbsp; Zero look-ahead bias por arquitetura</p>
+            </div>
+        </div>
+
+        <div class="machine-form-card">
+            <div class="machine-fields">
+                <div class="field-group">
+                    <label>Ticker</label>
+                    <input id="mtTicker" type="text" value="HGLG11" maxlength="12" autocomplete="off">
+                </div>
+                <div class="field-group">
+                    <label>Data Histórica</label>
+                    <input id="mtData" type="date" value="2021-05-20">
+                </div>
+                <div class="field-group">
+                    <label>Horizonte (dias)</label>
+                    <input id="mtHorizonte" type="number" value="365" min="30" max="3650" step="30">
+                </div>
+                <div class="field-group">
+                    <label>Top Radar</label>
+                    <input id="mtTop" type="number" value="5" min="1" max="30" step="1">
+                </div>
+            </div>
+            <div class="machine-actions">
+                <button id="btnMaquinaSnapshot" class="btn-action secondary">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                    Gerar Base
+                </button>
+                <button id="btnMaquinaTicker" class="btn-action">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    Simular Ativo
+                </button>
+                <button id="btnMaquinaRadar" class="btn-action secondary">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                    Rodar Top
                 </button>
             </div>
-            <div id="historicoLista" class="panel-list">
-                <div class="empty-state">Clique no botão para carregar o histórico de decisões auditáveis.</div>
-            </div>
-            <div id="historicoDetalhe" class="panel-detail hidden"></div>
+        </div>
+
+        <div id="maquinaResultado" class="panel-result">
+            <div class="empty-state">Selecione o ativo e a data histórica acima para rodar a simulação temporal.</div>
         </div>
     </div>
+</div>
 
-    <!-- =========================================================
-         Modal de Transação
-    ========================================================= -->
-    <div id="transactionModal" class="modal-overlay hidden">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h2>Registrar Operação</h2>
-                <button id="btnCloseModal" class="modal-close">&times;</button>
+
+<!-- ═══════════════════════════════════════════════════════════
+     HISTÓRICO TAB
+═══════════════════════════════════════════════════════════════ -->
+<div id="historicoDecisoes" class="tab-view-content dashboard-panel hidden">
+    <div class="dashboard-inner">
+        <div class="dashboard-header">
+            <div>
+                <h2 class="dashboard-title">Histórico de Auditoria</h2>
+                <p class="dashboard-sub">Decisões auditáveis &nbsp;·&nbsp; Payload hash SHA-256 &nbsp;·&nbsp; Replay com detecção de divergência</p>
             </div>
-            <form id="transactionForm" class="modal-form">
+            <button id="btnHistoricoDecisoes" class="btn-action">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                Carregar Histórico
+            </button>
+        </div>
+        <div id="historicoLista" class="panel-list">
+            <div class="empty-state">Clique no botão para carregar o histórico de decisões auditáveis.</div>
+        </div>
+        <div id="historicoDetalhe" class="panel-detail hidden"></div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     MODAL: Registrar Transação
+═══════════════════════════════════════════════════════════════ -->
+<div id="transactionModal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h2>Registrar Operação</h2>
+            <button id="btnCloseModal" class="modal-close">&times;</button>
+        </div>
+        <form id="transactionForm" class="modal-form">
+            <div class="form-group">
+                <label for="txTicker">Ticker</label>
+                <input type="text" id="txTicker" placeholder="ex: HGLG11" required autocomplete="off">
+            </div>
+            <div class="form-row">
                 <div class="form-group">
-                    <label for="txTicker">Ticker</label>
-                    <input type="text" id="txTicker" placeholder="ex: HGLG11" required autocomplete="off">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="txQtd">Quantidade</label>
-                        <input type="number" id="txQtd" min="0.001" step="any" placeholder="10" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="txPreco">Preço Unitário (R$)</label>
-                        <input type="number" id="txPreco" min="0.01" step="any" placeholder="165.50" required>
-                    </div>
+                    <label for="txQtd">Quantidade</label>
+                    <input type="number" id="txQtd" min="0.001" step="any" placeholder="10" required>
                 </div>
                 <div class="form-group">
-                    <label for="txSegmento">Segmento (Opcional)</label>
-                    <select id="txSegmento">
-                        <option value="">Selecione...</option>
-                        <option value="TIJOLO">TIJOLO</option>
-                        <option value="PAPEL">PAPEL</option>
-                        <option value="HIBRIDO">HÍBRIDO</option>
-                        <option value="FOF">FOF</option>
-                        <option value="FIAGRO">FIAGRO</option>
-                    </select>
+                    <label for="txPreco">Preço Unitário (R$)</label>
+                    <input type="number" id="txPreco" min="0.01" step="any" placeholder="165.50" required>
                 </div>
-                <button type="submit" class="btn-submit">Registrar Compra</button>
-            </form>
-        </div>
+            </div>
+            <div class="form-group">
+                <label for="txSegmento">Segmento (Opcional)</label>
+                <select id="txSegmento">
+                    <option value="">Selecione...</option>
+                    <option value="TIJOLO">TIJOLO</option>
+                    <option value="PAPEL">PAPEL</option>
+                    <option value="HIBRIDO">HÍBRIDO</option>
+                    <option value="FOF">FOF</option>
+                    <option value="FIAGRO">FIAGRO</option>
+                </select>
+            </div>
+            <button type="submit" class="btn-submit">Registrar Compra</button>
+        </form>
     </div>
+</div>
 
-    <script src="app.js"></script>
-    <script>
-        // IntersectionObserver para animações fade-up (igual ao BolsaAI mas sem biblioteca)
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('visible');
-                    observer.unobserve(entry.target);
-                }
-            });
-        }, { threshold: 0.1 });
 
-        document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+<script src="app.js"></script>
+<script>
+// IntersectionObserver para fade-up
+const _io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.add('visible'); _io.unobserve(e.target); }
+    });
+}, { threshold: 0.08 });
+document.querySelectorAll('.fade-up').forEach(el => _io.observe(el));
 
-        // Hero live code: auto-executa health check ao carregar
-        (async function heroLiveCode() {
-            const output = document.getElementById('heroCodeOutput');
-            const label = document.getElementById('heroEndpointLabel');
-            if (!output) return;
-            try {
-                const t0 = performance.now();
-                const resp = await fetch('/api/auditoria/health');
-                const ms = Math.round(performance.now() - t0);
-                const data = await resp.json();
-                const json = JSON.stringify(data, null, 2);
-                if (label) label.textContent = `GET /api/auditoria/health · ${ms}ms · ${resp.status}`;
-                output.innerHTML = json
-                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                    .replace(/(\"[\w_]+\")\s*:/g, '<span class="syn-key">$1</span>:')
-                    .replace(/:\s*(\"[^\"]*\")/g, ': <span class="syn-string">$1</span>')
-                    .replace(/:\s*(\d+\.?\d*)/g, ': <span class="syn-num">$1</span>')
-                    .replace(/:\s*(true|false)/g, ': <span class="syn-accent">$1</span>')
-                    .replace(/:\s*(null)/g, ': <span class="syn-comment">$1</span>');
-            } catch(e) {
-                output.innerHTML = '<span class="syn-comment">// Engine offline — inicie com python app.py</span>';
-            }
-        })();
+// Nav scroll effect
+const _nav = document.getElementById('mainNav');
+window.addEventListener('scroll', () => {
+    _nav?.classList.toggle('scrolled', window.scrollY > 10);
+}, { passive: true });
 
-        // Copy hero code
-        document.getElementById('btnCopyHero')?.addEventListener('click', function() {
-            const text = document.getElementById('heroCodeOutput')?.innerText || '';
-            navigator.clipboard.writeText(text).then(() => {
-                this.textContent = 'copiado!';
-                this.classList.add('copied');
-                setTimeout(() => { this.textContent = 'copiar'; this.classList.remove('copied'); }, 2000);
-            });
-        });
+// Smooth scroll para âncoras
+document.querySelectorAll('a[href^="#"]').forEach(link => {
+    link.addEventListener('click', e => {
+        const t = document.querySelector(link.getAttribute('href'));
+        if (t) { e.preventDefault(); t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    });
+});
 
-        // Nav scroll: highlight active section
-        const navEl = document.getElementById('mainNav');
-        window.addEventListener('scroll', () => {
-            if (window.scrollY > 20) {
-                navEl?.classList.add('scrolled');
-            } else {
-                navEl?.classList.remove('scrolled');
-            }
-        });
+// Hero live code block
+(async function heroLive() {
+    const out = document.getElementById('heroCodeOutput');
+    const lbl = document.getElementById('heroEndpointLabel');
+    if (!out) return;
+    try {
+        const t0 = performance.now();
+        const r = await fetch('/api/auditoria/health');
+        const ms = Math.round(performance.now() - t0);
+        const d = await r.json();
+        const json = JSON.stringify(d, null, 2);
+        if (lbl) lbl.textContent = `GET /api/auditoria/health · ${ms}ms · ${r.status}`;
+        out.innerHTML = json
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/(\"[\w_]+\")(\s*:)/g,'<span class="syn-key">$1</span>$2')
+            .replace(/:\s*(\"[^\"]*\")/g,': <span class="syn-string">$1</span>')
+            .replace(/:\s*(\d+\.?\d*)/g,': <span class="syn-num">$1</span>')
+            .replace(/:\s*(true|false)/g,': <span class="syn-accent">$1</span>')
+            .replace(/:\s*(null)/g,': <span class="syn-comment">$1</span>');
+    } catch(e) {
+        out.innerHTML = '<span class="syn-comment">// Engine offline — inicie com python app.py</span>';
+    }
+})();
 
-        // Smooth scroll para âncoras
-        document.querySelectorAll('a[href^="#"]').forEach(link => {
-            link.addEventListener('click', e => {
-                const target = document.querySelector(link.getAttribute('href'));
-                if (target) {
-                    e.preventDefault();
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            });
-        });
-    </script>
+// Copy hero code
+document.getElementById('btnCopyHero')?.addEventListener('click', function() {
+    navigator.clipboard.writeText(document.getElementById('heroCodeOutput')?.innerText || '').then(() => {
+        this.textContent = 'copiado!'; this.classList.add('copied');
+        setTimeout(() => { this.textContent = 'copiar'; this.classList.remove('copied'); }, 2000);
+    });
+});
+</script>
 </body>
 </html>
