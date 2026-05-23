@@ -14,47 +14,21 @@
 <nav id="mainNav" class="site-nav">
     <div class="nav-inner">
         <a class="logo" id="btnHomeLogo">
-            <svg viewBox="0 0 40 40" width="34" height="34">
-                <rect width="40" height="40" rx="9" fill="#b8ff3a"/>
-                <text x="20" y="27" text-anchor="middle" font-family="Syne,sans-serif" font-size="22" font-weight="800" fill="#0a0a0b">F</text>
-            </svg>
+            <img src="logo.webp" alt="FIIA logo" class="logo-image">
             <div class="logo-text">
                 <span class="logo-name">FIIA</span>
-                <span class="logo-sub">Engine Analítica</span>
+                <span class="logo-sub">ENGINE ANALÍTICA</span>
             </div>
         </a>
 
         <div class="nav-links">
-            <a class="nav-link" href="#engine-section">Engine</a>
-            <a class="nav-link" href="#playground-section">Playground</a>
-            <button id="btnCarteira"       class="nav-link nav-tab-btn">Carteira</button>
-            <button id="btnRadarTab"       class="nav-link nav-tab-btn">Radar</button>
-            <button id="btnTabAssistente"  class="nav-link nav-tab-btn">Assistente</button>
-            <button id="btnTabMaquinaTempo" class="nav-link nav-tab-btn">Backtest</button>
-            <button id="btnTabHistorico"   class="nav-link nav-tab-btn">Histórico</button>
+            <button id="btnCarteira" class="nav-link nav-tab-btn">Dashboard</button>
+            <button id="btnTabAssistente" class="nav-link nav-tab-btn">Ferramentas</button>
+            <button id="btnRadarTab" class="nav-link nav-tab-btn">Radar</button>
+            <button id="btnTabMaquinaTempo" class="nav-link nav-tab-btn">Máquina do Tempo</button>
+            <button id="btnTabHistorico" class="nav-link nav-tab-btn">Aprendizado</button>
         </div>
 
-        <div class="nav-actions">
-            <div class="api-key-widget">
-                <span class="key-icon">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-                    </svg>
-                </span>
-                <input type="password" id="headerApiKey" placeholder="FIIA_API_KEY" title="Chave de API do FIIA">
-            </div>
-            <button id="btnRadar" class="btn-radar hidden">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <circle cx="12" cy="12" r="2"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 6a6 6 0 0 1 6 6"/>
-                </svg>
-                Ligar Radar
-            </button>
-            <button id="btnClear" class="btn-icon" title="Recarregar">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
-                </svg>
-            </button>
-        </div>
     </div>
 </nav>
 
@@ -65,56 +39,19 @@
 
     <!-- Hero -->
     <section class="hero-section" id="hero-section">
-        <div class="hero-glow-orb"></div>
         <div class="hero-inner">
-
-            <!-- Left -->
-            <div class="hero-left fade-up">
-                <div class="hero-badge">
-                    <span class="pulse-dot"></span>
-                    400+ FIIs &nbsp;·&nbsp; 8 Gates &nbsp;·&nbsp; CVM-First &nbsp;·&nbsp; IA integrada
-                </div>
-                <h1 class="hero-title">
-                    Engine de<br>Decisão e<br><span class="accent">Inteligência</span><br>de FIIs
-                </h1>
-                <p class="hero-desc">
-                    Infraestrutura quantitativa local para analisar consistência de dividendos, calcular margem de segurança e auditar relatórios de fundos imobiliários com dados oficiais CVM, B3 e BCB.
-                </p>
+            <div class="hero-content fade-up">
+                <div class="hero-badge">FIIA</div>
+                <h1 class="hero-title">Análise de FIIs com clareza e simplicidade.</h1>
+                <p class="hero-desc">Veja valor justo, dividendos recorrentes e sinais de risco direto no seu painel local.</p>
                 <div class="hero-actions">
-                    <button id="btnExploreDashboard" class="btn-primary">
-                        Abrir Dashboard
-                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                    </button>
-                    <a href="#playground-section" class="btn-outline">Testar API Local</a>
+                    <button id="btnExploreDashboard" class="btn-primary">Abrir Dashboard</button>
+                    <button id="btnExploreTools" class="btn-outline">Ver Ferramentas</button>
                 </div>
-            </div>
-
-            <!-- Right: live code -->
-            <div class="hero-right fade-up" style="transition-delay:.15s">
-                <div class="code-block hero-code-block">
-                    <div class="code-bar">
-                        <div class="traffic-lights">
-                            <span class="tl red"></span>
-                            <span class="tl yellow"></span>
-                            <span class="tl green"></span>
-                        </div>
-                        <span class="code-endpoint" id="heroEndpointLabel">GET /api/auditoria/health</span>
-                        <button class="copy-btn" id="btnCopyHero">copiar</button>
-                    </div>
-                    <pre class="code-content"><code id="heroCodeOutput"><span class="syn-comment">// Conectando à engine local...</span></code></pre>
-                </div>
-
-                <!-- Floating decorative chips -->
-                <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-                    <div style="background:var(--ink-2);border:1px solid var(--border);padding:6px 12px;border-radius:8px;font-family:var(--mono);font-size:.68rem;color:var(--text-2);">
-                        <span style="color:var(--acid);margin-right:6px;">✓</span>Zero look-ahead bias
-                    </div>
-                    <div style="background:var(--ink-2);border:1px solid var(--border);padding:6px 12px;border-radius:8px;font-family:var(--mono);font-size:.68rem;color:var(--text-2);">
-                        <span style="color:var(--acid);margin-right:6px;">✓</span>SHA-256 auditável
-                    </div>
-                    <div style="background:var(--ink-2);border:1px solid var(--border);padding:6px 12px;border-radius:8px;font-family:var(--mono);font-size:.68rem;color:var(--text-2);">
-                        <span style="color:var(--acid);margin-right:6px;">✓</span>100% local
-                    </div>
+                <div class="hero-support">
+                    <span>Dados oficiais</span>
+                    <span>B3 • CVM • BCB</span>
+                    <span>100% local</span>
                 </div>
             </div>
         </div>
@@ -417,14 +354,33 @@
     <div class="dashboard-inner">
         <div class="dashboard-header">
             <div>
-                <h2 class="dashboard-title">Minha Carteira</h2>
-                <p class="dashboard-sub">Posições operacionais &nbsp;·&nbsp; Análise em tempo real &nbsp;·&nbsp; <span class="source-chip small">fiia.db</span></p>
+                <h2 class="dashboard-title">Status Atual</h2>
+                <p class="dashboard-sub">Resumo do portfólio &nbsp;·&nbsp; sinais principais &nbsp;·&nbsp; <span class="source-chip small">fiia.db</span></p>
             </div>
             <button id="btnOpenModal" class="btn-action">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                 Registrar Transação
             </button>
         </div>
+
+        <div class="dashboard-summary-grid">
+            <div class="glass-card news-card">
+                <div class="card-header" style="align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                    <div>
+                        <span class="section-label">Notícias Relevantes</span>
+                        <h3>Histórico do dia anterior</h3>
+                    </div>
+                    <span class="source-chip">Apenas FIIs</span>
+                </div>
+                <p class="news-intro">Acompanhe os movimentos mais relevantes dos fundos imobiliários conectados à sua carteira. Apenas o que impactou o mercado ontem.</p>
+                <ul class="news-list">
+                    <li><strong>HGLG11</strong> — Resultado acima do esperado e manutenção da distribuição de dividendos. Sinal de estabilidade operacional.</li>
+                    <li><strong>XPML11</strong> — Forte demanda por cotas e avanço em contratos de locação. Mantém-se como ativo a ser monitorado.</li>
+                    <li><strong>KNRI11</strong> — Relatório de gestão indicou oportunidade de realocação em portfólio de escritórios.</li>
+                </ul>
+            </div>
+        </div>
+
         <div id="portfolioGrid" class="results-grid"></div>
     </div>
 </div>
@@ -479,8 +435,8 @@
     <div class="dashboard-inner">
         <div class="dashboard-header">
             <div>
-                <h2 class="dashboard-title">Assistente Diário</h2>
-                <p class="dashboard-sub">Alertas operacionais &nbsp;·&nbsp; Rebalanceamento automático &nbsp;·&nbsp; Detalhe por fundo</p>
+                <h2 class="dashboard-title">Ferramentas de Investimento</h2>
+                <p class="dashboard-sub">Gestão de posição &nbsp;·&nbsp; alertas estratégicos &nbsp;·&nbsp; ajustes práticos</p>
             </div>
             <div class="header-btn-group">
                 <span id="alertasNovosBadge" class="alert-badge hidden">0</span>
@@ -560,12 +516,12 @@
     <div class="dashboard-inner">
         <div class="dashboard-header">
             <div>
-                <h2 class="dashboard-title">Histórico de Auditoria</h2>
-                <p class="dashboard-sub">Decisões auditáveis &nbsp;·&nbsp; Payload hash SHA-256 &nbsp;·&nbsp; Replay com detecção de divergência</p>
+                <h2 class="dashboard-title">Aprendizado</h2>
+                <p class="dashboard-sub">Logs de aprendizado &nbsp;·&nbsp; ajustes de algoritmo &nbsp;·&nbsp; porquê das decisões</p>
             </div>
             <button id="btnHistoricoDecisoes" class="btn-action">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-                Carregar Histórico
+                Carregar Logs
             </button>
         </div>
         <div id="historicoLista" class="panel-list">

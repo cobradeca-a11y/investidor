@@ -186,11 +186,33 @@ function inicializarNavegacao() {
 
     // Suporte para clique no logo para voltar para home
     document.getElementById('btnHomeLogo')?.addEventListener('click', () => {
-        document.getElementById('btnTabHome')?.click();
+        Object.keys(tabs).forEach(id => {
+            document.getElementById(id)?.classList.remove('active');
+            document.getElementById(tabs[id])?.classList.add('hidden');
+        });
+        document.getElementById('homeView')?.classList.remove('hidden');
+        btnRadarAction?.classList.add('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
     document.getElementById('btnExploreDashboard')?.addEventListener('click', () => {
-        document.getElementById('btnCarteira')?.click();
+        Object.keys(tabs).forEach(id => {
+            document.getElementById(id)?.classList.remove('active');
+            document.getElementById(tabs[id])?.classList.add('hidden');
+        });
+        document.getElementById('portfolioView')?.classList.remove('hidden');
+        btnRadarAction?.classList.add('hidden');
+        carregarCarteira();
+    });
+
+    document.getElementById('btnExploreTools')?.addEventListener('click', () => {
+        Object.keys(tabs).forEach(id => {
+            document.getElementById(id)?.classList.remove('active');
+            document.getElementById(tabs[id])?.classList.add('hidden');
+        });
+        document.getElementById('assistenteDiario')?.classList.remove('hidden');
+        btnRadarAction?.classList.add('hidden');
+        carregarAlertasAssistente();
     });
 
     Object.keys(tabs).forEach(tabId => {
