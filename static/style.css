@@ -100,11 +100,15 @@ body::after {
 }
 
 .logo-image {
-    width: 46px;
-    height: auto;
-    border-radius: 12px;
+    width: auto;
+    height: 38px;
+    border-radius: 0;
     object-fit: contain;
+    display: block;
 }
+
+/* Logo já contém texto na imagem — ocultar texto duplicado */
+.logo-text { display: none; }
 
 .logo-name {
     font-family: var(--display);
@@ -248,11 +252,11 @@ body::after {
 .hero-inner {
     position: relative;
     z-index: 1;
-    max-width: 620px;
+    max-width: 560px;
     width: 100%;
     margin: 0 auto;
     display: grid;
-    gap: 32px;
+    gap: 28px;
     padding: 0;
     text-align: center;
 }
@@ -265,11 +269,11 @@ body::after {
 }
 
 .hero-title {
-    max-width: 560px;
+    max-width: 500px;
 }
 
 .hero-desc {
-    max-width: 520px;
+    max-width: 440px;
 }
 
 .hero-badge {
@@ -305,19 +309,20 @@ body::after {
 
 .hero-title {
     font-family: var(--display);
-    font-size: clamp(3rem, 4.5vw, 4.2rem);
+    font-size: clamp(2.6rem, 4.5vw, 4rem);
     font-weight: 900;
-    line-height: 1.02;
-    letter-spacing: -0.08em;
+    line-height: 1.0;
+    letter-spacing: -0.05em;
     margin: 0;
     color: var(--text);
 }
 
 .hero-desc {
-    font-size: 1rem;
+    font-size: .95rem;
     color: var(--text-2);
-    line-height: 1.8;
-    max-width: 520px;
+    line-height: 1.7;
+    max-width: 460px;
+    letter-spacing: -0.01em;
 }
 
 .hero-actions {
@@ -507,8 +512,8 @@ body::after {
     font-family: var(--display);
     font-size: clamp(1.8rem, 3vw, 2.6rem);
     font-weight: 800;
-    letter-spacing: -1px;
-    line-height: 1.1;
+    letter-spacing: -0.045em;
+    line-height: 1.08;
     margin-bottom: 14px;
 }
 
@@ -518,8 +523,9 @@ body::after {
     font-size: .92rem;
     color: var(--text-2);
     line-height: 1.65;
-    max-width: 560px;
+    max-width: 540px;
     margin-bottom: 48px;
+    letter-spacing: -0.01em;
 }
 
 /* Fade-up animation */
@@ -662,6 +668,7 @@ body::after {
     font-family: var(--display);
     font-size: 1rem;
     font-weight: 700;
+    letter-spacing: -0.025em;
     margin-bottom: 8px;
 }
 
@@ -838,7 +845,7 @@ body::after {
     font-family: var(--display);
     font-size: 1.7rem;
     font-weight: 800;
-    letter-spacing: -0.5px;
+    letter-spacing: -0.04em;
 }
 
 .dashboard-sub {
@@ -1270,6 +1277,7 @@ body::after {
     font-family: var(--display);
     font-size: 1.2rem;
     font-weight: 700;
+    letter-spacing: -0.025em;
     margin-bottom: 8px;
 }
 
@@ -1488,7 +1496,7 @@ body::after {
     margin-bottom: 22px;
 }
 
-.modal-header h2 { font-family: var(--display); font-size: 1.1rem; font-weight: 700; }
+.modal-header h2 { font-family: var(--display); font-size: 1.1rem; font-weight: 700; letter-spacing: -0.03em; }
 
 .modal-close {
     background: none;
@@ -1606,13 +1614,13 @@ body::after {
 
 @media (max-width: 480px) {
     .machine-fields { grid-template-columns: 1fr; }
-    .hero-title { font-size: 2rem; }
+    .hero-title { font-size: 1.9rem; letter-spacing: -0.04em; }
     .gate-pipeline { display: grid; grid-template-columns: repeat(2, 1fr); }
     .gate-arrow { display: none; }
 }
 
 /* ── Extra: nav scrolled style ──────────────────────────────── */
-.site-nav .logo-text { display: flex; flex-direction: column; }
+.site-nav .logo-text { display: none; }
 
 /* ── Aliases de compatibilidade app.js ──────────────────────── */
 .glass-card {
