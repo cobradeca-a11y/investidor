@@ -75,9 +75,7 @@
                     400+ FIIs &nbsp;·&nbsp; 8 Gates &nbsp;·&nbsp; CVM-First &nbsp;·&nbsp; IA integrada
                 </div>
                 <h1 class="hero-title">
-                    Engine de Decisão<br>
-                    e <span class="accent">Inteligência</span><br>
-                    de FIIs
+                    Engine de<br>Decisão e<br><span class="accent">Inteligência</span><br>de FIIs
                 </h1>
                 <p class="hero-desc">
                     Infraestrutura quantitativa local para analisar consistência de dividendos, calcular margem de segurança e auditar relatórios de fundos imobiliários com dados oficiais CVM, B3 e BCB.
@@ -322,6 +320,84 @@
                         <button class="copy-btn" id="btnCopyPlayground">copiar</button>
                     </div>
                     <pre class="code-content"><code id="playgroundResult" class="syn-comment">// Clique em "Enviar" para executar a requisição...</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Por que FIIA vs. API externa -->
+    <section style="padding:80px 0;border-bottom:1px solid var(--border);">
+        <div class="section-container">
+            <div class="section-label fade-up">Por que local?</div>
+            <h2 class="section-title fade-up" style="transition-delay:.05s">
+                Diferente de uma API<br>de mercado
+            </h2>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:40px;" class="fade-up diff-grid">
+                <!-- FIIA -->
+                <div style="background:var(--ink-2);border:1px solid rgba(184,255,58,.2);border-radius:var(--radius-xl);padding:28px;">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+                        <div style="width:36px;height:36px;background:var(--acid);border-radius:8px;display:flex;align-items:center;justify-content:center;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0a0a0b" stroke-width="2.5"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </div>
+                        <span style="font-family:var(--display);font-weight:800;font-size:1.05rem;">FIIA Engine</span>
+                        <span style="font-family:var(--mono);font-size:.62rem;color:var(--acid);background:var(--acid-dim);padding:2px 8px;border-radius:5px;border:1px solid rgba(184,255,58,.2);">LOCAL</span>
+                    </div>
+                    <div style="display:grid;gap:10px;">
+                        <div style="display:flex;gap:10px;font-size:.83rem;">
+                            <span style="color:var(--acid);flex-shrink:0;margin-top:1px;">✓</span>
+                            <span>Pipeline de <strong>8 gates sequenciais</strong> — elegibilidade, liquidez, valuation, IA</span>
+                        </div>
+                        <div style="display:flex;gap:10px;font-size:.83rem;">
+                            <span style="color:var(--acid);flex-shrink:0;margin-top:1px;">✓</span>
+                            <span>Decisão auditável com <strong>hash SHA-256</strong> e replay explícito</span>
+                        </div>
+                        <div style="display:flex;gap:10px;font-size:.83rem;">
+                            <span style="color:var(--acid);flex-shrink:0;margin-top:1px;">✓</span>
+                            <span><strong>Backtest temporal</strong> com zero look-ahead bias por arquitetura</span>
+                        </div>
+                        <div style="display:flex;gap:10px;font-size:.83rem;">
+                            <span style="color:var(--acid);flex-shrink:0;margin-top:1px;">✓</span>
+                            <span>IA qualitativa dos relatórios FNET — <strong>sentimento do gestor</strong></span>
+                        </div>
+                        <div style="display:flex;gap:10px;font-size:.83rem;">
+                            <span style="color:var(--acid);flex-shrink:0;margin-top:1px;">✓</span>
+                            <span>Roda localmente, <strong>sem custo de requisição</strong>, sem limite de uso</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API genérica -->
+                <div style="background:var(--ink-2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px;opacity:.75;">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+                        <div style="width:36px;height:36px;background:var(--ink-4);border-radius:8px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-2);">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        </div>
+                        <span style="font-family:var(--display);font-weight:800;font-size:1.05rem;color:var(--text-2);">API de mercado</span>
+                        <span style="font-family:var(--mono);font-size:.62rem;color:var(--text-3);background:var(--ink-3);padding:2px 8px;border-radius:5px;border:1px solid var(--border);">EXTERNA</span>
+                    </div>
+                    <div style="display:grid;gap:10px;">
+                        <div style="display:flex;gap:10px;font-size:.83rem;color:var(--text-2);">
+                            <span style="color:var(--text-3);flex-shrink:0;margin-top:1px;">→</span>
+                            <span>Retorna indicadores — <strong>sem pipeline de decisão</strong></span>
+                        </div>
+                        <div style="display:flex;gap:10px;font-size:.83rem;color:var(--text-2);">
+                            <span style="color:var(--text-3);flex-shrink:0;margin-top:1px;">→</span>
+                            <span>Você constrói o screener — <strong>sem auditabilidade nativa</strong></span>
+                        </div>
+                        <div style="display:flex;gap:10px;font-size:.83rem;color:var(--text-2);">
+                            <span style="color:var(--text-3);flex-shrink:0;margin-top:1px;">→</span>
+                            <span>Sem backtest temporal histórico — <strong>snapshots point-in-time</strong></span>
+                        </div>
+                        <div style="display:flex;gap:10px;font-size:.83rem;color:var(--text-2);">
+                            <span style="color:var(--text-3);flex-shrink:0;margin-top:1px;">→</span>
+                            <span>Sem análise qualitativa dos documentos — <strong>só dados quantitativos</strong></span>
+                        </div>
+                        <div style="display:flex;gap:10px;font-size:.83rem;color:var(--text-2);">
+                            <span style="color:var(--text-3);flex-shrink:0;margin-top:1px;">→</span>
+                            <span>Custo por requisição, limite diário — <strong>200 req/dia no free tier</strong></span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
