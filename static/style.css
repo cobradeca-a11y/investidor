@@ -82,11 +82,12 @@ body::after {
 .nav-inner {
     max-width: 1300px;
     margin: 0 auto;
-    padding: 0 28px;
+    padding: 0 32px;
     height: 100%;
     display: flex;
     align-items: center;
-    gap: 32px;
+    gap: 28px;
+    overflow: visible;
 }
 
 /* Logo */
