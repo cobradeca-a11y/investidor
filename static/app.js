@@ -937,10 +937,10 @@ async function carregarHistoricoDecisoes() {
         }
         lista.innerHTML = decisoes.map(renderLinhaHistorico).join('');
         lista.querySelectorAll('[data-decisao-detalhe]').forEach((btn) => {
-            btn.addEventListener('click', () => consultarDetalheHistorico(btn.dataset.decisaoDetalhe, false));
+            btn.addEventListener('click', () => consultarDetalheHistorico(btn.dataset.decisaoDetalhe, false, btn));
         });
         lista.querySelectorAll('[data-decisao-replay]').forEach((btn) => {
-            btn.addEventListener('click', () => consultarDetalheHistorico(btn.dataset.decisaoReplay, true));
+            btn.addEventListener('click', () => consultarDetalheHistorico(btn.dataset.decisaoReplay, true, btn));
         });
     } catch (error) {
         console.error('Erro ao consultar histórico:', error);
@@ -951,38 +951,63 @@ async function carregarHistoricoDecisoes() {
 function renderLinhaHistorico(item) {
     const id = item.id || item.decisao_id;
     return `
-        <article class="history-row">
-            <div class="history-row-main">
-                <strong>${escapeHtml(item.ticker || '---')}</strong>
-                <span>${escapeHtml(item.decisao || '---')}</span>
-                <small>${escapeHtml(item.data_decisao || item.criado_em || 'Data não informada')}</small>
+        <article class="history-row-wrap" data-decisao-id="${escapeHtml(id)}">
+            <div class="history-row">
+                <div class="history-row-main">
+                    <strong>${escapeHtml(item.ticker || '---')}</strong>
+                    <span>${escapeHtml(item.decisao || '---')}</span>
+                    <small>${escapeHtml(item.data_decisao || item.criado_em || 'Data não informada')}</small>
+                </div>
+                <div class="history-row-audit">
+                    <span title="${escapeHtml(item.payload_hash || '')}">Hash: ${escapeHtml(resumirHash(item.payload_hash))}</span>
+                    <span>Hash válido: ${item.hash_valido === true ? 'Sim' : item.hash_valido === false ? 'Não' : 'Não informado'}</span>
+                </div>
+                <div class="history-actions">
+                    <button class="btn-mini" data-decisao-detalhe="${escapeHtml(id)}">Ver auditoria</button>
+                    <button class="btn-mini replay" data-decisao-replay="${escapeHtml(id)}">Executar replay</button>
+                </div>
             </div>
-            <div class="history-row-audit">
-                <span title="${escapeHtml(item.payload_hash || '')}">Hash: ${escapeHtml(resumirHash(item.payload_hash))}</span>
-                <span>Hash válido: ${item.hash_valido === true ? 'Sim' : item.hash_valido === false ? 'Não' : 'Não informado'}</span>
-            </div>
-            <div class="history-actions">
-                <button class="btn-mini" data-decisao-detalhe="${escapeHtml(id)}">Ver auditoria</button>
-                <button class="btn-mini replay" data-decisao-replay="${escapeHtml(id)}">Executar replay</button>
-            </div>
+            <div class="history-row-inline-detail hidden"></div>
         </article>
     `;
 }
 
-async function consultarDetalheHistorico(decisaoId, replayExplicito) {
-    const detalhe = document.getElementById('historicoDetalhe');
-    if (!detalhe) return;
-    detalhe.classList.remove('hidden');
-    detalhe.innerHTML = `<div class="loading-simple">⌛ ${replayExplicito ? 'Executando replay explícito' : 'Consultando auditoria'}...</div>`;
+async function consultarDetalheHistorico(decisaoId, replayExplicito, triggerBtn) {
+    // Encontra o article pai do botão clicado
+    const wrap = triggerBtn?.closest('[data-decisao-id]');
+    const inlineDetalhe = wrap?.querySelector('.history-row-inline-detail');
+
+    // Se tem painel inline, fecha qualquer outro aberto antes
+    document.querySelectorAll('.history-row-inline-detail').forEach(el => {
+        if (el !== inlineDetalhe) {
+            el.classList.add('hidden');
+            el.innerHTML = '';
+        }
+    });
+
+    // Toggle: se já está aberto e é o mesmo detalhe (sem ser replay), fecha
+    if (inlineDetalhe && !inlineDetalhe.classList.contains('hidden') && !replayExplicito) {
+        inlineDetalhe.classList.add('hidden');
+        inlineDetalhe.innerHTML = '';
+        return;
+    }
+
+    const alvo = inlineDetalhe || document.getElementById('historicoDetalhe');
+    if (!alvo) return;
+    alvo.classList.remove('hidden');
+    alvo.innerHTML = `<div class="loading-simple">⌛ ${replayExplicito ? 'Executando replay explícito' : 'Consultando auditoria'}...</div>`;
+
+    // Scroll suave para o detalhe
+    alvo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
     try {
-        // Consulta padrão sem replay: replay=false.
         const url = `/api/auditoria/decisoes/${encodeURIComponent(decisaoId)}/auditavel?incluir_payload=true&replay=${replayExplicito ? 'true' : 'false'}`;
         const response = await fetch(url, { headers: headersAutenticados() });
         const data = await response.json();
-        detalhe.innerHTML = renderDetalheHistorico(data, replayExplicito);
+        alvo.innerHTML = renderDetalheHistorico(data, replayExplicito);
     } catch (error) {
         console.error('Erro ao consultar detalhe/replay:', error);
-        detalhe.innerHTML = '<div class="error-simple">❌ Falha controlada ao consultar detalhe da decisão.</div>';
+        alvo.innerHTML = '<div class="error-simple">❌ Falha controlada ao consultar detalhe da decisão.</div>';
     }
 }
 
