@@ -14,11 +14,21 @@
 document.addEventListener('DOMContentLoaded', () => {
     inicializarNavegacao();
     inicializarTransacoes();
+    inicializarPlayground();
     criarPainelMaquinaTempo();
     criarPainelHistorico();
     criarPainelAssistente();
     iniciarMonitorAlertasAssistente();
     carregarCarteira();
+
+    // Sincronizar chave de API no header
+    const headerApiKeyInput = document.getElementById('headerApiKey');
+    if (headerApiKeyInput) {
+        headerApiKeyInput.value = obterApiKey();
+        headerApiKeyInput.addEventListener('input', (e) => {
+            salvarApiKey(e.target.value);
+        });
+    }
 });
 
 document.getElementById('btnRadar')?.addEventListener('click', async () => {
@@ -67,8 +77,16 @@ function salvarApiKey(valor) {
 function obterOuSolicitarApiKey(acao = 'continuar') {
     const apiKey = obterApiKey();
     if (apiKey) return apiKey;
-    const informada = window.prompt(`Configure sua chave de API (fiia_api_key) para ${acao}.\n\nCole a FIIA_API_KEY do seu .env:`);
-    return salvarApiKey(informada);
+    const headerInput = document.getElementById('headerApiKey');
+    if (headerInput) {
+        headerInput.focus();
+    }
+    const informada = window.prompt(`Configure sua chave de API (fiia_api_key) para ${acao}.\n\nCole a FIIA_API_KEY do seu .env (ou digite no campo "Key" no topo da página):`);
+    const salva = salvarApiKey(informada);
+    if (headerInput && salva) {
+        headerInput.value = salva;
+    }
+    return salva;
 }
 
 function headersAutenticados(extra = {}) {
@@ -155,32 +173,62 @@ async function executarRadarAssincrono() {
 }
 
 function inicializarNavegacao() {
-    const btnCarteira = document.getElementById('btnCarteira');
-    const btnRadarTab = document.getElementById('btnRadarTab');
-    const btnRadarAction = document.getElementById('btnRadar');
-    const portfolioView = document.getElementById('portfolioView');
-    const welcomeView = document.getElementById('welcomeView');
-    const resultsView = document.getElementById('results');
-    const loadingView = document.getElementById('loading');
+    const tabs = {
+        'btnTabHome': 'homeView',
+        'btnCarteira': 'portfolioView',
+        'btnRadarTab': 'radarView',
+        'btnTabAssistente': 'assistenteDiario',
+        'btnTabMaquinaTempo': 'maquinaTempo',
+        'btnTabHistorico': 'historicoDecisoes'
+    };
 
-    btnCarteira?.addEventListener('click', () => {
-        btnCarteira.classList.add('active');
-        btnRadarTab?.classList.remove('active');
-        portfolioView?.classList.remove('hidden');
-        welcomeView?.classList.add('hidden');
-        resultsView?.classList.add('hidden');
-        loadingView?.classList.add('hidden');
-        btnRadarAction?.classList.add('hidden');
-        carregarCarteira();
+    const btnRadarAction = document.getElementById('btnRadar');
+
+    // Suporte para clique no logo para voltar para home
+    document.getElementById('btnHomeLogo')?.addEventListener('click', () => {
+        document.getElementById('btnTabHome')?.click();
     });
 
-    btnRadarTab?.addEventListener('click', () => {
-        btnRadarTab.classList.add('active');
-        btnCarteira?.classList.remove('active');
-        portfolioView?.classList.add('hidden');
-        welcomeView?.classList.remove('hidden');
-        resultsView?.classList.add('hidden');
-        btnRadarAction?.classList.remove('hidden');
+    document.getElementById('btnExploreDashboard')?.addEventListener('click', () => {
+        document.getElementById('btnCarteira')?.click();
+    });
+
+    Object.keys(tabs).forEach(tabId => {
+        const btn = document.getElementById(tabId);
+        const viewId = tabs[tabId];
+        const view = document.getElementById(viewId);
+
+        btn?.addEventListener('click', () => {
+            // Remove a classe active de todas as abas e oculta as views
+            Object.keys(tabs).forEach(id => {
+                document.getElementById(id)?.classList.remove('active');
+                document.getElementById(tabs[id])?.classList.add('hidden');
+            });
+
+            // Ativa a aba e a view correspondente
+            btn.classList.add('active');
+            view?.classList.remove('hidden');
+
+            // Mostra ou esconde o botão de ligar radar do cabeçalho
+            if (tabId === 'btnRadarTab') {
+                btnRadarAction?.classList.remove('hidden');
+                // Se o radar estiver carregado, mantemos como está, caso contrário mostramos o welcome
+                const results = document.getElementById('results');
+                const loading = document.getElementById('loading');
+                if (results?.classList.contains('hidden') && loading?.classList.contains('hidden')) {
+                    document.getElementById('welcomeView')?.classList.remove('hidden');
+                }
+            } else {
+                btnRadarAction?.classList.add('hidden');
+            }
+
+            // Ações específicas de carregamento
+            if (tabId === 'btnCarteira') {
+                carregarCarteira();
+            } else if (tabId === 'btnTabAssistente') {
+                carregarAlertasAssistente();
+            }
+        });
     });
 }
 
@@ -283,9 +331,13 @@ async function carregarCarteira() {
 }
 
 function criarPainelHistorico() {
-    const container = document.querySelector('.app-container') || document.body;
-    if (document.getElementById('historicoDecisoes')) return;
+    // Se o painel já existe no HTML estático, apenas registrar os listeners
+    if (document.getElementById('historicoDecisoes')) {
+        document.getElementById('btnHistoricoDecisoes')?.addEventListener('click', carregarHistoricoDecisoes);
+        return;
+    }
 
+    const container = document.querySelector('.app-container') || document.body;
     const section = document.createElement('section');
     section.id = 'historicoDecisoes';
     section.className = 'history-panel glass-card';
@@ -307,9 +359,14 @@ function criarPainelHistorico() {
 }
 
 function criarPainelAssistente() {
-    const container = document.querySelector('.app-container') || document.body;
-    if (document.getElementById('assistenteDiario')) return;
+    // Se o painel já existe no HTML estático, apenas registrar os listeners
+    if (document.getElementById('assistenteDiario')) {
+        document.getElementById('btnAssistenteAlertas')?.addEventListener('click', carregarAlertasAssistente);
+        document.getElementById('btnAssistenteRebalance')?.addEventListener('click', carregarRebalanceamento);
+        return;
+    }
 
+    const container = document.querySelector('.app-container') || document.body;
     const section = document.createElement('section');
     section.id = 'assistenteDiario';
     section.className = 'history-panel glass-card';
@@ -342,9 +399,15 @@ function ultimoAlertaAssistenteId() {
 }
 
 function criarPainelMaquinaTempo() {
-    const container = document.querySelector('.app-container') || document.body;
-    if (document.getElementById('maquinaTempo')) return;
+    // Se o painel já existe no HTML estático, apenas registrar os listeners
+    if (document.getElementById('maquinaTempo')) {
+        document.getElementById('btnMaquinaSnapshot')?.addEventListener('click', gerarBaseMaquinaTempo);
+        document.getElementById('btnMaquinaTicker')?.addEventListener('click', executarMaquinaTempoTicker);
+        document.getElementById('btnMaquinaRadar')?.addEventListener('click', executarMaquinaTempoRadar);
+        return;
+    }
 
+    const container = document.querySelector('.app-container') || document.body;
     const section = document.createElement('section');
     section.id = 'maquinaTempo';
     section.className = 'history-panel glass-card machine-panel';
@@ -1199,5 +1262,108 @@ function renderResults(oportunidades, targetId = 'results', isPortfolio = false)
     });
     grid.querySelectorAll('[data-fundo-detalhe], [data-fundo-evolucao]').forEach((btn) => {
         btn.addEventListener('click', () => consultarDetalheFundo(btn.dataset.fundoDetalhe || btn.dataset.fundoEvolucao, btn));
+    });
+}
+
+function inicializarPlayground() {
+    const playTabs = document.querySelectorAll('.playground-tab');
+    const playUrlInput = document.getElementById('playgroundUrl');
+    const sendBtn = document.getElementById('btnSendPlayground');
+    const resultBlock = document.getElementById('playgroundResult');
+    const statusSpan = document.getElementById('playgroundStatus');
+    const timeSpan = document.getElementById('playgroundTime');
+    const copyBtn = document.getElementById('btnCopyPlayground');
+
+    // Mapear cliques nas abas do playground
+    playTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            playTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            if (playUrlInput) {
+                playUrlInput.value = tab.dataset.path;
+            }
+        });
+    });
+
+    // Enviar requisição
+    sendBtn?.addEventListener('click', async () => {
+        if (!playUrlInput || !resultBlock) return;
+        const path = playUrlInput.value.trim();
+        if (!path) return;
+
+        resultBlock.innerHTML = '<span class="syntax-comment">// Processando requisição...</span>';
+        if (statusSpan) statusSpan.textContent = 'Enviando...';
+        if (timeSpan) timeSpan.textContent = '';
+
+        const tStart = performance.now();
+        try {
+            const response = await fetch(path, {
+                headers: headersAutenticados()
+            });
+            const tEnd = performance.now();
+            const elapsed = Math.round(tEnd - tStart);
+
+            if (statusSpan) statusSpan.textContent = `${response.status} ${response.statusText}`;
+            if (timeSpan) timeSpan.textContent = `${elapsed}ms`;
+
+            let data;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+                resultBlock.innerHTML = formatarJsonParaPlayground(data);
+            } else {
+                const text = await response.text();
+                try {
+                    data = JSON.parse(text);
+                    resultBlock.innerHTML = formatarJsonParaPlayground(data);
+                } catch {
+                    resultBlock.textContent = text;
+                }
+            }
+        } catch (error) {
+            const tEnd = performance.now();
+            const elapsed = Math.round(tEnd - tStart);
+            if (statusSpan) statusSpan.textContent = 'Erro';
+            if (timeSpan) timeSpan.textContent = `${elapsed}ms`;
+            resultBlock.innerHTML = `<span class="syntax-comment">// Falha ao conectar: ${escapeHtml(error.message)}</span>`;
+        }
+    });
+
+    // Copiar resposta
+    copyBtn?.addEventListener('click', () => {
+        if (!resultBlock) return;
+        const text = resultBlock.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            copyBtn.textContent = 'Copiado!';
+            copyBtn.classList.add('copied');
+            setTimeout(() => {
+                copyBtn.textContent = 'Copiar';
+                copyBtn.classList.remove('copied');
+            }, 2000);
+        });
+    });
+}
+
+function formatarJsonParaPlayground(jsonObj) {
+    const jsonStr = JSON.stringify(jsonObj, null, 2);
+    let escaped = jsonStr
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+        
+    return escaped.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, function (match) {
+        let cls = 'syntax-num';
+        if (/^"/.test(match)) {
+            if (/:$/.test(match)) {
+                cls = 'syntax-key';
+            } else {
+                cls = 'syntax-string';
+            }
+        } else if (/true|false/.test(match)) {
+            cls = 'syntax-accent';
+        } else if (/null/.test(match)) {
+            cls = 'syntax-comment';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
     });
 }

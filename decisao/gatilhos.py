@@ -63,6 +63,7 @@ def verificar(
             """,
             (ticker,)
         )
+        ultima = dict(ultima) if ultima else None
         if ultima and ultima.get('score_ia') and ultima['score_ia'] <= 3:
             gatilhos.append({
                 "tipo":    "SAIDA",
@@ -148,10 +149,12 @@ def _verificar_queda_sem_deterioracao(ticker: str) -> Optional[str]:
     if len(rows) < 10:
         return None
 
-    preco_atual  = rows[0].get('preco')
-    preco_antigo = rows[-1].get('preco')
-    vac_atual    = rows[0].get('vacancia_fisica')
-    vac_antiga   = rows[-1].get('vacancia_fisica')
+    row_atual   = dict(rows[0])
+    row_antigo  = dict(rows[-1])
+    preco_atual  = row_atual.get('preco')
+    preco_antigo = row_antigo.get('preco')
+    vac_atual    = row_atual.get('vacancia_fisica')
+    vac_antiga   = row_antigo.get('vacancia_fisica')
 
     if not preco_atual or not preco_antigo or preco_antigo == 0:
         return None
