@@ -784,6 +784,21 @@ def decidir(
     # ── Gate 7: Veredito final ───────────────────────────────────────────
     decisao, motivo = _gate7_veredito(gates, margem, confiabilidade, tom_gestor, ia_status, contexto=contexto)
 
+    # Gate 5C - Trava de decisão por confiabilidade dos dados.
+    # O score não é apenas informativo: ele limita a força máxima da decisão.
+    if confiabilidade < 50:
+        decisao = "BLOQUEADO_CONFIANCA"
+        motivo = f"Score de confiança insuficiente ({confiabilidade}%). Decisão bloqueada até reforçar a qualidade dos dados."
+        alertas.append("Gate 5C: decisão bloqueada por confiabilidade abaixo de 50%.")
+    elif confiabilidade < 70 and decisao in ("COMPRAR", "COMPRAR_PARCIAL", "ENTRADA_FORTE", "ENTRADA_PARCIAL"):
+        decisao = "MONITORAR"
+        motivo = f"Score de confiança baixo ({confiabilidade}%). Ativo pode ser acompanhado, mas não libera entrada."
+        alertas.append("Gate 5C: decisão limitada a MONITORAR por confiabilidade entre 50% e 69%.")
+    elif confiabilidade < 90 and decisao in ("COMPRAR", "ENTRADA_FORTE"):
+        decisao = "COMPRAR_PARCIAL"
+        motivo = f"Score de confiança moderado ({confiabilidade}%). Entrada limitada a parcial até reforçar os dados."
+        alertas.append("Gate 5C: decisão limitada a COMPRAR_PARCIAL por confiabilidade entre 70% e 89%.")
+
     if confiabilidade >= 90 and ia_status == "OK":
         confianca = "ALTA"
     elif confiabilidade >= 75 or ia_status == "OK":
