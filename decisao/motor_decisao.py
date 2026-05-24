@@ -799,12 +799,32 @@ def decidir(
         motivo = f"Score de confiança moderado ({confiabilidade}%). Entrada limitada a parcial até reforçar os dados."
         alertas.append("Gate 5C: decisão limitada a COMPRAR_PARCIAL por confiabilidade entre 70% e 89%.")
 
-    if confiabilidade >= 90 and ia_status == "OK":
-        confianca = "ALTA"
-    elif confiabilidade >= 75 or ia_status == "OK":
-        confianca = "MEDIA"
+    if confiabilidade >= 90:
+        confianca_dados = "ALTA"
+    elif confiabilidade >= 70:
+        confianca_dados = "MEDIA"
+    elif confiabilidade >= 50:
+        confianca_dados = "BAIXA"
     else:
+        confianca_dados = "INSUFICIENTE"
+
+    if ia_status == "OK":
+        confianca_ia = "DISPONIVEL"
+    elif ia_status in ("INDISPONIVEL", "NAO_EXECUTADA", None):
+        confianca_ia = "INDISPONIVEL"
+    else:
+        confianca_ia = "LIMITADA"
+
+    if confianca_dados == "ALTA" and confianca_ia == "DISPONIVEL":
+        confianca = "ALTA"
+    elif confianca_dados == "ALTA" and confianca_ia == "INDISPONIVEL":
+        confianca = "ALTA_SEM_IA"
+    elif confianca_dados == "MEDIA":
+        confianca = "MEDIA"
+    elif confianca_dados == "BAIXA":
         confianca = "BAIXA"
+    else:
+        confianca = "INSUFICIENTE"
 
     revisao = _quando_revisar(decisao, margem, vacancia, tom_gestor)
 
@@ -821,6 +841,14 @@ def decidir(
         score_ia=score_ia, riscos_ia=riscos_ia, tom_gestor=tom_gestor,
         ia_status=ia_status, confianca=confianca, revisao=revisao
     )
+
+    resultado["confianca_dados"] = confianca_dados
+    resultado["confianca_ia"] = confianca_ia
+    resultado["confianca_final"] = confianca
+
+    # Reabre o objeto já montado para os anexos de dimensionamento/zonas
+    if False:
+        pass
 
     # Dimensionamento e zonas — só para decisões de compra
     if decisao in ("COMPRAR", "COMPRAR_PARCIAL", "AGUARDAR", "MONITORAR"):
@@ -860,8 +888,33 @@ def _montar_retorno(
     riscos_ia, tom_gestor, ia_status,
     confianca: str = None, revisao: str = None,
 ) -> dict:
+    if confiabilidade >= 90:
+        confianca_dados = "ALTA"
+    elif confiabilidade >= 70:
+        confianca_dados = "MEDIA"
+    elif confiabilidade >= 50:
+        confianca_dados = "BAIXA"
+    else:
+        confianca_dados = "INSUFICIENTE"
+
+    if ia_status == "OK":
+        confianca_ia = "DISPONIVEL"
+    elif ia_status in ("INDISPONIVEL", "NAO_EXECUTADA", None):
+        confianca_ia = "INDISPONIVEL"
+    else:
+        confianca_ia = "LIMITADA"
+
     if confianca is None:
-        confianca = "ALTA" if confiabilidade >= 85 else "MEDIA" if confiabilidade >= 70 else "BAIXA"
+        if confianca_dados == "ALTA" and confianca_ia == "DISPONIVEL":
+            confianca = "ALTA"
+        elif confianca_dados == "ALTA" and confianca_ia == "INDISPONIVEL":
+            confianca = "ALTA_SEM_IA"
+        elif confianca_dados == "MEDIA":
+            confianca = "MEDIA"
+        elif confianca_dados == "BAIXA":
+            confianca = "BAIXA"
+        else:
+            confianca = "INSUFICIENTE"
 
     if revisao is None:
         revisao = _quando_revisar(decisao, margem, vacancia, tom_gestor)
@@ -879,6 +932,9 @@ def _montar_retorno(
         "gate_parada":     gate_parada,
         "trilha_gates":    trilha,
         "confianca":       confianca,
+        "confianca_dados": confianca_dados,
+        "confianca_ia":    confianca_ia,
+        "confianca_final": confianca,
 
         # Preços
         "preco_atual":     preco,
