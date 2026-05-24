@@ -202,6 +202,20 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         if fonte_identidade == "FALLBACK":
             fonte_identidade = "CADASTRO_LOCAL"
 
+    # Normalização operacional de segmento para FIIs.
+    # Mantém o ativo como FII, mas corrige a régua analítica usada nos gates.
+    try:
+        texto_segmento = f"{ticker_norm} {nome_fundo or ''} {razao_social or ''} {segmento or ''}".upper()
+
+        if any(chave in texto_segmento for chave in ["PAPEL", "RECEB", "CRI", "KINEA RI", "KNCR"]):
+            segmento = "PAPEL"
+        elif any(chave in texto_segmento for chave in ["HGRU", "RENDA URBANA", "RENDA_URBANA", "URBANA"]):
+            segmento = "RENDA_URBANA"
+        elif any(chave in texto_segmento for chave in ["HGLG", "LOGISTICA", "LOGÍSTICA", "GALP", "GALPÃO"]):
+            segmento = "LOGÍSTICA"
+    except Exception as e:
+        print(f"[contexto] Falha na normalização de segmento para {ticker_norm}: {e}")
+
     # 2. Coleta de Preço de Mercado
     # Prioridade: yfinance com timestamp -> Fundamentus -> Banco Histórico
     preco = None
@@ -459,6 +473,16 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
             vacancia_fonte = "CVM_INF_TRIMESTRAL"
     except Exception as e:
         print(f"[contexto] Falha CVM trimestral vacancia para {ticker_norm}: {e}")
+
+    # Complementa quantidade de ativos/imóveis pela CVM trimestral quando a fonte básica vier vazia/zerada.
+    try:
+        if not qtd_ativos or qtd_ativos <= 0:
+            row_qtd = db.buscar_um("SELECT COUNT(DISTINCT nome_imovel) AS qtd FROM inf_trimestral_imoveis WHERE ticker = ? AND data_referencia = (SELECT MAX(data_referencia) FROM inf_trimestral_imoveis WHERE ticker = ?)", (ticker_norm, ticker_norm))
+            qtd_cvm = int(row_qtd["qtd"] or 0) if row_qtd else 0
+            if qtd_cvm > 0:
+                qtd_ativos = qtd_cvm
+    except Exception as e:
+        print(f"[contexto] Falha ao calcular qtd_ativos CVM para {ticker_norm}: {e}")
 
     # 7. Cálculo do Score Consolidado de Confiança (0 a 100)
     score_confianca = 100
