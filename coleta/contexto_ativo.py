@@ -216,6 +216,37 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
     except Exception as e:
         print(f"[contexto] Falha na normalização de segmento para {ticker_norm}: {e}")
 
+    # 2. Dados de cotistas / pulverização de mercado
+    numero_cotistas = None
+    numero_cotas = None
+    cotistas_fonte = "AUSENTE"
+    cotistas_competencia = None
+    cotistas_status = "AUSENTE"
+
+    try:
+        candidatos_cnpj = []
+        for cnpj in [cnpj_classe, cnpj_fundo]:
+            if cnpj:
+                cnpj_limpo = "".join(ch for ch in str(cnpj) if ch.isdigit())
+                if cnpj_limpo and cnpj_limpo not in candidatos_cnpj:
+                    candidatos_cnpj.append(cnpj_limpo)
+
+        for cnpj_busca in candidatos_cnpj:
+            row_cotistas = db.buscar_um(
+                'SELECT CNPJ_Fundo_Classe, Data_Referencia, Total_Numero_Cotistas, Cotas_Emitidas FROM cvm_mensal_complemento WHERE CNPJ_Fundo_Classe=? AND Total_Numero_Cotistas IS NOT NULL ORDER BY Data_Referencia DESC LIMIT 1',
+                (cnpj_busca,),
+            )
+            if row_cotistas:
+                numero_cotistas = int(float(row_cotistas["Total_Numero_Cotistas"])) if row_cotistas["Total_Numero_Cotistas"] is not None else None
+                numero_cotas = float(row_cotistas["Cotas_Emitidas"]) if row_cotistas["Cotas_Emitidas"] is not None else None
+                cotistas_fonte = "CVM_MENSAL_COMPLEMENTO"
+                cotistas_competencia = row_cotistas["Data_Referencia"]
+                cotistas_status = "OK"
+                break
+    except Exception as e:
+        cotistas_status = "ERRO"
+        print(f"[contexto] Falha ao buscar cotistas para {ticker_norm}: {e}")
+
     # 2. Coleta de Preço de Mercado
     # Prioridade: yfinance com timestamp -> Fundamentus -> Banco Histórico
     preco = None
@@ -589,6 +620,11 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         "atualizado_em": agora,
         "cnpj_fundo": cnpj_fundo,
         "cnpj_classe": cnpj_classe,
+        "numero_cotistas": numero_cotistas,
+        "numero_cotas": numero_cotas,
+        "cotistas_fonte": cotistas_fonte,
+        "cotistas_competencia": cotistas_competencia,
+        "cotistas_status": cotistas_status,
         "razao_social": razao_social,
         "nome_fundo": nome_fundo,
         "segmento": segmento,
