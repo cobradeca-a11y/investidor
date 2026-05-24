@@ -43,6 +43,7 @@ def garantir_campos_preco() -> None:
     _garantir_coluna("indicadores", "preco_timestamp", "TEXT")
     _garantir_coluna("indicadores", "preco_fonte", "TEXT")
     _garantir_coluna("indicadores", "preco_moeda", "TEXT")
+    _garantir_coluna("indicadores", "liquidez_diaria", "REAL")
 
 
 def coletar_preco_atual(ticker: str) -> dict:
@@ -63,6 +64,7 @@ def coletar_preco_atual(ticker: str) -> dict:
         preco = None
         moeda = "BRL"
         fonte_detalhe = "yfinance.fast_info"
+        liquidez_diaria = None
 
         try:
             fast = ativo.fast_info
@@ -80,6 +82,14 @@ def coletar_preco_atual(ticker: str) -> dict:
         if preco is None:
             raise ValueError("Preço indisponível no yfinance.")
 
+        try:
+            hist_liq = ativo.history(period="45d").dropna()
+            if not hist_liq.empty and "Close" in hist_liq.columns and "Volume" in hist_liq.columns:
+                ultimos = hist_liq.tail(21)
+                liquidez_diaria = float((ultimos["Close"] * ultimos["Volume"]).mean())
+        except Exception:
+            liquidez_diaria = None
+
         existente = db.buscar_um(
             "SELECT id FROM indicadores WHERE ticker = ? AND data = ? LIMIT 1",
             (ticker_norm, hoje),
@@ -88,18 +98,18 @@ def coletar_preco_atual(ticker: str) -> dict:
             db.executar(
                 """
                 UPDATE indicadores
-                SET preco = ?, preco_timestamp = ?, preco_fonte = ?, preco_moeda = ?, fonte = COALESCE(fonte, ?), coletado_em = ?
+                SET preco = ?, preco_timestamp = ?, preco_fonte = ?, preco_moeda = ?, liquidez_diaria = COALESCE(?, liquidez_diaria), fonte = COALESCE(fonte, ?), coletado_em = ?
                 WHERE ticker = ? AND data = ?
                 """,
-                (float(preco), agora, fonte_detalhe, moeda, "yfinance", agora, ticker_norm, hoje),
+                (float(preco), agora, fonte_detalhe, moeda, liquidez_diaria, "yfinance", agora, ticker_norm, hoje),
             )
         else:
             db.executar(
                 """
-                INSERT INTO indicadores (ticker, data, preco, preco_timestamp, preco_fonte, preco_moeda, fonte, coletado_em)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO indicadores (ticker, data, preco, preco_timestamp, preco_fonte, preco_moeda, liquidez_diaria, fonte, coletado_em)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (ticker_norm, hoje, float(preco), agora, fonte_detalhe, moeda, "yfinance", agora),
+                (ticker_norm, hoje, float(preco), agora, fonte_detalhe, moeda, liquidez_diaria, "yfinance", agora),
             )
 
         resultado = {
@@ -108,6 +118,7 @@ def coletar_preco_atual(ticker: str) -> dict:
             "preco_timestamp": agora,
             "preco_fonte": fonte_detalhe,
             "preco_moeda": moeda,
+            "liquidez_diaria": liquidez_diaria,
         }
         observabilidade.registrar_evento(
             "INFO",
