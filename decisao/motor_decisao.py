@@ -299,7 +299,7 @@ def _gate2_risco_estrutural(ticker: str, ind: dict, fii_info: dict) -> dict:
 
 def _gate3_qualidade_renda(ticker: str, ind: dict, pct_rec: Optional[float],
                             dy_recorrente: Optional[float], premio_cdi: Optional[float],
-                            quedas: int) -> dict:
+                            quedas: int, segmento: str = "") -> dict:
     """
     Gate 3 - Qualidade da renda.
     Este gate antecede o preço. Não importa quão barato esteja o fundo:
@@ -311,8 +311,12 @@ def _gate3_qualidade_renda(ticker: str, ind: dict, pct_rec: Optional[float],
         "pct_recorrente": pct_rec,
         "dy_recorrente": dy_recorrente,
         "premio_cdi": premio_cdi,
-        "quedas_consecutivas": quedas
+        "quedas_consecutivas": quedas,
+        "segmento": segmento
     }
+
+    segmento_norm = (segmento or "").upper()
+    eh_papel = "PAPEL" in segmento_norm or "RECEB" in segmento_norm
 
     if pct_rec is None:
         return _gate_result(
@@ -332,11 +336,16 @@ def _gate3_qualidade_renda(ticker: str, ind: dict, pct_rec: Optional[float],
         )
 
     if dy_recorrente is not None and premio_cdi is not None and premio_cdi < 0:
-        return _gate_result(
-            3, "ELIMINADO_RENDA_INSUFICIENTE",
+        if eh_papel:
+            return _gate_result(
+                3, "ELIMINADO_RENDA_INSUFICIENTE",
+                f"DY recorrente abaixo do CDI (prêmio: {premio_cdi:.2f} pp). "
+                "Para FII de papel/recebíveis, a renda precisa competir diretamente com o CDI.",
+                metricas=metrics
+            )
+        penalidades.append(
             f"DY recorrente abaixo do CDI (prêmio: {premio_cdi:.2f} pp). "
-            "Renda fixa remunera melhor sem o risco deste ativo.",
-            metricas=metrics
+            "Para FII de tijolo/renda urbana/logística, seguir para avaliação de preço, contratos e margem."
         )
 
     if quedas >= _QUEDAS_CONSECUTIVAS_LIMITE:
@@ -735,7 +744,7 @@ def decidir(
     # ── Gate 3: Qualidade da renda ───────────────────────────────────────
     # INVERSÃO CENTRAL: este gate antecede o preço.
     # 50% de margem não salva dividendo não recorrente.
-    g3 = _gate3_qualidade_renda(ticker, ind, pct_rec, dy_recorrente, premio_cdi, quedas_consec)
+    g3 = _gate3_qualidade_renda(ticker, ind, pct_rec, dy_recorrente, premio_cdi, quedas_consec, segmento)
     if _check(g3): return _saida(g3)
 
     # ── Gate 4: Preço e margem ───────────────────────────────────────────
