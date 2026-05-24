@@ -515,43 +515,71 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
     except Exception as e:
         print(f"[contexto] Falha ao calcular qtd_ativos CVM para {ticker_norm}: {e}")
 
-    # 7. Cálculo do Score Consolidado de Confiança (0 a 100)
-    score_confianca = 100
-    if preco_status == "AUSENTE":
-        score_confianca -= 40
-    elif preco_status == "VENCIDO":
-        score_confianca -= 20
-    elif preco_status == "SUSPEITO":
-        score_confianca -= 30
+    # 7. Cálculo do Score Auditável de Confiança (0 a 100)
+    score_detalhes = {}
 
-    if patrimonio_status == "AUSENTE":
-        score_confianca -= 40
-    elif patrimonio_status == "VENCIDO":
-        score_confianca -= 15
-    elif patrimonio_status == "DIVERGENTE":
-        score_confianca -= 25
+    # Fonte patrimonial - até 20 pts
+    if patrimonio_fonte == "CVM_INF_MENSAL":
+        score_detalhes["fonte_patrimonial"] = 20
+    elif patrimonio_fonte == "Fundamentus":
+        score_detalhes["fonte_patrimonial"] = 10
+    elif patrimonio_fonte and patrimonio_fonte != "AUSENTE":
+        score_detalhes["fonte_patrimonial"] = 5
+    else:
+        score_detalhes["fonte_patrimonial"] = 0
 
-    if dividendos_status == "AUSENTE":
-        score_confianca -= 30
-    elif dividendos_status == "VENCIDO":
-        score_confianca -= 15
+    # Preço, liquidez e cotistas - até 15 pts
+    pontos_preco = 5 if preco_status == "OK" and preco is not None else 0
+    pontos_liquidez = 6 if (liquidez_diaria or 0) >= 1000000 else 0
+    if numero_cotistas is None:
+        pontos_cotistas = 0
+    elif numero_cotistas >= 50000:
+        pontos_cotistas = 4
+    elif numero_cotistas >= 10000:
+        pontos_cotistas = 3
+    elif numero_cotistas >= 3000:
+        pontos_cotistas = 2
+    elif numero_cotistas >= 1000:
+        pontos_cotistas = 1
+    else:
+        pontos_cotistas = 0
+    score_detalhes["preco_liquidez_cotistas"] = pontos_preco + pontos_liquidez + pontos_cotistas
 
-    if not liquidez_diaria:
-        score_confianca -= 20
+    # Dividendos - até 20 pts
+    if dividendos_fonte == "FNET_AVISO_COTISTAS":
+        score_detalhes["dividendos"] = 20
+    elif dividendos_fonte == "CVM":
+        score_detalhes["dividendos"] = 18
+    elif dividendos_fonte == "yfinance":
+        score_detalhes["dividendos"] = 12
+    elif dividendos_fonte and dividendos_fonte not in ("AUSENTE", None):
+        score_detalhes["dividendos"] = 10
+    else:
+        score_detalhes["dividendos"] = 0
 
+    # Estrutura por segmento - até 20 pts
     eh_papel = "PAPEL" in segmento.upper() or "RECEB" in segmento.upper()
-    if not eh_papel and not vacancia_fisica:
-        score_confianca -= 10
+    if eh_papel:
+        # Até integrar LTV, spread, rating e concentração, papel recebe no máximo 10/20 aqui.
+        score_detalhes["estrutura_segmento"] = (5 if cnpj_fundo else 0) + (5 if segmento else 0)
+    else:
+        score_detalhes["estrutura_segmento"] = (10 if (qtd_ativos or 0) > 0 else 0) + (5 if vacancia_fonte and vacancia_fonte != "AUSENTE" else 0) + (3 if cnpj_fundo else 0) + (2 if cnpj_classe else 0)
 
-    score_confianca = max(0, min(100, score_confianca))
+    # Integridade - até 15 pts
+    score_detalhes["integridade"] = 15
+
+    # Consistência básica - até 10 pts
+    score_detalhes["consistencia_basica"] = (4 if segmento else 0) + (3 if preco_fonte and patrimonio_fonte and dividendos_fonte else 0) + (3 if fonte_identidade != "FALLBACK" else 0)
+
+    score_confianca = max(0, min(100, int(sum(score_detalhes.values()))))
 
     # Nível consolidado de uso
     nivel_uso = "INSUFICIENTE"
-    if score_confianca >= 80:
+    if score_confianca >= 90:
         nivel_uso = "CONFIAVEL"
-    elif score_confianca >= 60:
+    elif score_confianca >= 70:
         nivel_uso = "USAR_COM_CAUTELA"
-    elif score_confianca >= 40:
+    elif score_confianca >= 50:
         nivel_uso = "BLOQUEAR_DECISAO_FORTE"
 
     # 8. Princípio de Fail-Closed (Bloqueio Automático)
@@ -651,6 +679,7 @@ def coletar_contexto_ativo(ticker: str, forcar: bool = False) -> dict[str, Any]:
         "vacancia_fonte": vacancia_fonte,
         "qtd_ativos": qtd_ativos,
         "score_confianca": score_confianca,
+        "score_confianca_detalhes": score_detalhes,
         "nivel_uso_dados": nivel_uso,
         "permitir_decisao": permitir_decisao,
         "campos_ausentes": campos_ausentes,
