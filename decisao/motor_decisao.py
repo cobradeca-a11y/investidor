@@ -391,18 +391,38 @@ def _gate4_preco(margem: Optional[float], margem_stress: Optional[float],
     if pvp is not None and not eh_papel and pvp > 1.10:
         penalidades.append(f"P/VP elevado ({pvp:.2f}) para fundo de tijolo.")
 
-    if margem < 0:
+    if margem < -0.20:
         return _gate_result(
             4, "EVITAR_PRECO",
-            f"Margem negativa ({margem*100:.1f}%). Preço acima do valor justo estimado.",
+            f"Margem muito negativa ({margem*100:.1f}%). Preço muito acima do valor justo estimado.",
+            penalidades=penalidades, metricas=metrics
+        )
+
+    if margem < -0.05:
+        return _gate_result(
+            4, "AGUARDAR_PRECO",
+            f"Margem negativa moderada ({margem*100:.1f}%). Fundo pode ser bom, mas ainda exige queda para entrada.",
+            penalidades=penalidades, metricas=metrics
+        )
+
+    if margem < 0:
+        return _gate_result(
+            4, "MONITORAR_QUALIDADE",
+            f"Preço levemente acima do valor justo ({margem*100:.1f}%). Manter no radar pela qualidade estrutural.",
+            penalidades=penalidades, metricas=metrics
+        )
+
+    if margem < 0.05:
+        return _gate_result(
+            4, "MONITORAR_ENTRADA",
+            f"Margem positiva pequena ({margem*100:.1f}%). Próximo da zona de entrada, mas ainda sem folga relevante.",
             penalidades=penalidades, metricas=metrics
         )
 
     if margem < _MARGEM_AGUARDAR:
         return _gate_result(
-            4, "AGUARDAR_PRECO",
-            f"Margem insuficiente ({margem*100:.1f}%). "
-            "Fundo pode ser saudável, mas preço não oferece desconto para entrada.",
+            4, "MARGEM_MODERADA",
+            f"Margem positiva ({margem*100:.1f}%), adequada para entrada parcial.",
             penalidades=penalidades, metricas=metrics
         )
 

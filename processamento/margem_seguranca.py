@@ -28,6 +28,9 @@ _CRESCIMENTO_CONTRATUAL_SEGMENTO = {
     "SHOPPING": 0.035,
     "SHOPPINGS": 0.035,
     "RESIDENCIAL": 0.040,
+    "RENDA_URBANA": 0.035,
+    "RENDA URBANA": 0.035,
+    "URBANA": 0.035,
     "HÍBRIDO": 0.025,
     "HIBRIDO": 0.025,
 }
@@ -71,6 +74,54 @@ def _crescimento_contratual(segmento: str | None, cenario_stress: bool = False) 
             break
     return crescimento * 0.5 if cenario_stress else crescimento
 
+
+
+
+def _fator_patrimonial_por_vacancia(contexto: Optional[dict] = None) -> float:
+    """Ajusta o VPA conforme risco operacional visível por vacância."""
+    vacancia = None
+    if contexto:
+        vacancia = contexto.get("vacancia_fisica")
+    try:
+        vacancia = float(vacancia) if vacancia is not None else None
+    except Exception:
+        vacancia = None
+
+    if vacancia is None:
+        return 0.90
+    if vacancia <= 0.03:
+        return 0.98
+    if vacancia <= 0.08:
+        return 0.95
+    if vacancia <= 0.15:
+        return 0.90
+    return 0.80
+
+
+def _pesos_valor_hibrido(segmento: str | None) -> tuple[float, float]:
+    """Define pesos renda/patrimônio por segmento de FII de tijolo."""
+    segmento_norm = (segmento or "").upper()
+    if "LOGÍSTICA" in segmento_norm or "LOGISTICA" in segmento_norm:
+        return 0.60, 0.40
+    if "SHOPPING" in segmento_norm:
+        return 0.60, 0.40
+    if "RENDA_URBANA" in segmento_norm or "RENDA URBANA" in segmento_norm or "URBANA" in segmento_norm:
+        return 0.55, 0.45
+    if "LAJES" in segmento_norm or "CORPORATIVO" in segmento_norm or "ESCRITORIO" in segmento_norm or "ESCRITÓRIO" in segmento_norm:
+        return 0.65, 0.35
+    if "HÍBRIDO" in segmento_norm or "HIBRIDO" in segmento_norm:
+        return 0.65, 0.35
+    return 0.70, 0.30
+
+
+def _valor_patrimonial_ajustado(vpa: float, contexto: Optional[dict] = None) -> float:
+    return float(vpa) * _fator_patrimonial_por_vacancia(contexto)
+
+
+def _valor_hibrido_tijolo(valor_renda: float, vpa: float, segmento: str | None, contexto: Optional[dict] = None) -> float:
+    peso_renda, peso_patrimonio = _pesos_valor_hibrido(segmento)
+    valor_patrimonial = _valor_patrimonial_ajustado(vpa, contexto)
+    return (float(valor_renda) * peso_renda) + (valor_patrimonial * peso_patrimonio)
 
 def _dados_base_margem(ticker: str, contexto: Optional[dict] = None) -> dict:
     """Resolve preço, VP/Cota e fonte patrimonial para o cálculo de margem."""
@@ -130,7 +181,8 @@ def _preco_justo(base: dict, cenario_stress: bool = False, contexto: Optional[di
     if taxa_efetiva <= 0:
         taxa_efetiva = _TAXA_EFETIVA_MINIMA
 
-    return fluxo_anual / taxa_efetiva
+    valor_renda = fluxo_anual / taxa_efetiva
+    return _valor_hibrido_tijolo(valor_renda, vpa, segmento, contexto)
 
 
 def calcular_margem_seguranca(ticker: str, cenario_stress: bool = False, contexto: Optional[dict] = None) -> Optional[float]:
